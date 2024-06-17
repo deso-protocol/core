@@ -5,17 +5,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
+	"reflect"
+	"regexp"
+	"sort"
+	"strings"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/gernest/mention"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"math"
-	"reflect"
-	"regexp"
-	"sort"
-	"strings"
 )
 
 func (bav *UtxoView) _getRepostEntryForRepostKey(repostKey *RepostKey) *RepostEntry {
@@ -591,7 +592,7 @@ func (bav *UtxoView) GetDiamondSendersForPostHash(postHash *BlockHash) (_pkidToD
 	// FIXME: Db operation like this shouldn't happen in utxoview.
 	dbPrefix := append([]byte{}, Prefixes.PrefixDiamondedPostHashDiamonderPKIDDiamondLevel...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix, true)
 
 	diamondPostEntry := bav.GetPostEntryForPostHash(postHash)
 	receiverPKIDEntry := bav.GetPKIDForPublicKey(diamondPostEntry.PosterPublicKey)
@@ -632,7 +633,7 @@ func (bav *UtxoView) GetRepostsForPostHash(postHash *BlockHash) (_reposterPubKey
 	// FIXME: Db operation like this shouldn't happen in utxoview.
 	dbPrefix := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKey...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix, true)
 
 	// Iterate over all the db keys & values and load them into the view.
 	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
@@ -669,7 +670,7 @@ func (bav *UtxoView) GetQuoteRepostsForPostHash(postHash *BlockHash,
 	// FIXME: Db operation like this shouldn't happen in utxoview.
 	dbPrefix := append([]byte{}, Prefixes.PrefixRepostedPostHashReposterPubKeyRepostPostHash...)
 	dbPrefix = append(dbPrefix, postHash[:]...)
-	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix)
+	keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix, true)
 
 	// Iterate over all the db keys & values and load them into the view.
 	expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed + HashSizeBytes
@@ -1122,7 +1123,7 @@ func (bav *UtxoView) _connectSubmitPost(txn *MsgDeSoTxn, txHash *BlockHash, bloc
 
 	// Create metadata object to store in the db alongside the transaction.
 	stateChangeMetadata := &SubmitPostStateChangeMetadata{
-		PostEntry:         newPostEntry,
+		ParentPostEntry:   newParentPostEntry,
 		ProfilesMentioned: profilesMentioned,
 		RepostPostEntry:   newRepostedPostEntry,
 	}

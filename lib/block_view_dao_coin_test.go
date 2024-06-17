@@ -1,13 +1,14 @@
 package lib
 
 import (
+	"reflect"
+	"testing"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"reflect"
-	"testing"
 )
 
 func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -27,8 +28,7 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	profilePkBytes := metadata.ProfilePublicKey
 	assert.Len(profilePkBytes, btcec.PubKeyBytesLenCompressed)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinTxn(
 		updaterPkBytes,
@@ -51,7 +51,7 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -71,7 +71,7 @@ func _daoCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 
 	require.Equal(OperationTypeDAOCoin, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb(0))
+	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 
 	return utxoOps, txn, blockHeight, nil
 }
@@ -108,8 +108,7 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinTransferTxn(
 		updaterPkBytes,
@@ -132,7 +131,7 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -151,7 +150,7 @@ func _daoCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	}
 	require.Equal(OperationTypeDAOCoinTransfer, utxoOps[len(utxoOps)-1].Type)
 
-	require.NoError(utxoView.FlushToDb(0))
+	require.NoError(utxoView.FlushToDb(uint64(blockHeight)))
 
 	return utxoOps, txn, blockHeight, nil
 }

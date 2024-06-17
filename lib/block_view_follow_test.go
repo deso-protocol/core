@@ -2,10 +2,11 @@ package lib
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
@@ -24,8 +25,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	followedPkBytes, _, err := Base58CheckDecode(followedPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateFollowTxn(
 		senderPkBytes, followedPkBytes, isUnfollow, feeRateNanosPerKB, nil, []*DeSoOutput{})
@@ -43,7 +43,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -565,8 +565,7 @@ func TestFollowTxns(t *testing.T) {
 		currentTxn := txns[backwardIter]
 		fmt.Printf("Disconnecting transaction with type %v index %d (going backwards)\n", currentTxn.TxnMeta.GetTxnType(), backwardIter)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		currentHash := currentTxn.Hash()
 		err = utxoView.DisconnectTransaction(currentTxn, currentHash, currentOps, savedHeight)
@@ -643,8 +642,7 @@ func TestFollowTxns(t *testing.T) {
 	}
 
 	// Apply all the transactions to a view and flush the view to the db.
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	for ii, txn := range txns {
 		fmt.Printf("Adding txn %v of type %v to UtxoView\n", ii, txn.TxnMeta.GetTxnType())
 
@@ -653,7 +651,7 @@ func TestFollowTxns(t *testing.T) {
 		txHash := txn.Hash()
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err :=
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.NoError(err)
 	}
 	// Flush the utxoView after having added all the transactions.
@@ -662,8 +660,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Disconnect the transactions from a single view in the same way as above
 	// i.e. without flushing each time.
-	utxoView2, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView2 := NewUtxoView(db, params, nil, chain.snapshot, nil)
 	for ii := 0; ii < len(txnOps); ii++ {
 		backwardIter := len(txnOps) - 1 - ii
 		fmt.Printf("Disconnecting transaction with index %d (going backwards)\n", backwardIter)
@@ -707,8 +704,7 @@ func TestFollowTxns(t *testing.T) {
 
 	// Roll back the block and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		// Fetch the utxo operations for the block we're detaching. We need these
 		// in order to be able to detach the block.

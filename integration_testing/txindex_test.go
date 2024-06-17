@@ -1,11 +1,7 @@
 package integration_testing
 
 import (
-	"fmt"
-	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
-	"github.com/stretchr/testify/require"
-	"os"
 	"testing"
 )
 
@@ -16,39 +12,21 @@ import (
 //  4. node2 syncs MaxSyncBlockHeight blocks from node1, and builds txindex afterwards.
 //  5. compare node1 db and txindex matches node2.
 func TestSimpleTxIndex(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config1.HyperSync = true
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config2.HyperSync = true
-	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-
-	config1.TXIndex = true
-	config2.TXIndex = true
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
+	node1.Config.HyperSync = true
+	node1.Config.TXIndex = true
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
-
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
 
-	// bridge the nodes together.
-	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Start())
-
-	// wait for node2 to sync blocks.
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2.Config.HyperSync = true
+	node2.Config.TXIndex = true
+	node2 = startNode(t, node2)
+	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node2)
 
 	waitForNodeToFullySyncTxIndex(node1)
@@ -56,7 +34,5 @@ func TestSimpleTxIndex(t *testing.T) {
 
 	compareNodesByDB(t, node1, node2, 0)
 	compareNodesByTxIndex(t, node1, node2, 0)
-	fmt.Println("Databases match!")
-	node1.Stop()
-	node2.Stop()
+	t.Logf("Databases match!")
 }

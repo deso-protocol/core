@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/holiman/uint256"
 	"math/big"
 	"math/rand"
 	"reflect"
@@ -12,10 +11,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/deso-protocol/core/bls"
+	"golang.org/x/crypto/sha3"
+
+	"github.com/holiman/uint256"
+
 	"github.com/btcsuite/btcd/btcec"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/bxcodec/faker"
+	"github.com/deso-protocol/core/collections/bitset"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,7 +42,7 @@ var expectedVer = &MsgDeSoVersion{
 	TstampSecs:           2,
 	Nonce:                uint64(0xffffffffffffffff),
 	UserAgent:            "abcdef",
-	StartBlockHeight:     4,
+	LatestBlockHeight:    4,
 	MinFeeRateNanosPerKB: 10,
 }
 
@@ -64,7 +69,7 @@ func TestVersionConversion(t *testing.T) {
 			"works, add the new field to the test case, and fix this error.")
 }
 
-func TestVerack(t *testing.T) {
+func TestVerackV0(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -74,81 +79,230 @@ func TestVerack(t *testing.T) {
 	var buf bytes.Buffer
 
 	nonce := uint64(12345678910)
-	_, err := WriteMessage(&buf, &MsgDeSoVerack{Nonce: nonce}, networkType)
+	_, err := WriteMessage(&buf, &MsgDeSoVerack{Version: VerackVersion0, NonceReceived: nonce}, networkType)
 	require.NoError(err)
 	verBytes := buf.Bytes()
 	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes),
 		networkType)
 	require.NoError(err)
-	require.Equal(&MsgDeSoVerack{Nonce: nonce}, testMsg)
+	require.Equal(&MsgDeSoVerack{Version: VerackVersion0, NonceReceived: nonce}, testMsg)
 }
 
-var expectedBlockHeader = &MsgDeSoHeader{
-	Version: 1,
-	PrevBlockHash: &BlockHash{
-		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
+func TestVerackV1(t *testing.T) {
+	require := require.New(t)
+
+	networkType := NetworkType_MAINNET
+	var buf1, buf2 bytes.Buffer
+
+	nonceReceived := uint64(12345678910)
+	nonceSent := nonceReceived + 1
+	tstamp := uint64(2345678910)
+	// First, test that nil public key and signature are allowed.
+	msg := &MsgDeSoVerack{
+		Version:       VerackVersion1,
+		NonceReceived: nonceReceived,
+		NonceSent:     nonceSent,
+		TstampMicro:   tstamp,
+		PublicKey:     nil,
+		Signature:     nil,
+	}
+	_, err := WriteMessage(&buf1, msg, networkType)
+	require.NoError(err)
+	payload := append(UintToBuf(nonceReceived), UintToBuf(nonceSent)...)
+	payload = append(payload, UintToBuf(tstamp)...)
+	hash := sha3.Sum256(payload)
+
+	priv, err := bls.NewPrivateKey()
+	require.NoError(err)
+	msg.PublicKey = priv.PublicKey()
+	msg.Signature, err = priv.Sign(hash[:])
+	require.NoError(err)
+	// Reset the bls public key so that it only contains the bytes.
+	msg.PublicKey, err = (&bls.PublicKey{}).FromBytes(priv.PublicKey().ToBytes())
+	require.NoError(err)
+	_, err = WriteMessage(&buf2, msg, networkType)
+	require.NoError(err)
+
+	verBytes := buf2.Bytes()
+	testMsg, _, err := ReadMessage(bytes.NewReader(verBytes), networkType)
+	require.NoError(err)
+	require.Equal(msg, testMsg)
+}
+
+// Creates fully formatted a PoS block header with random signatures
+// and block hashes
+func createTestBlockHeaderVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSoHeader {
+	testBlockHash := BlockHash{
+		0x00, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
 		0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
 		0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
 		0x32, 0x33,
-	},
-	TransactionMerkleRoot: &BlockHash{
-		0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
+	}
+	testMerkleRoot := BlockHash{
+		0x00, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
 		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
-	},
-	// Use full uint64 values to make sure serialization and de-serialization work
-	TstampSecs: uint64(1678943210),
-	Height:     uint64(1321012345),
-	Nonce:      uint64(12345678901234),
-	ExtraNonce: uint64(101234123456789),
+	}
+
+	testBitset := bitset.NewBitset().Set(0, true).Set(3, true)
+	testBLSPublicKey, testBLSSignature := _generateValidatorVotingPublicKeyAndSignature(t)
+
+	validatorsVoteQC := &QuorumCertificate{
+		BlockHash:      &testBlockHash,
+		ProposedInView: uint64(123456789123),
+		ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+			SignersList: testBitset,
+			Signature:   testBLSSignature,
+		},
+	}
+
+	validatorsTimeoutAggregateQC := &TimeoutAggregateQuorumCertificate{
+		TimedOutView: uint64(234567891234),
+		ValidatorsHighQC: &QuorumCertificate{
+			BlockHash:      &testBlockHash,
+			ProposedInView: uint64(345678912345),
+			ValidatorsVoteAggregatedSignature: &AggregatedBLSSignature{
+				SignersList: testBitset,
+				Signature:   testBLSSignature,
+			},
+		},
+		ValidatorsTimeoutHighQCViews: []uint64{456789123456},
+		ValidatorsTimeoutAggregatedSignature: &AggregatedBLSSignature{
+			SignersList: testBitset,
+			Signature:   testBLSSignature,
+		},
+	}
+
+	header := &MsgDeSoHeader{
+		Version:               2,
+		PrevBlockHash:         &testBlockHash,
+		TransactionMerkleRoot: &testMerkleRoot,
+		TstampNanoSecs:        SecondsToNanoSeconds(1678943210),
+		Height:                uint64(1321012345),
+		// Nonce and ExtraNonce are unused and set to 0 starting in version 2.
+		Nonce:                       uint64(0),
+		ExtraNonce:                  uint64(0),
+		ProposerVotingPublicKey:     testBLSPublicKey,
+		ProposerRandomSeedSignature: testBLSSignature,
+		ProposedInView:              uint64(1432101234),
+		// Use real signatures and public keys for the PoS fields
+		ProposerVotePartialSignature: testBLSSignature,
+	}
+
+	// Only set one of the two fields.
+	if includeTimeoutQC {
+		header.ValidatorsTimeoutAggregateQC = validatorsTimeoutAggregateQC
+	} else {
+		header.ValidatorsVoteQC = validatorsVoteQC
+	}
+
+	return header
 }
 
 func TestHeaderConversionAndReadWriteMessage(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 	networkType := NetworkType_MAINNET
 
-	{
+	expectedBlockHeadersToTest := []*MsgDeSoHeader{
+		expectedBlockHeaderVersion1,
+		createTestBlockHeaderVersion2(t, true),
+		createTestBlockHeaderVersion2(t, false),
+	}
+
+	// Performs a full E2E byte encode and decode of all the block header
+	// versions we want to test.
+	for _, expectedBlockHeader := range expectedBlockHeadersToTest {
 		data, err := expectedBlockHeader.ToBytes(false)
-		assert.NoError(err)
+		require.NoError(err)
 
 		testHdr := NewMessage(MsgTypeHeader)
 		err = testHdr.FromBytes(data)
-		assert.NoError(err)
+		require.NoError(err)
 
-		assert.Equal(expectedBlockHeader, testHdr)
+		require.Equal(expectedBlockHeader, testHdr)
 
 		// Test read write.
 		var buf bytes.Buffer
 		payload, err := WriteMessage(&buf, expectedBlockHeader, networkType)
-		assert.NoError(err)
+		require.NoError(err)
 		// Form the header from the payload and make sure it matches.
 		hdrFromPayload := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
-		assert.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
-		assert.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
+		require.NotNil(hdrFromPayload, "NewMessage(MsgTypeHeader) should not return nil.")
+		require.Equal(uint64(0), hdrFromPayload.Nonce, "NewMessage(MsgTypeHeader) should initialize Nonce to empty byte slice.")
 		err = hdrFromPayload.FromBytes(payload)
-		assert.NoError(err)
-		assert.Equal(expectedBlockHeader, hdrFromPayload)
+		require.NoError(err)
+		require.Equal(expectedBlockHeader, hdrFromPayload)
 
 		hdrBytes := buf.Bytes()
 		testMsg, data, err := ReadMessage(bytes.NewReader(hdrBytes),
 			networkType)
-		assert.NoError(err)
-		assert.Equal(expectedBlockHeader, testMsg)
+		require.NoError(err)
+		require.Equal(expectedBlockHeader, testMsg)
 
 		// Compute the header payload bytes so we can compare them.
 		hdrPayload, err := expectedBlockHeader.ToBytes(false)
-		assert.NoError(err)
-		assert.Equal(hdrPayload, data)
-	}
+		require.NoError(err)
+		require.Equal(hdrPayload, data)
 
-	assert.Equalf(7, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
-		"Number of fields in HEADER message is different from expected. "+
-			"Did you add a new field? If so, make sure the serialization code "+
-			"works, add the new field to the test case, and fix this error.")
+		require.Equalf(13, reflect.TypeOf(expectedBlockHeader).Elem().NumField(),
+			"Number of fields in HEADER message is different from expected. "+
+				"Did you add a new field? If so, make sure the serialization code "+
+				"works, add the new field to the test case, and fix this error.")
+	}
+}
+
+func TestHeaderVersion2SignatureByteEncoding(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	expectedBlockHeader := createTestBlockHeaderVersion2(t, true)
+
+	preSignatureBytes, err := expectedBlockHeader.ToBytes(true)
+	require.NoError(err)
+	require.NotZero(preSignatureBytes)
+
+	postSignatureBytes, err := expectedBlockHeader.ToBytes(false)
+	require.NoError(err)
+	require.NotZero(postSignatureBytes)
+
+	// The length of the post-signature bytes will always be equal to the length of the
+	// pre-signature bytes + the length of the signature. This is always the case for the
+	// following reason:
+	// - The end of the pre-signature bytes have a []byte{0} appended to them to indicate
+	//   that the signature is not present.
+	// - The end of the post-signature bytes have []byte{len(signature)} + signature.ToBytes()
+	//   appended, which encode the signature.
+	// The difference in length between the two will always be the length of the signature, which
+	// is a fixed size 32 byte BLS signature.
+	require.Equal(
+		len(postSignatureBytes),
+		len(preSignatureBytes)+len(expectedBlockHeader.ProposerVotePartialSignature.ToBytes()),
+	)
+}
+
+func TestHeaderVersion2Hash(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	_ = assert
+	_ = require
+
+	expectedBlockHeader := createTestBlockHeaderVersion2(t, true)
+
+	headerHash, err := expectedBlockHeader.Hash()
+	require.NoError(err)
+	require.NotZero(len(headerHash))
+
+	preSignatureBytes, err := expectedBlockHeader.ToBytes(true)
+	require.NoError(err)
+	require.NotZero(preSignatureBytes)
+
+	// Re-compute the expected hash manually and make sure it's using Sha256DoubleHash
+	// as expected.
+	expectedHeaderHash := Sha256DoubleHash(preSignatureBytes)
+	require.Equal(expectedHeaderHash[:], headerHash[:])
 }
 
 func TestGetHeadersSerialization(t *testing.T) {
@@ -157,8 +311,8 @@ func TestGetHeadersSerialization(t *testing.T) {
 	_ = assert
 	_ = require
 
-	hash1 := expectedBlockHeader.PrevBlockHash
-	hash2 := expectedBlockHeader.TransactionMerkleRoot
+	hash1 := expectedBlockHeaderVersion1.PrevBlockHash
+	hash2 := expectedBlockHeaderVersion1.TransactionMerkleRoot
 
 	getHeaders := &MsgDeSoGetHeaders{
 		StopHash:     hash1,
@@ -179,10 +333,14 @@ func TestHeaderBundleSerialization(t *testing.T) {
 	_ = assert
 	_ = require
 
-	hash1 := expectedBlockHeader.PrevBlockHash
+	hash1 := expectedBlockHeaderVersion1.PrevBlockHash
 
 	headerBundle := &MsgDeSoHeaderBundle{
-		Headers:   []*MsgDeSoHeader{expectedBlockHeader, expectedBlockHeader},
+		Headers: []*MsgDeSoHeader{
+			expectedBlockHeaderVersion1,
+			createTestBlockHeaderVersion2(t, true),
+			createTestBlockHeaderVersion2(t, false),
+		},
 		TipHash:   hash1,
 		TipHeight: 12345,
 	}
@@ -256,7 +414,7 @@ func TestReadWrite(t *testing.T) {
 }
 
 var expectedBlock = &MsgDeSoBlock{
-	Header: expectedBlockHeader,
+	Header: expectedBlockHeaderVersion1,
 	Txns:   expectedTransactions(true), // originally was effectively false
 
 	BlockProducerInfo: &BlockProducerInfo{
@@ -268,6 +426,29 @@ var expectedBlock = &MsgDeSoBlock{
 			0x21, 0x22, 0x23,
 		},
 	},
+}
+
+func createTestBlockVersion1(t *testing.T) *MsgDeSoBlock {
+	require := require.New(t)
+
+	newBlockV1 := *expectedBlock
+
+	// Add a signature to the block V1
+	priv, err := btcec.NewPrivateKey(btcec.S256())
+	require.NoError(err)
+	newBlockV1.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
+	require.NoError(err)
+	return &newBlockV1
+}
+
+func createTestBlockVersion2(t *testing.T, includeTimeoutQC bool) *MsgDeSoBlock {
+	block := *expectedBlock
+	block.BlockProducerInfo = nil
+
+	// Set V2 header.
+	block.Header = createTestBlockHeaderVersion2(t, includeTimeoutQC)
+
+	return &block
 }
 
 func expectedTransactions(includeV1Fields bool) []*MsgDeSoTxn {
@@ -413,72 +594,86 @@ var expectedV0Header = &MsgDeSoHeader{
 		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
 		0x64, 0x65,
 	},
-	TstampSecs: uint64(0x70717273),
-	Height:     uint64(99999),
-	Nonce:      uint64(123456),
+	TstampNanoSecs: SecondsToNanoSeconds(0x70717273),
+	Height:         uint64(99999),
+	Nonce:          uint64(123456),
 }
 
 func TestBlockSerialize(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
-	// Add a signature to the block
-	priv, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	expectedBlock.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
-	require.NoError(err)
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
+	}
 
-	data, err := expectedBlock.ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.ToBytes(false)
+		require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
-	err = testBlock.FromBytes(data)
-	require.NoError(err)
+		testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+		err = testBlock.FromBytes(data)
+		require.NoError(err)
 
-	assert.Equal(*expectedBlock, *testBlock)
+		require.Equal(*block, *testBlock)
+	}
+
+	// Also test MsgDeSoBlockBundle
+	bundle := &MsgDeSoBlockBundle{
+		Blocks: expectedBlocksToTest,
+		// Just fill any old data for these
+		TipHash:   expectedBlocksToTest[0].Header.PrevBlockHash,
+		TipHeight: expectedBlocksToTest[0].Header.Height,
+	}
+	bb, err := bundle.ToBytes(false)
+	require.NoError(err)
+	testBundle := &MsgDeSoBlockBundle{}
+	err = testBundle.FromBytes(bb)
+	require.NoError(err)
+	require.Equal(bundle, testBundle)
 }
 
 func TestBlockSerializeNoBlockProducerInfo(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
-	// Add a signature to the block
-	blockWithoutProducerInfo := *expectedBlock
-	blockWithoutProducerInfo.BlockProducerInfo = nil
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
+	}
+	expectedBlocksToTest[0].BlockProducerInfo = nil
+	expectedBlocksToTest[1].BlockProducerInfo = nil
 
-	data, err := blockWithoutProducerInfo.ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.ToBytes(false)
+		require.NoError(err)
 
-	testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
-	err = testBlock.FromBytes(data)
-	require.NoError(err)
-
-	assert.Equal(blockWithoutProducerInfo, *testBlock)
+		testBlock := NewMessage(MsgTypeBlock).(*MsgDeSoBlock)
+		err = testBlock.FromBytes(data)
+		require.NoError(err)
+		require.Equal(*block, *testBlock)
+	}
 }
 
 func TestBlockRewardTransactionSerialize(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
-	_ = assert
-	_ = require
 
-	// Add a signature to the block
-	priv, err := btcec.NewPrivateKey(btcec.S256())
-	require.NoError(err)
-	expectedBlock.BlockProducerInfo.Signature, err = priv.Sign([]byte{0x01, 0x02, 0x03})
-	require.NoError(err)
+	expectedBlocksToTest := []*MsgDeSoBlock{
+		createTestBlockVersion1(t),
+		createTestBlockVersion2(t, false),
+		createTestBlockVersion2(t, true),
+	}
 
-	data, err := expectedBlock.Txns[0].ToBytes(false)
-	require.NoError(err)
+	for _, block := range expectedBlocksToTest {
+		data, err := block.Txns[0].ToBytes(false)
+		require.NoError(err)
 
-	testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
-	err = testTxn.FromBytes(data)
-	require.NoError(err)
-	require.Equal(expectedBlock.Txns[0], testTxn)
+		testTxn := NewMessage(MsgTypeTxn).(*MsgDeSoTxn)
+		err = testTxn.FromBytes(data)
+		require.NoError(err)
+		require.Equal(block.Txns[0], testTxn)
+	}
 }
 
 func TestSerializeInv(t *testing.T) {
@@ -1555,7 +1750,7 @@ func TestUnlimitedSpendingLimitMetamaskEncoding(t *testing.T) {
 	// Test the spending limit encoding using the standard scheme.
 	spendingLimitBytes, err := spendingLimit.ToBytes(1)
 	require.NoError(err)
-	require.Equal(true, reflect.DeepEqual(spendingLimitBytes, []byte{0, 0, 0, 0, 0, 0, 1, 0, 0, 0}))
+	require.Equal(true, reflect.DeepEqual(spendingLimitBytes, []byte{0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}))
 
 	// Test the spending limit encoding using the metamask scheme.
 	require.Equal(true, reflect.DeepEqual(

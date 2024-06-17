@@ -2,11 +2,12 @@ package lib
 
 import (
 	"fmt"
+	"strconv"
+	"testing"
+
 	"github.com/dgraph-io/badger/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"strconv"
-	"testing"
 )
 
 type _CreatorCoinTestData struct {
@@ -234,9 +235,7 @@ func _helpTestCreatorCoinBuySell(
 
 		// If no UtxoView is passed, use a new one to run our checks.
 		if utxoView == nil {
-			var err error
-			utxoView, err = NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-			require.NoError(err)
+			utxoView = NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 		}
 
 		// Profile fields
@@ -572,8 +571,7 @@ func _helpTestCreatorCoinBuySell(
 		_checkTestData(testData, fmt.Sprintf("SimpleDisconnect: Index: %v", testIndex), nil, nil)
 
 		// Disconnect the transaction
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
 		fmt.Printf("Disconnecting test index: %v\n", testIndex)
 		require.NoError(utxoView.DisconnectTransaction(
@@ -601,16 +599,13 @@ func _helpTestCreatorCoinBuySell(
 	// Connect all the txns to a single UtxoView without flushing
 	{
 		// Create a new UtxoView to check on the state of things
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 		for testIndex, testData := range creatorCoinTests {
 			fmt.Printf("Applying test index: %v\n", testIndex)
 			txn := testTxns[testIndex]
 			blockHeight := chain.blockTip().Height + 1
-			txnSize := getTxnSize(*txn)
 			_, _, _, _, err :=
-				utxoView.ConnectTransaction(
-					txn, txn.Hash(), txnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(txn, txn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 			_checkTestData(testData, fmt.Sprintf("SimpleConnect: Index: %v", testIndex), utxoView, nil)
 		}
@@ -627,8 +622,7 @@ func _helpTestCreatorCoinBuySell(
 	// Disconnect all the txns on a single view and flush at the end
 	{
 		// Create a new UtxoView to check on the state of things
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
 		for iterIndex := range creatorCoinTests {
 			testIndex := len(creatorCoinTests) - 1 - iterIndex
@@ -764,8 +758,7 @@ func _helpTestCreatorCoinBuySell(
 		require.NoError(utxoView.DisconnectBlock(blockToDisconnect, txHashes, utxoOps, 0))
 	}
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		// This fails because public key is not defined in one of the creator coin sell transactions
 		disconnectSingleBlock(finalBlock2, utxoView)
@@ -794,41 +787,41 @@ func _helpTestCreatorCoinBuySell(
 func TestBalanceModelCreatorCoins(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinWithDiamonds(t)
-	TestCreatorCoinWithDiamondsFailureCases(t)
-	TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t)
-	TestCreatorCoinTransferSimple_CreatorCoinFounderReward(t)
-	TestCreatorCoinTransferSimple_DeSoFounderReward(t)
+	t.Run("TestCreatorCoinWithDiamonds", TestCreatorCoinWithDiamonds)
+	t.Run("TestCreatorCoinWithDiamondsFailureCases", TestCreatorCoinWithDiamondsFailureCases)
+	t.Run("TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight", TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight)
+	t.Run("TestCreatorCoinTransferSimple_CreatorCoinFounderReward", TestCreatorCoinTransferSimple_CreatorCoinFounderReward)
+	t.Run("TestCreatorCoinTransferSimple_DeSoFounderReward", TestCreatorCoinTransferSimple_DeSoFounderReward)
 }
 
 func TestBalanceModelCreatorCoins2(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinTransferWithSwapIdentity(t)
-	TestCreatorCoinTransferWithSmallBalancesLeftOver(t)
-	TestCreatorCoinTransferWithMaxTransfers(t)
-	TestCreatorCoinTransferBelowMinThreshold(t)
-	TestCreatorCoinBuySellSimple_CreatorCoinFounderReward(t)
+	t.Run("TestCreatorCoinTransferWithSwapIdentity", TestCreatorCoinTransferWithSwapIdentity)
+	t.Run("TestCreatorCoinTransferWithSmallBalancesLeftOver", TestCreatorCoinTransferWithSmallBalancesLeftOver)
+	t.Run("TestCreatorCoinTransferWithMaxTransfers", TestCreatorCoinTransferWithMaxTransfers)
+	t.Run("TestCreatorCoinTransferBelowMinThreshold", TestCreatorCoinTransferBelowMinThreshold)
+	t.Run("TestCreatorCoinBuySellSimple_CreatorCoinFounderReward", TestCreatorCoinBuySellSimple_CreatorCoinFounderReward)
 }
 
 func TestBalanceModelCreatorCoins3(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinBuySellSimple_DeSoFounderReward(t)
-	TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward(t)
-	TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
-	TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward(t)
-	TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward(t)
+	t.Run("TestCreatorCoinBuySellSimple_DeSoFounderReward", TestCreatorCoinBuySellSimple_DeSoFounderReward)
+	t.Run("TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward", TestCreatorCoinSelfBuying_DeSoAndCreatorCoinFounderReward)
+	t.Run("TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward", TestCreatorCoinTinyFounderRewardBuySellAmounts_CreatorCoinFounderReward)
+	t.Run("TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward", TestCreatorCoinTinyFounderRewardBuySellAmounts_DeSoFounderReward)
+	t.Run("TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward", TestCreatorCoinFullFounderRewardBuySellAmounts_CreatorCoinFounderReward)
 }
 
 func TestBalanceModelCreatorCoins4(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestCreatorCoinLargeFounderRewardBuySellAmounts(t)
-	TestCreatorCoinAroundThresholdBuySellAmounts(t)
-	TestSalomonSequence(t)
-	TestCreatorCoinBigBuyAfterSmallBuy(t)
-	TestCreatorCoinBigBigBuyBigSell(t)
+	t.Run("TestCreatorCoinLargeFounderRewardBuySellAmounts", TestCreatorCoinLargeFounderRewardBuySellAmounts)
+	t.Run("TestCreatorCoinAroundThresholdBuySellAmounts", TestCreatorCoinAroundThresholdBuySellAmounts)
+	t.Run("TestSalomonSequence", TestSalomonSequence)
+	t.Run("TestCreatorCoinBigBuyAfterSmallBuy", TestCreatorCoinBigBuyAfterSmallBuy)
+	t.Run("TestCreatorCoinBigBigBuyBigSell", TestCreatorCoinBigBigBuyBigSell)
 }
 
 func TestCreatorCoinWithDiamonds(t *testing.T) {
@@ -1119,8 +1112,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 			senderPkBytes,
@@ -1140,7 +1132,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreatorCoinTransferHasDiamondPostHashWithoutDiamondLevel)
 	}
@@ -1153,8 +1145,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 			senderPkBytes,
@@ -1174,7 +1165,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), "level 15 not allowed")
 	}
@@ -1186,8 +1177,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 			senderPkBytes,
@@ -1207,7 +1197,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), "level 0 not allowed")
 	}
@@ -1219,8 +1209,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 			senderPkBytes,
@@ -1240,7 +1229,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreatorCoinTransferCantSendDiamondsForOtherProfiles)
 	}
@@ -1252,8 +1241,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 			senderPkBytes,
@@ -1273,7 +1261,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCoinTransferCannotTransferToSelf)
 	}
@@ -1285,8 +1273,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 			senderPkBytes,
@@ -1307,7 +1294,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreatorCoinTransferDiamondPostEntryDoesNotExist)
 	}
@@ -1319,8 +1306,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 			receiverPkBytes,
@@ -1340,14 +1326,13 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreatorCoinTransferInsufficientCreatorCoinsForDiamondLevel)
 	}
 	// You can't apply the same number of Diamonds to a post twice
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		// Let's have a successful transaction
 		{
@@ -1373,7 +1358,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			// get mined into the next block.
 			blockHeight := chain.blockTip().Height + 1
 			_, _, _, _, err =
-				utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 			require.NoError(err)
 			_, err = mempool.processTransaction(txn, false, false, 0,
 				false)
@@ -1405,7 +1390,7 @@ func TestCreatorCoinWithDiamondsFailureCases(t *testing.T) {
 			// get mined into the next block.
 			blockHeight := chain.blockTip().Height + 1
 			_, _, _, _, err =
-				utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 			require.Error(err)
 			require.Contains(err.Error(), RuleErrorCreatorCoinTransferPostAlreadyHasSufficientDiamonds)
 		}
@@ -1516,8 +1501,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 		receiverPkBytes, _, err := Base58CheckDecode(m1Pub)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 		// Attempt to give two diamonds.
 		txn, _, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
@@ -1536,7 +1520,7 @@ func TestCreatorCoinDiamondAfterDeSoDiamondsBlockHeight(t *testing.T) {
 		// get mined into the next block.
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err =
-			utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 		require.Error(err)
 		require.Contains(err.Error(), RuleErrorCreatorCoinTransferHasDiamondsAfterDeSoBlockHeight)
 	}
@@ -4317,8 +4301,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	profilePkBytes, _, err := Base58CheckDecode(ProfilePublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreatorCoinTxn(
 		updaterPkBytes,
@@ -4351,7 +4334,7 @@ func _creatorCoinTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 
 	txHash := txn.Hash()
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -4434,8 +4417,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 	receiverPkBytes, _, err := Base58CheckDecode(ReceiverPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, _, _, err := chain.CreateCreatorCoinTransferTxnWithDiamonds(
 		senderPkBytes,
@@ -4455,7 +4437,7 @@ func _doCreatorCoinTransferTxnWithDiamonds(t *testing.T, chain *Blockchain, db *
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -4505,8 +4487,7 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	receiverPkBytes, _, err := Base58CheckDecode(ReceiverPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, _, _, err := chain.CreateCreatorCoinTransferTxn(
 		updaterPkBytes,
@@ -4528,7 +4509,7 @@ func _doCreatorCoinTransferTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {

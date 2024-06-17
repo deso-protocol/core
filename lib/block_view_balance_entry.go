@@ -2,11 +2,12 @@ package lib
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
-	"reflect"
 )
 
 func (bav *UtxoView) _getBalanceEntryForHODLerPKIDAndCreatorPKID(

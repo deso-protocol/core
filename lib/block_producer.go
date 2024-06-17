@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,15 +81,26 @@ func NewDeSoBlockProducer(
 
 	var privKey *btcec.PrivateKey
 	if blockProducerSeed != "" {
-		seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
-		if err != nil {
-			return nil, fmt.Errorf("NewDeSoBlockProducer: Error converting mnemonic: %+v", err)
-		}
+		// If a blockProducerSeed is provided then we use it to generate a private key.
+		// If the block producer seed beings with 0x, we treat it as a hex seed. Otherwise,
+		// we treat it as a seed phrase.
+		if strings.HasPrefix(blockProducerSeed, "0x") {
+			privKeyBytes, err := hex.DecodeString(blockProducerSeed[2:])
+			if err != nil {
+				return nil, fmt.Errorf("NewDeSoBlockProducer: Error decoding hex seed: %+v", err)
+			}
+			privKey, _ = btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+		} else {
+			seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
+			if err != nil {
+				return nil, fmt.Errorf("NewDeSoBlockProducer: Error converting mnemonic: %+v", err)
+			}
 
-		_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"NewDeSoBlockProducer: Error computing keys from seed: %+v", err)
+			_, privKey, _, err = ComputeKeysFromSeed(seedBytes, 0, params)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"NewDeSoBlockProducer: Error computing keys from seed: %+v", err)
+			}
 		}
 	}
 
@@ -114,11 +126,11 @@ func (desoBlockProducer *DeSoBlockProducer) _updateBlockTimestamp(blk *MsgDeSoBl
 	// the timestamp set in the last block then set the time based on the last
 	// block's timestamp instead. We do this because consensus rules require a
 	// monotonically increasing timestamp.
-	blockTstamp := uint32(desoBlockProducer.chain.timeSource.AdjustedTime().Unix())
-	if blockTstamp <= uint32(lastNode.Header.TstampSecs) {
-		blockTstamp = uint32(lastNode.Header.TstampSecs) + 1
+	blockTstamp := desoBlockProducer.chain.timeSource.AdjustedTime().Unix()
+	if blockTstamp <= lastNode.Header.GetTstampSecs() {
+		blockTstamp = lastNode.Header.GetTstampSecs() + 1
 	}
-	blk.Header.TstampSecs = uint64(blockTstamp)
+	blk.Header.SetTstampSecs(blockTstamp)
 }
 
 func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) (
@@ -202,12 +214,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		currentBlockSize := uint64(len(blockBytes) + MaxVarintLen64)
 
 		// Create a new view object.
-		utxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+		utxoView := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
 			desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
-		if err != nil {
-			return nil, nil, nil, errors.Wrapf(err,
-				"DeSoBlockProducer._getBlockTemplate: Error generating checker UtxoView: ")
-		}
 
 		txnsAddedToBlock := make(map[BlockHash]bool)
 		for ii, mempoolTx := range txnsOrderedByTimeAdded {
@@ -221,12 +229,9 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 			// integrity of the view.
 			// TODO: This is inefficient but we're doing it short-term to fix a bug. Also PoS is
 			// coming soon anyway.
-			utxoViewCopy, err := utxoView.CopyUtxoView()
-			if err != nil {
-				return nil, nil, nil, errors.Wrapf(err, "Error copying UtxoView: ")
-			}
-			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
-				uint32(blockRet.Header.Height), true, false)
+			utxoViewCopy := utxoView.CopyUtxoView()
+			_, _, _, _, err = utxoViewCopy._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
+				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// Skip failing txns. This should happen super rarely.
 				txnErrorString := fmt.Sprintf(
@@ -236,8 +241,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 				continue
 			}
 			// At this point, we know the transaction isn't going to break our view so attach it.
-			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash, int64(mempoolTx.TxSizeBytes),
-				uint32(blockRet.Header.Height), true, false)
+			_, _, _, _, err = utxoView._connectTransaction(mempoolTx.Tx, mempoolTx.Hash,
+				uint32(blockRet.Header.Height), int64(blockRet.Header.TstampNanoSecs), true, false)
 			if err != nil {
 				// We should never get an error here since we just attached a txn to an indentical
 				// view.
@@ -277,12 +282,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Compute the total fee the BlockProducer should get.
 	totalFeeNanos := uint64(0)
-	feesUtxoView, err := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
+	feesUtxoView := NewUtxoView(desoBlockProducer.chain.db, desoBlockProducer.params,
 		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf(
-			"DeSoBlockProducer._getBlockTemplate: Error generating UtxoView to compute txn fees: %v", err)
-	}
 
 	// Parse the public key that should be used for the block reward.
 	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutput.PublicKey, btcec.S256())
@@ -293,7 +294,9 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	// Skip the block reward, which is the first txn in the block.
 	for _, txnInBlock := range blockRet.Txns[1:] {
 		var feeNanos uint64
-		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(txnInBlock, txnInBlock.Hash(), 0, uint32(blockRet.Header.Height), false, false)
+		_, _, _, feeNanos, err = feesUtxoView._connectTransaction(
+			txnInBlock, txnInBlock.Hash(), uint32(blockRet.Header.Height), blockRet.Header.TstampNanoSecs, false, false,
+		)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf(
 				"DeSoBlockProducer._getBlockTemplate: Error attaching txn to UtxoView for computed block: %v", err)
@@ -301,12 +304,36 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 		includeFeesInBlockReward := true
 		if blockRet.Header.Height >= uint64(desoBlockProducer.params.ForkHeights.BlockRewardPatchBlockHeight) {
-			// Parse the transactor's public key to compare with the block reward output public key.
-			transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey, btcec.S256())
-			if err != nil {
-				return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+			if txnInBlock.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+				// Parse the transactor's public key to compare with the block reward output public key.
+				transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey, btcec.S256())
+				if err != nil {
+					return nil, nil, nil,
+						errors.Wrapf(err,
+							"DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+				}
+				includeFeesInBlockReward = !transactorPublicKey.IsEqual(blockRewardOutputPublicKey)
+			} else {
+				// In the case of atomic transaction wrappers, we must parse and process each inner transaction
+				// independently. We let includeFeesInBlockRewards remain true but decrement feeNanos whenever
+				// transactor public key equals block reward output public key. In effect, we ignore
+				// fees in atomic transactions where the transactor is equivalent to the block producer.
+				txnMeta, ok := txnInBlock.TxnMeta.(*AtomicTxnsWrapperMetadata)
+				if !ok {
+					return nil, nil, nil,
+						errors.Wrapf(err,
+							"DeSoBlockProducer._getBlockTemplate: "+
+								"problem casting txn metadata to AtomicTxnsWrapperMetadata: ")
+				}
+				feeNanos, err = filterOutBlockRewardRecipientFees(
+					txnMeta.Txns, blockRewardOutputPublicKey)
+				if err != nil {
+					return nil, nil, nil,
+						errors.Wrapf(err,
+							"DeSoBlockProducer._getBlockTemplate: "+
+								"problem filtering out block reward recipient fees: ")
+				}
 			}
-			includeFeesInBlockReward = !transactorPublicKey.IsEqual(blockRewardOutputPublicKey)
 		}
 
 		// If the transactor is not the block reward output (or we're before the BlockRewardPatchBlockHeight),
@@ -317,7 +344,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		if includeFeesInBlockReward {
 			// Check for overflow
 			if totalFeeNanos > math.MaxUint64-feeNanos {
-				return nil, nil, nil, fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Total fee overflowed uint64")
+				return nil, nil, nil,
+					fmt.Errorf("DeSoBlockProducer._getBlockTemplate: Total fee overflowed uint64")
 			}
 			// Add the fee to the block reward output as we go. Note this has some risk of
 			// increasing the size of the block by one byte, but it seems like this is an
@@ -328,7 +356,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 
 	// Now that the total fees have been computed, set the value of the block reward
 	// output.
-	blockRewardOutput.AmountNanos = CalcBlockRewardNanos(uint32(blockRet.Header.Height)) + totalFeeNanos
+	blockRewardOutput.AmountNanos = CalcBlockRewardNanos(uint32(blockRet.Header.Height), desoBlockProducer.params) +
+		totalFeeNanos
 
 	// Compute the merkle root for the block now that all of the transactions have
 	// been added.
@@ -422,8 +451,8 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 		minTstamp := uint32(math.MaxUint32)
 		var oldestBlockHash *BlockHash
 		for _, cachedBlock := range desoBlockProducer.recentBlockTemplatesProduced {
-			if uint32(cachedBlock.Header.TstampSecs) < minTstamp {
-				minTstamp = uint32(cachedBlock.Header.TstampSecs)
+			if uint32(cachedBlock.Header.GetTstampSecs()) < minTstamp {
+				minTstamp = uint32(cachedBlock.Header.GetTstampSecs())
 				oldestBlockHash, _ = cachedBlock.Header.Hash()
 			}
 		}
@@ -432,7 +461,11 @@ func (desoBlockProducer *DeSoBlockProducer) AddBlockTemplate(block *MsgDeSoBlock
 	}
 }
 
-func RecomputeBlockRewardWithBlockRewardOutputPublicKey(block *MsgDeSoBlock, blockRewardOutputPublicKeyBytes []byte) (*MsgDeSoBlock, error) {
+func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
+	block *MsgDeSoBlock,
+	blockRewardOutputPublicKeyBytes []byte,
+	params *DeSoParams,
+) (*MsgDeSoBlock, error) {
 	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutputPublicKeyBytes, btcec.S256())
 	if err != nil {
 		return nil, errors.Wrap(
@@ -443,20 +476,39 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(block *MsgDeSoBlock, blo
 	// and sum fees to calculate the block reward
 	totalFees := uint64(0)
 	for _, txn := range block.Txns[1:] {
-		transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
-		if err != nil {
-			glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", err)
-			continue
-		}
-		if !transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+		if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+			transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+			if err != nil {
+				glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", err)
+				continue
+			}
+			if transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+				continue
+			}
 			totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
+			if err != nil {
+				glog.Errorf("DeSoMiner._startThread: Error adding txn fee: %v", err)
+				continue
+			}
+		} else {
+			txnMeta, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+			if !ok {
+				glog.Errorf("DeSoMiner._startThread: Error casting txn metadata to AtomicTxnsWrapperMetadata")
+				continue
+			}
+			nonBlockRewardRecipientFees, err := filterOutBlockRewardRecipientFees(txnMeta.Txns, blockRewardOutputPublicKey)
+			if err != nil {
+				glog.Errorf("DeSoMiner._startThread: Error filtering out block reward recipient fees: %v", err)
+				continue
+			}
+			totalFees, err = SafeUint64().Add(totalFees, nonBlockRewardRecipientFees)
 			if err != nil {
 				glog.Errorf("DeSoMiner._startThread: Error adding txn fee: %v", err)
 				continue
 			}
 		}
 	}
-	block.Txns[0].TxOutputs[0].AmountNanos = CalcBlockRewardNanos(uint32(block.Header.Height)) + totalFees
+	block.Txns[0].TxOutputs[0].AmountNanos = CalcBlockRewardNanos(uint32(block.Header.Height), params) + totalFees
 	return block, nil
 }
 
@@ -488,7 +540,8 @@ func (blockProducer *DeSoBlockProducer) GetHeadersAndExtraDatas(
 
 	// Swap out the public key in the block
 	latestBLockCopy.Txns[0].TxOutputs[0].PublicKey = publicKeyBytes
-	latestBLockCopy, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(latestBLockCopy, publicKeyBytes)
+	latestBLockCopy, err = RecomputeBlockRewardWithBlockRewardOutputPublicKey(
+		latestBLockCopy, publicKeyBytes, blockProducer.params)
 	if err != nil {
 		return "", nil, nil, nil, errors.Wrap(
 			fmt.Errorf("GetBlockTemplate: Problem recomputing block reward: %v", err), "")
@@ -599,6 +652,15 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 		if atomic.LoadInt32(&desoBlockProducer.exit) > 0 {
 			desoBlockProducer.producerWaitGroup.Done()
 			glog.V(1).Infof("DeSoBlockProducer.Start() Are we returning in here?")
+			return
+		}
+
+		// Stop the block producer if we're past the pos cutover or if the tip block is the last pow block.
+		blockHeight := uint64(desoBlockProducer.chain.blockTip().Height)
+		if blockHeight >= desoBlockProducer.params.GetFinalPoWBlockHeight() {
+			desoBlockProducer.Stop()
+			glog.V(1).Infof("DeSoBlockProducer.Start() Stopping block producer because we're past the PoS cutover" +
+				" or the last PoW block.")
 			return
 		}
 

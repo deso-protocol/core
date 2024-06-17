@@ -8,8 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"github.com/golang/glog"
 	"io"
 	"math"
 	"math/big"
@@ -19,10 +17,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	decredEC "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/deso-protocol/core/bls"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/holiman/uint256"
@@ -40,6 +43,12 @@ var MaxBlockRewardDataSizeBytes = 250
 
 // MaxHeadersPerMsg is the maximum numbers allowed in a GetHeaders response.
 var MaxHeadersPerMsg = uint32(2000)
+
+// With PoS we can afford to download more headers in each batch.
+//
+// TODO: I set this number really high because it's easier to lower it than it is
+// to increase it (increasing requires everyone to upgrade).
+var MaxHeadersPerMsgPos = uint32(200000)
 
 // MaxBitcoinHeadersPerMsg is the maximum number of headers Bitcoin allows in
 // a getheaders response. It is used to determine whether a node has more headers
@@ -73,6 +82,7 @@ const (
 	MsgTypeGetHeaders MsgType = 6
 	// MsgTypeHeaderBundle contains headers from a peer.
 	MsgTypeHeaderBundle    MsgType = 7
+	MsgTypeBlockBundle     MsgType = 22
 	MsgTypePing            MsgType = 8
 	MsgTypePong            MsgType = 9
 	MsgTypeInv             MsgType = 10
@@ -93,7 +103,11 @@ const (
 	// MsgTypeTransactionBundleV2 contains transactions after the balance model block height from a peer.
 	MsgTypeTransactionBundleV2 MsgType = 19
 
-	// NEXT_TAG = 20
+	// Proof of stake vote and timeout messages
+	MsgTypeValidatorVote    MsgType = 20
+	MsgTypeValidatorTimeout MsgType = 21
+
+	// NEXT_TAG = 23
 
 	// Below are control messages used to signal to the Server from other parts of
 	// the code but not actually sent among peers.
@@ -101,11 +115,12 @@ const (
 	// TODO: Should probably split these out into a separate channel in the server to
 	// make things more parallelized.
 
-	MsgTypeQuit                 MsgType = ControlMessagesStart
-	MsgTypeNewPeer              MsgType = ControlMessagesStart + 1
-	MsgTypeDonePeer             MsgType = ControlMessagesStart + 2
-	MsgTypeBlockAccepted        MsgType = ControlMessagesStart + 3
-	MsgTypeBitcoinManagerUpdate MsgType = ControlMessagesStart + 4 // Deprecated
+	MsgTypeQuit                  MsgType = ControlMessagesStart
+	MsgTypeDisconnectedPeer      MsgType = ControlMessagesStart + 1
+	MsgTypeBlockAccepted         MsgType = ControlMessagesStart + 2
+	MsgTypeBitcoinManagerUpdate  MsgType = ControlMessagesStart + 3 // Deprecated
+	MsgTypePeerHandshakeComplete MsgType = ControlMessagesStart + 4
+	MsgTypeNewConnection         MsgType = ControlMessagesStart + 5
 
 	// NEXT_TAG = 7
 )
@@ -137,6 +152,8 @@ func (msgType MsgType) String() string {
 		return "GET_HEADERS"
 	case MsgTypeHeaderBundle:
 		return "HEADER_BUNDLE"
+	case MsgTypeBlockBundle:
+		return "BLOCK_BUNDLE"
 	case MsgTypePing:
 		return "PING"
 	case MsgTypePong:
@@ -151,6 +168,10 @@ func (msgType MsgType) String() string {
 		return "TRANSACTION_BUNDLE"
 	case MsgTypeTransactionBundleV2:
 		return "TRANSACTION_BUNDLE_V2"
+	case MsgTypeValidatorVote:
+		return "VALIDATOR_VOTE"
+	case MsgTypeValidatorTimeout:
+		return "VALIDATOR_TIMEOUT"
 	case MsgTypeMempool:
 		return "MEMPOOL"
 	case MsgTypeAddr:
@@ -159,14 +180,16 @@ func (msgType MsgType) String() string {
 		return "GET_ADDR"
 	case MsgTypeQuit:
 		return "QUIT"
-	case MsgTypeNewPeer:
-		return "NEW_PEER"
-	case MsgTypeDonePeer:
+	case MsgTypeDisconnectedPeer:
 		return "DONE_PEER"
 	case MsgTypeBlockAccepted:
 		return "BLOCK_ACCEPTED"
 	case MsgTypeBitcoinManagerUpdate:
 		return "BITCOIN_MANAGER_UPDATE"
+	case MsgTypePeerHandshakeComplete:
+		return "PEER_HANDSHAKE_COMPLETE"
+	case MsgTypeNewConnection:
+		return "NEW_CONNECTION"
 	case MsgTypeGetSnapshot:
 		return "GET_SNAPSHOT"
 	case MsgTypeSnapshotData:
@@ -240,8 +263,19 @@ const (
 	TxnTypeAccessGroup                  TxnType = 31
 	TxnTypeAccessGroupMembers           TxnType = 32
 	TxnTypeNewMessage                   TxnType = 33
+	TxnTypeRegisterAsValidator          TxnType = 34
+	TxnTypeUnregisterAsValidator        TxnType = 35
+	TxnTypeStake                        TxnType = 36
+	TxnTypeUnstake                      TxnType = 37
+	TxnTypeUnlockStake                  TxnType = 38
+	TxnTypeUnjailValidator              TxnType = 39
+	TxnTypeCoinLockup                   TxnType = 40
+	TxnTypeUpdateCoinLockupParams       TxnType = 41
+	TxnTypeCoinLockupTransfer           TxnType = 42
+	TxnTypeCoinUnlock                   TxnType = 43
+	TxnTypeAtomicTxnsWrapper            TxnType = 44
 
-	// NEXT_ID = 34
+	// NEXT_ID = 44
 )
 
 type TxnString string
@@ -281,6 +315,17 @@ const (
 	TxnStringAccessGroup                  TxnString = "ACCESS_GROUP"
 	TxnStringAccessGroupMembers           TxnString = "ACCESS_GROUP_MEMBERS"
 	TxnStringNewMessage                   TxnString = "NEW_MESSAGE"
+	TxnStringRegisterAsValidator          TxnString = "REGISTER_AS_VALIDATOR"
+	TxnStringUnregisterAsValidator        TxnString = "UNREGISTER_AS_VALIDATOR"
+	TxnStringStake                        TxnString = "STAKE"
+	TxnStringUnstake                      TxnString = "UNSTAKE"
+	TxnStringUnlockStake                  TxnString = "UNLOCK_STAKE"
+	TxnStringUnjailValidator              TxnString = "UNJAIL_VALIDATOR"
+	TxnStringCoinLockup                   TxnString = "COIN_LOCKUP"
+	TxnStringUpdateCoinLockupParams       TxnString = "UPDATE_COIN_LOCKUP_PARAMS"
+	TxnStringCoinLockupTransfer           TxnString = "COIN_LOCKUP_TRANSFER"
+	TxnStringCoinUnlock                   TxnString = "COIN_UNLOCK"
+	TxnStringAtomicTxnsWrapper            TxnString = "ATOMIC_TXNS_WRAPPER"
 )
 
 var (
@@ -292,7 +337,10 @@ var (
 		TxnTypeAcceptNFTTransfer, TxnTypeBurnNFT, TxnTypeAuthorizeDerivedKey, TxnTypeMessagingGroup,
 		TxnTypeDAOCoin, TxnTypeDAOCoinTransfer, TxnTypeDAOCoinLimitOrder, TxnTypeCreateUserAssociation,
 		TxnTypeDeleteUserAssociation, TxnTypeCreatePostAssociation, TxnTypeDeletePostAssociation,
-		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage,
+		TxnTypeAccessGroup, TxnTypeAccessGroupMembers, TxnTypeNewMessage, TxnTypeRegisterAsValidator,
+		TxnTypeUnregisterAsValidator, TxnTypeStake, TxnTypeUnstake, TxnTypeUnlockStake, TxnTypeUnjailValidator,
+		TxnTypeCoinLockup, TxnTypeUpdateCoinLockupParams, TxnTypeCoinLockupTransfer, TxnTypeCoinUnlock,
+		TxnTypeAtomicTxnsWrapper,
 	}
 	AllTxnString = []TxnString{
 		TxnStringUnset, TxnStringBlockReward, TxnStringBasicTransfer, TxnStringBitcoinExchange, TxnStringPrivateMessage,
@@ -302,7 +350,10 @@ var (
 		TxnStringAcceptNFTTransfer, TxnStringBurnNFT, TxnStringAuthorizeDerivedKey, TxnStringMessagingGroup,
 		TxnStringDAOCoin, TxnStringDAOCoinTransfer, TxnStringDAOCoinLimitOrder, TxnStringCreateUserAssociation,
 		TxnStringDeleteUserAssociation, TxnStringCreatePostAssociation, TxnStringDeletePostAssociation,
-		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage,
+		TxnStringAccessGroup, TxnStringAccessGroupMembers, TxnStringNewMessage, TxnStringRegisterAsValidator,
+		TxnStringUnregisterAsValidator, TxnStringStake, TxnStringUnstake, TxnStringUnlockStake, TxnStringUnjailValidator,
+		TxnStringCoinLockup, TxnStringUpdateCoinLockupParams, TxnStringCoinLockupTransfer, TxnStringCoinUnlock,
+		TxnStringAtomicTxnsWrapper,
 	}
 )
 
@@ -382,6 +433,28 @@ func (txnType TxnType) GetTxnString() TxnString {
 		return TxnStringAccessGroupMembers
 	case TxnTypeNewMessage:
 		return TxnStringNewMessage
+	case TxnTypeRegisterAsValidator:
+		return TxnStringRegisterAsValidator
+	case TxnTypeUnregisterAsValidator:
+		return TxnStringUnregisterAsValidator
+	case TxnTypeStake:
+		return TxnStringStake
+	case TxnTypeUnstake:
+		return TxnStringUnstake
+	case TxnTypeUnlockStake:
+		return TxnStringUnlockStake
+	case TxnTypeUnjailValidator:
+		return TxnStringUnjailValidator
+	case TxnTypeCoinLockup:
+		return TxnStringCoinLockup
+	case TxnTypeUpdateCoinLockupParams:
+		return TxnStringUpdateCoinLockupParams
+	case TxnTypeCoinLockupTransfer:
+		return TxnStringCoinLockupTransfer
+	case TxnTypeCoinUnlock:
+		return TxnStringCoinUnlock
+	case TxnTypeAtomicTxnsWrapper:
+		return TxnStringAtomicTxnsWrapper
 	default:
 		return TxnStringUndefined
 	}
@@ -455,6 +528,28 @@ func GetTxnTypeFromString(txnString TxnString) TxnType {
 		return TxnTypeAccessGroupMembers
 	case TxnStringNewMessage:
 		return TxnTypeNewMessage
+	case TxnStringRegisterAsValidator:
+		return TxnTypeRegisterAsValidator
+	case TxnStringUnregisterAsValidator:
+		return TxnTypeUnregisterAsValidator
+	case TxnStringStake:
+		return TxnTypeStake
+	case TxnStringUnstake:
+		return TxnTypeUnstake
+	case TxnStringUnlockStake:
+		return TxnTypeUnlockStake
+	case TxnStringUnjailValidator:
+		return TxnTypeUnjailValidator
+	case TxnStringCoinLockup:
+		return TxnTypeCoinLockup
+	case TxnStringUpdateCoinLockupParams:
+		return TxnTypeUpdateCoinLockupParams
+	case TxnStringCoinLockupTransfer:
+		return TxnTypeCoinLockupTransfer
+	case TxnStringCoinUnlock:
+		return TxnTypeCoinUnlock
+	case TxnStringAtomicTxnsWrapper:
+		return TxnTypeAtomicTxnsWrapper
 	default:
 		// TxnTypeUnset means we couldn't find a matching txn type
 		return TxnTypeUnset
@@ -536,6 +631,28 @@ func NewTxnMetadata(txType TxnType) (DeSoTxnMetadata, error) {
 		return (&AccessGroupMembersMetadata{}).New(), nil
 	case TxnTypeNewMessage:
 		return (&NewMessageMetadata{}).New(), nil
+	case TxnTypeRegisterAsValidator:
+		return (&RegisterAsValidatorMetadata{}).New(), nil
+	case TxnTypeUnregisterAsValidator:
+		return (&UnregisterAsValidatorMetadata{}).New(), nil
+	case TxnTypeStake:
+		return (&StakeMetadata{}).New(), nil
+	case TxnTypeUnstake:
+		return (&UnstakeMetadata{}).New(), nil
+	case TxnTypeUnlockStake:
+		return (&UnlockStakeMetadata{}).New(), nil
+	case TxnTypeUnjailValidator:
+		return (&UnjailValidatorMetadata{}).New(), nil
+	case TxnTypeCoinLockup:
+		return (&CoinLockupMetadata{}).New(), nil
+	case TxnTypeUpdateCoinLockupParams:
+		return (&UpdateCoinLockupParamsMetadata{}).New(), nil
+	case TxnTypeCoinLockupTransfer:
+		return (&CoinLockupTransferMetadata{}).New(), nil
+	case TxnTypeCoinUnlock:
+		return (&CoinUnlockMetadata{}).New(), nil
+	case TxnTypeAtomicTxnsWrapper:
+		return (&AtomicTxnsWrapperMetadata{}).New(), nil
 	default:
 		return nil, fmt.Errorf("NewTxnMetadata: Unrecognized TxnType: %v; make sure you add the new type of transaction to NewTxnMetadata", txType)
 	}
@@ -695,12 +812,18 @@ func NewMessage(msgType MsgType) DeSoMessage {
 		return &MsgDeSoTransactionBundle{}
 	case MsgTypeTransactionBundleV2:
 		return &MsgDeSoTransactionBundleV2{}
+	case MsgTypeValidatorVote:
+		return &MsgDeSoValidatorVote{}
+	case MsgTypeValidatorTimeout:
+		return &MsgDeSoValidatorTimeout{}
 	case MsgTypeMempool:
 		return &MsgDeSoMempool{}
 	case MsgTypeGetHeaders:
 		return &MsgDeSoGetHeaders{}
 	case MsgTypeHeaderBundle:
 		return &MsgDeSoHeaderBundle{}
+	case MsgTypeBlockBundle:
+		return &MsgDeSoBlockBundle{}
 	case MsgTypeAddr:
 		return &MsgDeSoAddr{}
 	case MsgTypeGetAddr:
@@ -735,34 +858,47 @@ func (msg *MsgDeSoQuit) FromBytes(data []byte) error {
 	return fmt.Errorf("MsgDeSoQuit.FromBytes not implemented")
 }
 
-type MsgDeSoNewPeer struct {
+type MsgDeSoDisconnectedPeer struct {
 }
 
-func (msg *MsgDeSoNewPeer) GetMsgType() MsgType {
-	return MsgTypeNewPeer
+func (msg *MsgDeSoDisconnectedPeer) GetMsgType() MsgType {
+	return MsgTypeDisconnectedPeer
 }
 
-func (msg *MsgDeSoNewPeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoNewPeer.ToBytes: Not implemented")
+func (msg *MsgDeSoDisconnectedPeer) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoDisconnectedPeer.ToBytes: Not implemented")
 }
 
-func (msg *MsgDeSoNewPeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoNewPeer.FromBytes not implemented")
+func (msg *MsgDeSoDisconnectedPeer) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoDisconnectedPeer.FromBytes not implemented")
 }
 
-type MsgDeSoDonePeer struct {
+type ConnectionType uint8
+
+const (
+	ConnectionTypeOutbound ConnectionType = iota
+	ConnectionTypeInbound
+)
+
+type Connection interface {
+	GetConnectionType() ConnectionType
+	Close()
 }
 
-func (msg *MsgDeSoDonePeer) GetMsgType() MsgType {
-	return MsgTypeDonePeer
+type MsgDeSoNewConnection struct {
+	Connection Connection
 }
 
-func (msg *MsgDeSoDonePeer) ToBytes(preSignature bool) ([]byte, error) {
-	return nil, fmt.Errorf("MsgDeSoDonePeer.ToBytes: Not implemented")
+func (msg *MsgDeSoNewConnection) GetMsgType() MsgType {
+	return MsgTypeNewConnection
 }
 
-func (msg *MsgDeSoDonePeer) FromBytes(data []byte) error {
-	return fmt.Errorf("MsgDeSoDonePeer.FromBytes not implemented")
+func (msg *MsgDeSoNewConnection) ToBytes(preSignature bool) ([]byte, error) {
+	return nil, fmt.Errorf("MsgDeSoNewConnection.ToBytes: Not implemented")
+}
+
+func (msg *MsgDeSoNewConnection) FromBytes(data []byte) error {
+	return fmt.Errorf("MsgDeSoNewConnection.FromBytes not implemented")
 }
 
 // ==================================================================
@@ -913,6 +1049,107 @@ func (msg *MsgDeSoHeaderBundle) String() string {
 }
 
 // ==================================================================
+// BLOCK_BUNDLE message
+// ==================================================================
+
+type MsgDeSoBlockBundle struct {
+	Version   uint8
+	Blocks    []*MsgDeSoBlock
+	TipHash   *BlockHash
+	TipHeight uint64
+}
+
+func (msg *MsgDeSoBlockBundle) GetMsgType() MsgType {
+	return MsgTypeBlockBundle
+}
+
+func (msg *MsgDeSoBlockBundle) ToBytes(preSignature bool) ([]byte, error) {
+	data := []byte{}
+
+	// Encode the version of the bundle.
+	data = append(data, msg.Version)
+
+	// Encode the number of blocks in the bundle.
+	data = append(data, UintToBuf(uint64(len(msg.Blocks)))...)
+
+	// Encode all the blocks.
+	for _, block := range msg.Blocks {
+		blockBytes, err := block.ToBytes(preSignature)
+		if err != nil {
+			return nil, errors.Wrapf(err, "MsgDeSoBlockBundle.ToBytes: Problem encoding block")
+		}
+		data = append(data, EncodeByteArray(blockBytes)...)
+	}
+
+	// Encode the tip hash.
+	data = append(data, msg.TipHash[:]...)
+
+	// Encode the tip height.
+	data = append(data, UintToBuf(uint64(msg.TipHeight))...)
+
+	return data, nil
+}
+
+func (msg *MsgDeSoBlockBundle) FromBytes(data []byte) error {
+	var err error
+
+	rr := bytes.NewReader(data)
+	retBundle := NewMessage(MsgTypeBlockBundle).(*MsgDeSoBlockBundle)
+
+	// Read the version of the bundle.
+	retBundle.Version, err = rr.ReadByte()
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes: Problem decoding version")
+	}
+
+	// For now, only version is supported for the block bundle message type.
+	if retBundle.Version != 0 {
+		return fmt.Errorf("MsgDeSoBlockBundle.FromBytes: Unsupported version %d", retBundle.Version)
+	}
+
+	// Read in the number of block in the bundle.
+	numBlocks, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes: Problem decoding number of block")
+	}
+
+	// Read in all of the blocks.
+	for ii := uint64(0); ii < numBlocks; ii++ {
+		blockBytes, err := DecodeByteArray(rr)
+		if err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes: Problem decoding block: ")
+		}
+		retBlock := &MsgDeSoBlock{}
+		if err := retBlock.FromBytes(blockBytes); err != nil {
+			return errors.Wrapf(err, "MsgDeSoBlock.FromBytes: ")
+		}
+
+		retBundle.Blocks = append(retBundle.Blocks, retBlock)
+	}
+
+	// Read in the tip hash.
+	retBundle.TipHash = &BlockHash{}
+	_, err = io.ReadFull(rr, retBundle.TipHash[:])
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoBlockBundle.FromBytes:: Error reading TipHash: ")
+	}
+
+	// Read in the tip height.
+	tipHeight, err := ReadUvarint(rr)
+	if err != nil || tipHeight > math.MaxUint32 {
+		return fmt.Errorf("MsgDeSoBlockBundle.FromBytes: %v", err)
+	}
+	retBundle.TipHeight = tipHeight
+
+	*msg = *retBundle
+	return nil
+}
+
+func (msg *MsgDeSoBlockBundle) String() string {
+	return fmt.Sprintf("Num Blocks: %v, Tip Height: %v, Tip Hash: %v, Blocks: %v", len(msg.Blocks), msg.TipHeight, msg.TipHash, msg.Blocks)
+}
+
+// ==================================================================
 // GetBlocks Messages
 // ==================================================================
 
@@ -927,9 +1164,11 @@ func (msg *MsgDeSoGetBlocks) GetMsgType() MsgType {
 func (msg *MsgDeSoGetBlocks) ToBytes(preSignature bool) ([]byte, error) {
 	data := []byte{}
 
-	if len(msg.HashList) > MaxBlocksInFlight {
+	// We can safely increase this without breaking backwards-compatibility because old
+	// nodes will never send us more hashes than this.
+	if len(msg.HashList) > MaxBlocksInFlightPoS {
 		return nil, fmt.Errorf("MsgDeSoGetBlocks.ToBytes: Blocks requested %d "+
-			"exceeds MaxBlocksInFlight %d", len(msg.HashList), MaxBlocksInFlight)
+			"exceeds MaxBlocksInFlightPoS %d", len(msg.HashList), MaxBlocksInFlightPoS)
 	}
 
 	// Encode the number of hashes.
@@ -951,9 +1190,11 @@ func (msg *MsgDeSoGetBlocks) FromBytes(data []byte) error {
 		return errors.Wrapf(err, "MsgDeSoGetBlocks.FromBytes: Problem "+
 			"reading number of block hashes requested")
 	}
-	if numHashes > MaxBlocksInFlight {
+	// We can safely increase this without breaking backwards-compatibility because old
+	// nodes will never send us more hashes than this.
+	if numHashes > MaxBlocksInFlightPoS {
 		return fmt.Errorf("MsgDeSoGetBlocks.FromBytes: HashList length (%d) "+
-			"exceeds maximum allowed (%d)", numHashes, MaxBlocksInFlight)
+			"exceeds maximum allowed (%d)", numHashes, MaxBlocksInFlightPoS)
 	}
 
 	// Read in all the hashes.
@@ -1219,6 +1460,13 @@ const (
 	// MaxBlocksInFlight is the maximum number of blocks that can be requested
 	// from a peer.
 	MaxBlocksInFlight = 250
+	// After PoS, we have blocks every second rather than every five minutes, and blocks
+	// are smaller. As such, we can safely increase this limit.
+	//
+	// TODO: This is a pretty large value. Blocks were processing at ~80 blocks per second
+	// when I last ran it. If we can't get the blocks per second to a higher value, then
+	// we should probably decrease this value.
+	MaxBlocksInFlightPoS = 25000
 )
 
 // InvType represents the allowed types of inventory vectors. See InvVect.
@@ -1409,15 +1657,20 @@ func (msg *MsgDeSoPong) FromBytes(data []byte) error {
 type ServiceFlag uint64
 
 const (
-	// SFFullNodeDeprecated is deprecated, and set on all nodes by default
-	// now. We basically split it into SFHyperSync and SFArchivalMode.
-	SFFullNodeDeprecated ServiceFlag = 1 << iota
+	// SFFullNodeDeprecated is deprecated, and set on all nodes by default now.
+	SFFullNodeDeprecated ServiceFlag = 1 << 0
 	// SFHyperSync is a flag used to indicate that the peer supports hyper sync.
-	SFHyperSync
+	SFHyperSync ServiceFlag = 1 << 1
 	// SFArchivalNode is a flag complementary to SFHyperSync. If node is a hypersync node then
 	// it might not be able to support block sync anymore, unless it has archival mode turned on.
-	SFArchivalNode
+	SFArchivalNode ServiceFlag = 1 << 2
+	// SFPosValidator is a flag used to indicate that the peer is running a PoS validator.
+	SFPosValidator ServiceFlag = 1 << 3
 )
+
+func (sf ServiceFlag) HasService(serviceFlag ServiceFlag) bool {
+	return sf&serviceFlag == serviceFlag
+}
 
 type MsgDeSoVersion struct {
 	// What is the current version we're on?
@@ -1442,8 +1695,7 @@ type MsgDeSoVersion struct {
 	// The height of the last block on the main chain for
 	// this node.
 	//
-	// TODO: We need to update this to uint64
-	StartBlockHeight uint32
+	LatestBlockHeight uint64
 
 	// MinFeeRateNanosPerKB is the minimum feerate that a peer will
 	// accept from other peers when validating transactions.
@@ -1475,11 +1727,11 @@ func (msg *MsgDeSoVersion) ToBytes(preSignature bool) ([]byte, error) {
 	retBytes = append(retBytes, UintToBuf(uint64(len(msg.UserAgent)))...)
 	retBytes = append(retBytes, msg.UserAgent...)
 
-	// StartBlockHeight
-	retBytes = append(retBytes, UintToBuf(uint64(msg.StartBlockHeight))...)
+	// LatestBlockHeight
+	retBytes = append(retBytes, UintToBuf(msg.LatestBlockHeight)...)
 
 	// MinFeeRateNanosPerKB
-	retBytes = append(retBytes, UintToBuf(uint64(msg.MinFeeRateNanosPerKB))...)
+	retBytes = append(retBytes, UintToBuf(msg.MinFeeRateNanosPerKB)...)
 
 	// JSONAPIPort - deprecated
 	retBytes = append(retBytes, UintToBuf(uint64(0))...)
@@ -1553,13 +1805,13 @@ func (msg *MsgDeSoVersion) FromBytes(data []byte) error {
 		retVer.UserAgent = string(userAgent)
 	}
 
-	// StartBlockHeight
+	// LatestBlockHeight
 	{
-		lastBlockHeight, err := ReadUvarint(rr)
-		if err != nil || lastBlockHeight > math.MaxUint32 {
+		latestBlockHeight, err := ReadUvarint(rr)
+		if err != nil || latestBlockHeight > math.MaxUint32 {
 			return errors.Wrapf(err, "MsgDeSoVersion.FromBytes: Problem converting msg.LatestBlockHeight")
 		}
-		retVer.StartBlockHeight = uint32(lastBlockHeight)
+		retVer.LatestBlockHeight = latestBlockHeight
 	}
 
 	// MinFeeRateNanosPerKB
@@ -1762,34 +2014,144 @@ func (msg *MsgDeSoGetAddr) GetMsgType() MsgType {
 // VERACK Message
 // ==================================================================
 
-// VERACK messages have no payload.
+type VerackVersion uint64
+
+func NewVerackVersion(version uint64) VerackVersion {
+	return VerackVersion(version)
+}
+
+const (
+	VerackVersion0 VerackVersion = 0
+	VerackVersion1 VerackVersion = 1
+)
+
+func (vv VerackVersion) ToUint64() uint64 {
+	return uint64(vv)
+}
+
 type MsgDeSoVerack struct {
-	// A verack message must contain the nonce the peer received in the
-	// initial version message. This ensures the peer that is communicating
-	// with us actually controls the address she says she does similar to
-	// "SYN Cookie" DDOS protection.
-	Nonce uint64
+	// The VerackVersion0 message contains only the NonceReceived field, which is the nonce the sender received in the
+	// initial version message from the peer. This ensures the sender controls the network address, similarly to the
+	// "SYN Cookie" DDOS protection. The Version field in the VerackVersion0 message is implied, based on the msg length.
+	//
+	// The VerackVersion1 message contains the tuple of <NonceReceived, NonceSent, TstampMicro> which correspond to the
+	// received and sent nonces in the version message from the sender's perspective, as well as a recent timestamp.
+	// The VerackVersion1 message is used in context of Proof of Stake, where validators register their BLS public keys
+	// as part of their validator entry. The sender of this message must be a registered validator, and he must attach
+	// their public key to the message, along with a BLS signature of the <NonceReceived, NonceSent, TstampMicro> tuple.
+	Version VerackVersion
+
+	NonceReceived uint64
+	NonceSent     uint64
+	TstampMicro   uint64
+
+	PublicKey *bls.PublicKey
+	Signature *bls.Signature
 }
 
 func (msg *MsgDeSoVerack) ToBytes(preSignature bool) ([]byte, error) {
+	switch msg.Version {
+	case VerackVersion0:
+		return msg.EncodeVerackV0()
+	case VerackVersion1:
+		return msg.EncodeVerackV1()
+	default:
+		return nil, fmt.Errorf("MsgDeSoVerack.ToBytes: Unrecognized version: %v", msg.Version)
+	}
+}
+
+func (msg *MsgDeSoVerack) EncodeVerackV0() ([]byte, error) {
 	retBytes := []byte{}
 
 	// Nonce
-	retBytes = append(retBytes, UintToBuf(msg.Nonce)...)
+	retBytes = append(retBytes, UintToBuf(msg.NonceReceived)...)
+	return retBytes, nil
+}
+
+func (msg *MsgDeSoVerack) EncodeVerackV1() ([]byte, error) {
+	retBytes := []byte{}
+
+	// Version
+	retBytes = append(retBytes, UintToBuf(msg.Version.ToUint64())...)
+	// Nonce Received
+	retBytes = append(retBytes, UintToBuf(msg.NonceReceived)...)
+	// Nonce Sent
+	retBytes = append(retBytes, UintToBuf(msg.NonceSent)...)
+	// Tstamp Micro
+	retBytes = append(retBytes, UintToBuf(msg.TstampMicro)...)
+	// PublicKey
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.PublicKey)...)
+	// Signature
+	retBytes = append(retBytes, EncodeBLSSignature(msg.Signature)...)
+
 	return retBytes, nil
 }
 
 func (msg *MsgDeSoVerack) FromBytes(data []byte) error {
 	rr := bytes.NewReader(data)
-	retMsg := NewMessage(MsgTypeVerack).(*MsgDeSoVerack)
-	{
-		nonce, err := ReadUvarint(rr)
-		if err != nil {
-			return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
-		}
-		retMsg.Nonce = nonce
+	// The V0 verack message is determined from the message length. The V0 message will only contain the NonceReceived field.
+	if len(data) <= MaxVarintLen64 {
+		return msg.FromBytesV0(data)
 	}
-	*msg = *retMsg
+
+	version, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
+	}
+	msg.Version = NewVerackVersion(version)
+	switch msg.Version {
+	case VerackVersion0:
+		return fmt.Errorf("MsgDeSoVerack.FromBytes: Outdated Version=0 used for new encoding")
+	case VerackVersion1:
+		return msg.FromBytesV1(data)
+	default:
+		return fmt.Errorf("MsgDeSoVerack.FromBytes: Unrecognized version: %v", msg.Version)
+	}
+}
+
+func (msg *MsgDeSoVerack) FromBytesV0(data []byte) error {
+	var err error
+	rr := bytes.NewReader(data)
+	msg.NonceReceived, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce")
+	}
+	return nil
+}
+
+func (msg *MsgDeSoVerack) FromBytesV1(data []byte) error {
+	var err error
+	rr := bytes.NewReader(data)
+	version, err := ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Version")
+	}
+	msg.Version = NewVerackVersion(version)
+
+	msg.NonceReceived, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce Received")
+	}
+
+	msg.NonceSent, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Nonce Sent")
+	}
+
+	msg.TstampMicro, err = ReadUvarint(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Tstamp Micro")
+	}
+
+	msg.PublicKey, err = DecodeBLSPublicKey(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading PublicKey")
+	}
+
+	msg.Signature, err = DecodeBLSSignature(rr)
+	if err != nil {
+		return errors.Wrapf(err, "MsgDeSoVerack.FromBytes: Problem reading Signature")
+	}
 	return nil
 }
 
@@ -1823,13 +2185,20 @@ type MsgDeSoHeader struct {
 	// The merkle root of all the transactions contained within the block.
 	TransactionMerkleRoot *BlockHash
 
-	// The unix timestamp (in seconds) specifying when this block was
-	// mined.
-	TstampSecs uint64
+	// The original TstampSecs struct field is deprecated and replaced by the higher resolution
+	// TstampNanoSecs field. The deprecation is backwards compatible for all existing header
+	// versions and byte encodings. To read or write timestamps with the old 1-second resolution,
+	// use the SetTstampSecs() and GetTstampSecs() public methods.
+
+	// The unix timestamp (in nanoseconds) specifying when this block was produced.
+	TstampNanoSecs int64
 
 	// The height of the block this header corresponds to.
 	Height uint64
 
+	// Nonce is only used for Proof of Work blocks, with MsgDeSoHeader versions 0 and 1.
+	// For all later versions, this field will default to a value of zero.
+	//
 	// The nonce that is used by miners in order to produce valid blocks.
 	//
 	// Note: Before the upgrade from HeaderVersion0 to HeaderVersion1, miners would make
@@ -1837,15 +2206,71 @@ type MsgDeSoHeader struct {
 	// no longer needed since HeaderVersion1 upgraded the nonce to 64 bits from 32 bits.
 	Nonce uint64
 
-	// An extra nonce that can be used to provice *even more* entropy for miners, in the
+	// ExtraNonce is only used for Proof of Work blocks, with MsgDeSoHeader versions 0 and 1.
+	// For all later versions, this field will default to zero.
+	//
+	// An extra nonce that can be used to provide *even more* entropy for miners, in the
 	// event that ASICs become powerful enough to have birthday problems in the future.
 	ExtraNonce uint64
+
+	// ProposerVotingPublicKey is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The BLS public key of the validator who proposed this block.
+	ProposerVotingPublicKey *bls.PublicKey
+
+	// ProposerRandomSeedSignature is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The current block's randomness seed provided by the block's proposer.
+	ProposerRandomSeedSignature *bls.Signature
+
+	// ProposedInView is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
+	//
+	// The view in which this block was proposed.
+	ProposedInView uint64
+
+	// ValidatorsVoteQC is only used for Proof of Stake blocks, starting with MsgDeSoHeader
+	// version 2. For all earlier versions, this field will default to nil.
+	//
+	// This is a QC containing votes from 2/3 of validators weighted by stake.
+	ValidatorsVoteQC *QuorumCertificate
+
+	// ValidatorsTimeoutAggregateQC is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// In the event of a timeout, this field will contain the aggregate QC constructed from
+	// timeout messages from 2/3 of validators weighted by stake, and proves that they have
+	// timed out. This value is set to nil in normal cases where a regular block vote has
+	// taken place.
+	ValidatorsTimeoutAggregateQC *TimeoutAggregateQuorumCertificate
+
+	// ProposerVotePartialSignature is only used for Proof of Stake blocks, starting with
+	// MsgDeSoHeader version 2. For all earlier versions, this field will default to nil.
+	//
+	// The block proposer's partial BLS signature of the (ProposedInView, BlockHash) pair
+	// for the block. This signature proves that a particular validator proposed the block,
+	// and also acts as the proposer's vote for the block.
+	ProposerVotePartialSignature *bls.Signature
+}
+
+func (msg *MsgDeSoHeader) GetHeight() uint64 {
+	return msg.Height
 }
 
 func HeaderSizeBytes() int {
 	header := NewMessage(MsgTypeHeader)
 	headerBytes, _ := header.ToBytes(false)
 	return len(headerBytes)
+}
+
+func (msg *MsgDeSoHeader) SetTstampSecs(tstampSecs int64) {
+	msg.TstampNanoSecs = SecondsToNanoSeconds(tstampSecs)
+}
+
+func (msg *MsgDeSoHeader) GetTstampSecs() int64 {
+	return NanoSecondsToSeconds(msg.TstampNanoSecs)
 }
 
 func (msg *MsgDeSoHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, error) {
@@ -1875,7 +2300,7 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion0(preSignature bool) ([]byte, error
 	// TstampSecs
 	{
 		scratchBytes := [4]byte{}
-		binary.LittleEndian.PutUint32(scratchBytes[:], uint32(msg.TstampSecs))
+		binary.LittleEndian.PutUint32(scratchBytes[:], uint32(msg.GetTstampSecs()))
 		retBytes = append(retBytes, scratchBytes[:]...)
 	}
 
@@ -1924,13 +2349,13 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	// TstampSecs
 	{
 		scratchBytes := [8]byte{}
-		binary.BigEndian.PutUint64(scratchBytes[:], msg.TstampSecs)
+		binary.BigEndian.PutUint64(scratchBytes[:], uint64(msg.GetTstampSecs()))
 		retBytes = append(retBytes, scratchBytes[:]...)
 
 		// TODO: Don't allow this field to exceed 32-bits for now. This will
 		// adjust once other parts of the code are fixed to handle the wider
 		// type.
-		if msg.TstampSecs > math.MaxUint32 {
+		if msg.GetTstampSecs() > math.MaxUint32 {
 			return nil, fmt.Errorf("EncodeHeaderVersion1: TstampSecs not yet allowed " +
 				"to exceed max uint32. This will be fixed in the future")
 		}
@@ -1968,13 +2393,105 @@ func (msg *MsgDeSoHeader) EncodeHeaderVersion1(preSignature bool) ([]byte, error
 	return retBytes, nil
 }
 
-func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
+func (msg *MsgDeSoHeader) EncodeHeaderVersion2(preSignature bool) ([]byte, error) {
+	retBytes := []byte{}
 
+	// Version
+	{
+		scratchBytes := [4]byte{}
+		binary.BigEndian.PutUint32(scratchBytes[:], msg.Version)
+		retBytes = append(retBytes, scratchBytes[:]...)
+	}
+
+	// PrevBlockHash
+	prevBlockHash := msg.PrevBlockHash
+	if prevBlockHash == nil {
+		prevBlockHash = &BlockHash{}
+	}
+	retBytes = append(retBytes, prevBlockHash[:]...)
+
+	// TransactionMerkleRoot
+	transactionMerkleRoot := msg.TransactionMerkleRoot
+	if transactionMerkleRoot == nil {
+		transactionMerkleRoot = &BlockHash{}
+	}
+	retBytes = append(retBytes, transactionMerkleRoot[:]...)
+
+	// TstampNanosSecs: this field can be encoded to take up to the full 64 bits now
+	// that MsgDeSoHeader version 2 does not need to be backwards compatible.
+	retBytes = append(retBytes, IntToBuf(msg.TstampNanoSecs)...)
+
+	// Height: similar to the field above, this field can be encoded to take
+	// up to the full 64 bits now that MsgDeSoHeader version 2 does not need to
+	// be backwards compatible.
+	retBytes = append(retBytes, UintToBuf(msg.Height)...)
+
+	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
+	// during both encoding and decoding.
+
+	// ProposerVotingPublicKey
+	if msg.ProposerVotingPublicKey == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotingPublicKey must be non-nil")
+	}
+	retBytes = append(retBytes, EncodeBLSPublicKey(msg.ProposerVotingPublicKey)...)
+
+	// ProposerRandomSeedSignature
+	if msg.ProposerRandomSeedSignature == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerRandomSeedSignature must be non-nil")
+	}
+	retBytes = append(retBytes, EncodeOptionalBLSSignature(msg.ProposerRandomSeedSignature)...)
+
+	// ProposedInView
+	retBytes = append(retBytes, UintToBuf(msg.ProposedInView)...)
+
+	// Only one of ValidatorsVoteQC or ValidatorsTimeoutAggregateQC must be defined.
+	if (msg.ValidatorsVoteQC == nil) == (msg.ValidatorsTimeoutAggregateQC == nil) {
+		return nil, fmt.Errorf(
+			"EncodeHeaderVersion2: Exactly one of ValidatorsVoteQC or ValidatorsTimeoutAggregateQC must be non-nil",
+		)
+	}
+
+	// ValidatorsVoteQC
+	encodedValidatorsVoteQC, err := EncodeQuorumCertificate(msg.ValidatorsVoteQC)
+	if err != nil {
+		return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsVoteQC")
+	}
+	retBytes = append(retBytes, encodedValidatorsVoteQC...)
+
+	// ValidatorsTimeoutAggregateQC
+	encodedValidatorsTimeoutAggregateQC, err := EncodeTimeoutAggregateQuorumCertificate(msg.ValidatorsTimeoutAggregateQC)
+	if err != nil {
+		return nil, errors.Wrapf(err, "EncodeHeaderVersion2: error encoding ValidatorsTimeoutAggregateQC")
+	}
+	retBytes = append(retBytes, encodedValidatorsTimeoutAggregateQC...)
+
+	// If preSignature=false, then the ProposerVotePartialSignature must be populated.
+	if !preSignature && msg.ProposerVotePartialSignature == nil {
+		return nil, fmt.Errorf("EncodeHeaderVersion2: ProposerVotePartialSignature must be non-nil when preSignature=false")
+	}
+
+	// ProposerVotePartialSignature: we encode the signature if it's present and the preSignature
+	// flag is set to false. Otherwise, we encode an empty byte array as a placeholder. The placeholder
+	// ensures that the DecodeHeaderVersion2 function can properly recognize encodings where the signature
+	// isn't populated. It ensures that every possible output from EncodeHeaderVersion2 can be decoded by
+	// DecodeHeaderVersion2.
+	if preSignature {
+		retBytes = append(retBytes, EncodeOptionalBLSSignature(nil)...)
+	} else {
+		retBytes = append(retBytes, EncodeOptionalBLSSignature(msg.ProposerVotePartialSignature)...)
+	}
+
+	return retBytes, nil
+}
+
+func (msg *MsgDeSoHeader) ToBytes(preSignature bool) ([]byte, error) {
 	// Depending on the version, we decode the header differently.
 	if msg.Version == HeaderVersion0 {
 		return msg.EncodeHeaderVersion0(preSignature)
 	} else if msg.Version == HeaderVersion1 {
 		return msg.EncodeHeaderVersion1(preSignature)
+	} else if msg.Version == HeaderVersion2 {
+		return msg.EncodeHeaderVersion2(preSignature)
 	} else {
 		// If we have an unrecognized version then we default to serializing with
 		// version 0. This is necessary because there are places where we use a
@@ -2005,7 +2522,7 @@ func DecodeHeaderVersion0(rr io.Reader) (*MsgDeSoHeader, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
-		retHeader.TstampSecs = uint64(binary.LittleEndian.Uint32(scratchBytes[:]))
+		retHeader.SetTstampSecs(int64(binary.LittleEndian.Uint32(scratchBytes[:])))
 	}
 
 	// Height
@@ -2053,7 +2570,7 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampSecs")
 		}
-		retHeader.TstampSecs = binary.BigEndian.Uint64(scratchBytes[:])
+		retHeader.SetTstampSecs(int64(binary.BigEndian.Uint64(scratchBytes[:])))
 	}
 
 	// Height
@@ -2089,6 +2606,78 @@ func DecodeHeaderVersion1(rr io.Reader) (*MsgDeSoHeader, error) {
 	return retHeader, nil
 }
 
+func DecodeHeaderVersion2(rr io.Reader) (*MsgDeSoHeader, error) {
+	retHeader := NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
+
+	// PrevBlockHash
+	_, err := io.ReadFull(rr, retHeader.PrevBlockHash[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding PrevBlockHash")
+	}
+
+	// TransactionMerkleRoot
+	_, err = io.ReadFull(rr, retHeader.TransactionMerkleRoot[:])
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TransactionMerkleRoot")
+	}
+
+	// TstampNanoSecs
+	retHeader.TstampNanoSecs, err = ReadVarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding TstampNanoSecs")
+	}
+
+	// Height
+	retHeader.Height, err = ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding Height")
+	}
+
+	// The Nonce and ExtraNonce fields are unused in version 2. We skip them
+	// during both encoding and decoding.
+	retHeader.Nonce = 0
+	retHeader.ExtraNonce = 0
+
+	// ProposerVotingPublicKey
+	retHeader.ProposerVotingPublicKey, err = DecodeBLSPublicKey(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotingPublicKey")
+	}
+
+	// ProposerRandomSeedSignature
+	retHeader.ProposerRandomSeedSignature, err = DecodeOptionalBLSSignature(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerRandomSeedSignature")
+	}
+
+	// ProposedInView
+	retHeader.ProposedInView, err = ReadUvarint(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposedInView")
+	}
+
+	// ValidatorsVoteQC
+	retHeader.ValidatorsVoteQC, err = DecodeQuorumCertificate(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsVoteQC")
+	}
+
+	// ValidatorsTimeoutAggregateQC
+	retHeader.ValidatorsTimeoutAggregateQC, err = DecodeTimeoutAggregateQuorumCertificate(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ValidatorsTimeoutAggregateQC")
+	}
+
+	// ProposerVotePartialSignature: we decode the signature if it's present in the byte encoding.
+	// If it's not present, then we set the signature to nil.
+	retHeader.ProposerVotePartialSignature, err = DecodeOptionalBLSSignature(rr)
+	if err != nil {
+		return nil, errors.Wrapf(err, "MsgDeSoHeader.FromBytes: Problem decoding ProposerVotePartialSignature")
+	}
+
+	return retHeader, nil
+}
+
 func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 	// Read the version to determine
 	scratchBytes := [4]byte{}
@@ -2103,15 +2692,16 @@ func DecodeHeader(rr io.Reader) (*MsgDeSoHeader, error) {
 		ret, err = DecodeHeaderVersion0(rr)
 	} else if headerVersion == HeaderVersion1 {
 		ret, err = DecodeHeaderVersion1(rr)
+	} else if headerVersion == HeaderVersion2 {
+		ret, err = DecodeHeaderVersion2(rr)
 	} else {
-		// If we have an unrecognized version then we default to de-serializing with
-		// version 0. This is necessary because there are places where we use a
-		// MsgDeSoHeader struct to store Bitcoin headers.
-		ret, err = DecodeHeaderVersion0(rr)
+		// If we have an unrecognized version then we return an error. The schema
+		// differences between header versions 0, 1, 2, and beyond will be large
+		// enough that no one decoder is a safe fallback.
+		err = fmt.Errorf("DecodeHeader: Unrecognized header version: %v", headerVersion)
 	}
 	if err != nil {
-		return nil, fmt.Errorf(
-			"DecodeHeader: Unrecognized header version: %v", headerVersion)
+		return nil, errors.Wrapf(err, "DecodeHeader: Error parsing header:")
 	}
 	// Set the version since it's not decoded in the version-specific handlers.
 	ret.Version = headerVersion
@@ -2134,17 +2724,31 @@ func (msg *MsgDeSoHeader) GetMsgType() MsgType {
 	return MsgTypeHeader
 }
 
-// Hash is a helper function to compute a hash of the header. Note that the header
-// hash is special in that we always hash it using the ProofOfWorkHash rather than
-// Sha256DoubleHash.
+// Hash is a helper function to compute a hash of the header. For Proof of Work
+// blocks headers, which have header version 0 or 1, this uses the specialized
+// ProofOfWorkHash, which takes mining difficulty and hardware into consideration.
+//
+// For Proof of Stake block headers, which start header versions 2, it uses the
+// simpler Sha256DoubleHash function.
 func (msg *MsgDeSoHeader) Hash() (*BlockHash, error) {
-	preSignature := false
-	headerBytes, err := msg.ToBytes(preSignature)
+	// The preSignature flag is unused during byte encoding in
+	// in header versions 0 and 1. We set it to true to ensure that
+	// it's forward compatible for versions 2 and beyond.
+	headerBytes, err := msg.ToBytes(true)
 	if err != nil {
 		return nil, errors.Wrap(err, "MsgDeSoHeader.Hash: ")
 	}
 
-	return ProofOfWorkHash(headerBytes, msg.Version), nil
+	// Compute the specialized PoW hash for header versions 0 and 1.
+	if msg.Version == HeaderVersion0 || msg.Version == HeaderVersion1 {
+		return ProofOfWorkHash(headerBytes, msg.Version), nil
+	}
+
+	// TODO: Do we need a new specialized hash function for Proof of Stake
+	// block headers? A simple SHA256 hash seems like it would be sufficient.
+	// The use of ASICS is no longer a consideration, so we should be able to
+	// simplify the hash function used.
+	return Sha256DoubleHash(headerBytes), nil
 }
 
 func (msg *MsgDeSoHeader) String() string {
@@ -2300,11 +2904,12 @@ func (msg *MsgDeSoBlock) EncodeBlockVersion1(preSignature bool) ([]byte, error) 
 }
 
 func (msg *MsgDeSoBlock) ToBytes(preSignature bool) ([]byte, error) {
-	if msg.Header.Version == HeaderVersion0 {
+	switch msg.Header.Version {
+	case HeaderVersion0:
 		return msg.EncodeBlockVersion0(preSignature)
-	} else if msg.Header.Version == HeaderVersion1 {
+	case HeaderVersion1, HeaderVersion2:
 		return msg.EncodeBlockVersion1(preSignature)
-	} else {
+	default:
 		return nil, fmt.Errorf("MsgDeSoBlock.ToBytes: Error encoding version: %v", msg.Header.Version)
 	}
 }
@@ -3542,6 +4147,33 @@ func (msg *MsgDeSoTxn) UnmarshalJSON(data []byte) error {
 	msg.TxnTypeJSON = 0
 
 	return nil
+}
+
+// ComputeFeeRatePerKBNanos computes the fee rate per KB for a signed transaction. This function should not be used for
+// unsigned transactions because the fee rate will not be accurate. However, we allow unsigned Atomic txn wrappers
+// since there will never be a signature for the wrapper transactions.
+func (txn *MsgDeSoTxn) ComputeFeeRatePerKBNanos() (uint64, error) {
+	if txn.Signature.Sign == nil && txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Cannot compute fee rate for unsigned txn")
+	}
+
+	var err error
+	txBytes, err := txn.ToBytes(false)
+	if err != nil {
+		return 0, errors.Wrapf(err, "ComputeFeeRatePerKBNanos: Problem converting txn to bytes")
+	}
+	totalFees := txn.TxnFeeNanos
+	if totalFees != ((totalFees * 1000) / 1000) {
+		return 0, errors.Wrapf(RuleErrorOverflowDetectedInFeeRateCalculation,
+			"ComputeFeeRatePerKBNanos: Overflow detected in fee rate calculation")
+	}
+
+	serializedLen := uint64(len(txBytes))
+	if serializedLen == 0 {
+		return 0, fmt.Errorf("ComputeFeeRatePerKBNanos: Txn has zero length")
+	}
+
+	return (totalFees * 1000) / serializedLen, nil
 }
 
 // ==================================================================
@@ -5398,6 +6030,43 @@ type TransactionSpendingLimit struct {
 	//   - AppScopeType: one of { Any, Scoped }
 	//   - AssociationOperation: one of { Any, Create, Delete }
 	AssociationLimitMap map[AssociationLimitKey]uint64
+
+	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
+	// ProfilePKID || LockupLimitOperation || LockupLimitScopeType to number of transactions.
+	//  - ProfilePKID: A PKID to scope transactions by.
+	//                 If using the "Any" scope, then ProfilePKID has to be the ZeroPKID.
+	//  - LockupLimitScopeType: One of {Any, Scoped}
+	//                 If using the "Any" scope type, this limit applies to any possible DeSo token lockup.
+	//                 If using the "Scoped" scope type, this limit applies to the ProfilePKID specified.
+	//  - LockupLimitOperation: One of {Any, Lockup, UpdateCoinLockupYieldCurve, UpdateCoinLockupTransferRestrictions,
+	//                                  CoinLockupTransfer, CoinLockupUnlock}
+	//                 If using the "Any" operation type the limit applies to any coin lockup transaction type.
+	//                 If using the "CoinLockup" operation type the limit applies strictly to coin lockups transactions.
+	//                 If using the "UpdateCoinLockupYield" operation type the limit applies to any
+	//                 UpdateCoinLockupParams transaction where the yield curve is updated.
+	//                 If using the "UpdateCoinLockupTransferRestrictions" operation the limit applies to any
+	//                 UpdateCoinLockupParams transaction where the lockup transfer restrictions are updated.
+	//                 If using the "CoinLockupTransfer" operation type the limit applies to any
+	//                 coin lockup transfer transactions.
+	//                 If using the "CoinLockupUnlock" operation type the limit applies to
+	//                 any locked coin unlock transactions.
+	//
+	// NOTE: Note that an UpdateCoinLockupParams transaction can decrement the transaction limits twice.
+	//       This is because we consider updating the yield curve and updating transfer restrictions as
+	//       separate for the purpose of derived key limits.
+	LockupLimitMap map[LockupLimitKey]uint64
+	// ValidatorPKID || StakerPKID to amount of stake-able $DESO.
+	// Note that this is not a limit on the number of Stake txns that
+	// this derived key can perform but instead a limit on the amount
+	// of $DESO this derived key can stake.
+	StakeLimitMap map[StakeLimitKey]*uint256.Int
+	// ValidatorPKID || StakerPKID to amount of unstake-able DESO.
+	// Note that this is not a limit on the number of Unstake txns that
+	// this derived key can perform but instead a limit on the amount
+	// of $DESO this derived key can unstake.
+	UnstakeLimitMap map[StakeLimitKey]*uint256.Int
+	// ValidatorPKID || StakerPKID to number of UnlockStake transactions.
+	UnlockStakeLimitMap map[StakeLimitKey]uint64
 }
 
 // ToMetamaskString encodes the TransactionSpendingLimit into a Metamask-compatible string. The encoded string will
@@ -5642,6 +6311,120 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 		indentationCounter--
 	}
 
+	// LockupLimitMap
+	if len(tsl.LockupLimitMap) > 0 {
+		var lockupLimitStr []string
+		str += _indt(indentationCounter) + "Lockup Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.LockupLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			opString += _indt(indentationCounter) + "Lockup Profile PKID: " +
+				Base58CheckEncode(limitKey.ProfilePKID.ToBytes(), false, params) + "\n"
+			opString += _indt(indentationCounter) + "Lockup Scope: " +
+				limitKey.ScopeType.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Lockup Operation: " +
+				limitKey.Operation.ToString() + "\n"
+			opString += _indt(indentationCounter) + "Transaction Count: " +
+				strconv.FormatUint(limit, 10) + "\n"
+			indentationCounter--
+
+			opString += _indt(indentationCounter) + "]\n"
+			lockupLimitStr = append(lockupLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(lockupLimitStr)
+		indentationCounter--
+	}
+
+	// StakeLimitMap
+	if len(tsl.StakeLimitMap) > 0 {
+		var stakeLimitStr []string
+		str += _indt(indentationCounter) + "Staking Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.StakeLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			// ValidatorPKID
+			validatorPublicKeyBase58Check := "Any"
+			if !limitKey.ValidatorPKID.Eq(&ZeroPKID) {
+				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
+			}
+			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
+			// StakeLimit
+			stakeLimitDESO := NewFloat().Quo(
+				NewFloat().SetInt(limit.ToBig()), NewFloat().SetUint64(NanosPerUnit),
+			)
+			opString += _indt(indentationCounter) + fmt.Sprintf("Staking Limit: %.2f $DESO\n", stakeLimitDESO)
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			stakeLimitStr = append(stakeLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(stakeLimitStr)
+		indentationCounter--
+	}
+
+	// UnstakeLimitMap
+	if len(tsl.UnstakeLimitMap) > 0 {
+		var unstakeLimitStr []string
+		str += _indt(indentationCounter) + "Unstaking Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.UnstakeLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			// ValidatorPKID
+			validatorPublicKeyBase58Check := "Any"
+			if !limitKey.ValidatorPKID.Eq(&ZeroPKID) {
+				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
+			}
+			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
+			// UnstakeLimit
+			unstakeLimitDESO := NewFloat().Quo(
+				NewFloat().SetInt(limit.ToBig()), NewFloat().SetUint64(NanosPerUnit),
+			)
+			opString += _indt(indentationCounter) + fmt.Sprintf("Unstaking Limit: %.2f $DESO\n", unstakeLimitDESO)
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			unstakeLimitStr = append(unstakeLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(unstakeLimitStr)
+		indentationCounter--
+	}
+
+	// UnlockStakeLimitMap
+	if len(tsl.UnlockStakeLimitMap) > 0 {
+		var unlockStakeLimitStr []string
+		str += _indt(indentationCounter) + "Unlocking Stake Restrictions:\n"
+		indentationCounter++
+		for limitKey, limit := range tsl.UnlockStakeLimitMap {
+			opString := _indt(indentationCounter) + "[\n"
+
+			indentationCounter++
+			// ValidatorPKID
+			validatorPublicKeyBase58Check := "Any"
+			if !limitKey.ValidatorPKID.Eq(&ZeroPKID) {
+				validatorPublicKeyBase58Check = Base58CheckEncode(limitKey.ValidatorPKID.ToBytes(), false, params)
+			}
+			opString += _indt(indentationCounter) + "Validator PKID: " + validatorPublicKeyBase58Check + "\n"
+			// UnlockStakeLimit
+			opString += _indt(indentationCounter) + "Transaction Count: " + strconv.FormatUint(limit, 10) + "\n"
+
+			indentationCounter--
+			opString += _indt(indentationCounter) + "]\n"
+			unlockStakeLimitStr = append(unlockStakeLimitStr, opString)
+		}
+		// Ensure deterministic ordering of the transaction count limit strings by doing a lexicographical sort.
+		sortStringsAndAddToLimitStr(unlockStakeLimitStr)
+		indentationCounter--
+	}
+
 	// IsUnlimited
 	if tsl.IsUnlimited {
 		str += "Unlimited"
@@ -5855,6 +6638,93 @@ func (tsl *TransactionSpendingLimit) ToBytes(blockHeight uint64) ([]byte, error)
 		data = append(data, accessGroupsBytes...)
 	}
 
+	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// LockupLimitMap
+		lockupLimitMapLength := uint64(len(tsl.LockupLimitMap))
+		data = append(data, UintToBuf(lockupLimitMapLength)...)
+		if lockupLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[LockupLimitKey](0, lockupLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.LockupLimitMap {
+				keys = append(keys, key)
+			}
+			// Sort the keys to ensure deterministic ordering.
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.LockupLimitMap[key])...)
+			}
+		}
+
+		// StakeLimitMap
+		stakeLimitMapLength := uint64(len(tsl.StakeLimitMap))
+		data = append(data, UintToBuf(stakeLimitMapLength)...)
+		if stakeLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[StakeLimitKey](0, stakeLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.StakeLimitMap {
+				keys = append(keys, key)
+			}
+			// Sort the keys to ensure deterministic ordering.
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, VariableEncodeUint256(tsl.StakeLimitMap[key])...)
+			}
+		}
+
+		// UnstakeLimitMap
+		unstakeLimitMapLength := uint64(len(tsl.UnstakeLimitMap))
+		data = append(data, UintToBuf(unstakeLimitMapLength)...)
+		if unstakeLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[StakeLimitKey](0, unstakeLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.UnstakeLimitMap {
+				keys = append(keys, key)
+			}
+			// Sort the keys to ensure deterministic ordering.
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, VariableEncodeUint256(tsl.UnstakeLimitMap[key])...)
+			}
+		}
+
+		// UnlockStakeLimitMap
+		unlockStakeLimitMapLength := uint64(len(tsl.UnlockStakeLimitMap))
+		data = append(data, UintToBuf(unlockStakeLimitMapLength)...)
+		if unlockStakeLimitMapLength > 0 {
+			keys, err := SafeMakeSliceWithLengthAndCapacity[StakeLimitKey](0, unlockStakeLimitMapLength)
+			if err != nil {
+				return nil, err
+			}
+			for key := range tsl.UnlockStakeLimitMap {
+				keys = append(keys, key)
+			}
+			// Sort the keys to ensure deterministic ordering.
+			sort.Slice(keys, func(ii, jj int) bool {
+				return hex.EncodeToString(keys[ii].Encode()) < hex.EncodeToString(keys[jj].Encode())
+			})
+			for _, key := range keys {
+				data = append(data, key.Encode()...)
+				data = append(data, UintToBuf(tsl.UnlockStakeLimitMap[key])...)
+			}
+		}
+	}
+
 	return data, nil
 }
 
@@ -6064,6 +6934,105 @@ func (tsl *TransactionSpendingLimit) FromBytes(blockHeight uint64, rr *bytes.Rea
 		}
 	}
 
+	// StakeLimitMap, UnstakeLimitMap, and UnlockStakeLimitMap, gated by the encoder migration.
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// LockupLimitMap
+		lockupLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.LockupLimitMap = make(map[LockupLimitKey]uint64)
+		if lockupLimitMapLen > 0 {
+			for ii := uint64(0); ii < lockupLimitMapLen; ii++ {
+				lockupLimitKey := &LockupLimitKey{}
+				if err = lockupLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding LockupLimitKey: ")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return errors.Wrap(err, "Error decoding OperationCount for LockupLimitKey: ")
+				}
+				if _, keyExists := tsl.LockupLimitMap[*lockupLimitKey]; keyExists {
+					return errors.New("LockupLimitKey already exists")
+				}
+				tsl.LockupLimitMap[*lockupLimitKey] = operationCount
+			}
+		}
+
+		// StakeLimitMap
+		stakeLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.StakeLimitMap = make(map[StakeLimitKey]*uint256.Int)
+		if stakeLimitMapLen > 0 {
+			for ii := uint64(0); ii < stakeLimitMapLen; ii++ {
+				stakeLimitKey := &StakeLimitKey{}
+				if err = stakeLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
+				}
+				var stakeLimitDESONanos *uint256.Int
+				stakeLimitDESONanos, err = VariableDecodeUint256(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.StakeLimitMap[*stakeLimitKey]; exists {
+					return errors.New("StakeLimitKey already exists in StakeLimitMap")
+				}
+				tsl.StakeLimitMap[*stakeLimitKey] = stakeLimitDESONanos
+			}
+		}
+
+		// UnstakeLimitMap
+		unstakeLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.UnstakeLimitMap = make(map[StakeLimitKey]*uint256.Int)
+		if unstakeLimitMapLen > 0 {
+			for ii := uint64(0); ii < unstakeLimitMapLen; ii++ {
+				stakeLimitKey := &StakeLimitKey{}
+				if err = stakeLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
+				}
+				var unstakeLimitDESONanos *uint256.Int
+				unstakeLimitDESONanos, err = VariableDecodeUint256(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.UnstakeLimitMap[*stakeLimitKey]; exists {
+					return errors.New("StakeLimitKey already exists in UnstakeLimitMap")
+				}
+				tsl.UnstakeLimitMap[*stakeLimitKey] = unstakeLimitDESONanos
+			}
+		}
+
+		// UnlockStakeLimitMap
+		unlockStakeLimitMapLen, err := ReadUvarint(rr)
+		if err != nil {
+			return err
+		}
+		tsl.UnlockStakeLimitMap = make(map[StakeLimitKey]uint64)
+		if unlockStakeLimitMapLen > 0 {
+			for ii := uint64(0); ii < unlockStakeLimitMapLen; ii++ {
+				stakeLimitKey := &StakeLimitKey{}
+				if err = stakeLimitKey.Decode(rr); err != nil {
+					return errors.Wrap(err, "Error decoding StakeLimitKey: ")
+				}
+				var operationCount uint64
+				operationCount, err = ReadUvarint(rr)
+				if err != nil {
+					return err
+				}
+				if _, exists := tsl.UnlockStakeLimitMap[*stakeLimitKey]; exists {
+					return errors.New("StakeLimitKey already exists in UnlockStakeLimitMap")
+				}
+				tsl.UnlockStakeLimitMap[*stakeLimitKey] = operationCount
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -6120,6 +7089,10 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		DAOCoinLimitOrderLimitMap:    make(map[DAOCoinLimitOrderLimitKey]uint64),
 		AccessGroupMap:               make(map[AccessGroupLimitKey]uint64),
 		AccessGroupMemberMap:         make(map[AccessGroupMemberLimitKey]uint64),
+		LockupLimitMap:               make(map[LockupLimitKey]uint64),
+		StakeLimitMap:                make(map[StakeLimitKey]*uint256.Int),
+		UnstakeLimitMap:              make(map[StakeLimitKey]*uint256.Int),
+		UnlockStakeLimitMap:          make(map[StakeLimitKey]uint64),
 		IsUnlimited:                  tsl.IsUnlimited,
 	}
 
@@ -6160,11 +7133,27 @@ func (tsl *TransactionSpendingLimit) Copy() *TransactionSpendingLimit {
 		copyTSL.AccessGroupMemberMap[accessGroupMemberLimitKey] = accessGroupMemberCount
 	}
 
+	for lockupLimitKey, lockupLimit := range tsl.LockupLimitMap {
+		copyTSL.LockupLimitMap[lockupLimitKey] = lockupLimit
+	}
+
+	for stakeLimitKey, stakeLimitDESONanos := range tsl.StakeLimitMap {
+		copyTSL.StakeLimitMap[stakeLimitKey] = stakeLimitDESONanos.Clone()
+	}
+
+	for stakeLimitKey, unstakeLimitDESONanos := range tsl.UnstakeLimitMap {
+		copyTSL.UnstakeLimitMap[stakeLimitKey] = unstakeLimitDESONanos.Clone()
+	}
+
+	for stakeLimitKey, unlockStakeOperationCount := range tsl.UnlockStakeLimitMap {
+		copyTSL.UnlockStakeLimitMap[stakeLimitKey] = unlockStakeOperationCount
+	}
+
 	return copyTSL
 }
 
 func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpendingLimit, blockHeight uint32) (_isUnlimited bool, _err error) {
-	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 10)
+	AssertDependencyStructFieldNumbers(&TransactionSpendingLimit{}, 14)
 
 	if tsl.IsUnlimited && blockHeight < bav.Params.ForkHeights.DeSoUnlimitedDerivedKeysBlockHeight {
 		return false, RuleErrorUnlimitedDerivedKeyBeforeBlockHeight
@@ -6180,7 +7169,11 @@ func (bav *UtxoView) CheckIfValidUnlimitedSpendingLimit(tsl *TransactionSpending
 		len(tsl.DAOCoinLimitOrderLimitMap) > 0 ||
 		len(tsl.AssociationLimitMap) > 0 ||
 		len(tsl.AccessGroupMap) > 0 ||
-		len(tsl.AccessGroupMemberMap) > 0) {
+		len(tsl.AccessGroupMemberMap) > 0 ||
+		len(tsl.LockupLimitMap) > 0 ||
+		len(tsl.StakeLimitMap) > 0 ||
+		len(tsl.UnstakeLimitMap) > 0 ||
+		len(tsl.UnlockStakeLimitMap) > 0) {
 		return tsl.IsUnlimited, RuleErrorUnlimitedDerivedKeyNonEmptySpendingLimits
 	}
 
@@ -7231,6 +8224,10 @@ type DAOCoinLimitOrderMetadata struct {
 	// utxo inputs that can be used to immediately execute this trade.
 	BidderInputs []*DeSoInputsByTransactor
 
+	// DEPRECATED: This field was needed when we were on a UTXO model but
+	// it is redundant now that we have switched to a balance model because
+	// we embed the fee directly into the top level of the txn.
+	//
 	// Since a DAO Coin Limit Order may spend DESO or yield DESO to the
 	// transactor, we specify FeeNanos in the transaction metadata in
 	// order to ensure the transactor pays the standard fee rate for the size
@@ -7246,8 +8243,8 @@ func (txnData *DAOCoinLimitOrderMetadata) GetTxnType() TxnType {
 func (txnData *DAOCoinLimitOrderMetadata) ToBytes(preSignature bool) ([]byte, error) {
 	data := append([]byte{}, EncodeOptionalPublicKey(txnData.BuyingDAOCoinCreatorPublicKey)...)
 	data = append(data, EncodeOptionalPublicKey(txnData.SellingDAOCoinCreatorPublicKey)...)
-	data = append(data, EncodeOptionalUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeOptionalUint256(txnData.QuantityToFillInBaseUnits)...)
+	data = append(data, FixedWidthEncodeUint256(txnData.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, FixedWidthEncodeUint256(txnData.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(txnData.OperationType))...)
 	data = append(data, UintToBuf(uint64(txnData.FillType))...)
 	data = append(data, EncodeOptionalBlockHash(txnData.CancelOrderID)...)
@@ -7294,13 +8291,13 @@ func (txnData *DAOCoinLimitOrderMetadata) FromBytes(data []byte) error {
 	}
 
 	// Parse ScaledExchangeRateCoinsToSellPerCoinToBuy
-	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = ReadOptionalUint256(rr)
+	ret.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = FixedWidthDecodeUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading ScaledPrice: %v", err)
 	}
 
 	// Parse QuantityToFillInBaseUnits
-	ret.QuantityToFillInBaseUnits, err = ReadOptionalUint256(rr)
+	ret.QuantityToFillInBaseUnits, err = FixedWidthDecodeUint256(rr)
 	if err != nil {
 		return fmt.Errorf("DAOCoinLimitOrderMetadata.FromBytes: Error reading QuantityToFillInBaseUnits: %v", err)
 	}

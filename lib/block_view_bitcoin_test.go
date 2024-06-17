@@ -4,18 +4,19 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/wire"
-	merkletree "github.com/deso-protocol/go-merkle-tree"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io/ioutil"
 	"math/big"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
+	merkletree "github.com/deso-protocol/go-merkle-tree"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -58,8 +59,8 @@ func GetTestParamsCopy(
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: uint64(startHeader.Timestamp.Unix()),
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(startHeader.Timestamp.Unix()),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	)
@@ -193,15 +194,14 @@ func _updateUSDCentsPerBitcoinExchangeRate(t *testing.T, chain *Blockchain, db *
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(t, txn, updaterPrivBase58Check)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 
 	txHash := txn.Hash()
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	// ConnectTransaction should treat the amount locked as contributing to the
 	// output.
 	if err != nil {
@@ -455,8 +455,7 @@ func TestBitcoinExchange(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 
 		// Add a placeholder where the rate update is going to be
 		fff := append([]*MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
@@ -479,11 +478,9 @@ func TestBitcoinExchange(t *testing.T) {
 
 				bitcoinExchangeTxns[ii] = rateUpdateTxn
 				burnTxn := bitcoinExchangeTxns[ii]
-				burnTxnSize := getTxnSize(*burnTxn)
 				blockHeight := chain.blockTip().Height + 1
 				utxoOps, totalInput, totalOutput, fees, err :=
-					utxoView.ConnectTransaction(
-						burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+					utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 				_, _, _ = totalInput, totalOutput, fees
 				require.NoError(err)
 				utxoOpsList = append(utxoOpsList, utxoOps)
@@ -491,11 +488,9 @@ func TestBitcoinExchange(t *testing.T) {
 			}
 
 			burnTxn := bitcoinExchangeTxns[ii]
-			burnTxnSize := getTxnSize(*burnTxn)
 			blockHeight := chain.blockTip().Height + 1
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(
-					burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 
 			require.Equal(2, len(utxoOps))
@@ -605,8 +600,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
 			burnTxn := bitcoinExchangeTxns[index]
@@ -641,13 +635,11 @@ func TestBitcoinExchange(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
-			burnTxnSize := getTxnSize(*burnTxn)
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 
 			if ii < len(expectedBitcoinBurnAmounts) {
@@ -840,8 +832,7 @@ func TestBitcoinExchange(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
@@ -1083,7 +1074,6 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	//// Validating the first Bitcoin burn transaction via a UtxoView should
 	//// fail because the block corresponding to it is not yet in the BitcoinManager.
 	burnTxn1 := bitcoinExchangeTxns[0]
-	burnTxn1Size := getTxnSize(*burnTxn1)
 	txHash1 := burnTxn1.Hash()
 	burnTxn2 := bitcoinExchangeTxns[1]
 
@@ -1164,23 +1154,23 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// Verify that adding the transaction to the UtxoView fails because there is
 	// not enough work on the burn block yet.
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
-		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(burnTxn1, txHash1, blockHeight, 0, true, false)
 	}
 
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
-		utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(burnTxn1, txHash1, blockHeight, 0, true, false)
 	}
 
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
 		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(burnTxn1, txHash1, blockHeight, 0, true, false)
 		require.NoError(err)
 	}
 
@@ -1193,8 +1183,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 
 		// Add a placeholder where the rate update is going to be
 		fff := append([]*MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
@@ -1215,11 +1204,9 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 				bitcoinExchangeTxns[ii] = rateUpdateTxn
 				burnTxn := bitcoinExchangeTxns[ii]
-				burnTxnSize := getTxnSize(*burnTxn)
 				blockHeight := chain.blockTip().Height + 1
 				utxoOps, totalInput, totalOutput, fees, err :=
-					utxoView.ConnectTransaction(
-						burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+					utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 				_, _, _ = totalInput, totalOutput, fees
 				require.NoError(err)
 				utxoOpsList = append(utxoOpsList, utxoOps)
@@ -1227,11 +1214,9 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 			}
 
 			burnTxn := bitcoinExchangeTxns[ii]
-			burnTxnSize := getTxnSize(*burnTxn)
 			blockHeight := chain.blockTip().Height + 1
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(
-					burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 
 			require.Equal(2, len(utxoOps))
@@ -1341,8 +1326,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
 			burnTxn := bitcoinExchangeTxns[index]
@@ -1377,13 +1361,11 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
-			burnTxnSize := getTxnSize(*burnTxn)
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 
 			if ii < len(expectedBitcoinBurnAmounts) {
@@ -1575,8 +1557,7 @@ func TestBitcoinExchangeGlobalParams(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
@@ -1816,7 +1797,6 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 
 	// The amount of work on the first burn transaction should be zero.
 	burnTxn1 := bitcoinExchangeTxns[0]
-	burnTxn1Size := getTxnSize(*burnTxn1)
 	burnTxn2 := bitcoinExchangeTxns[1]
 	txHash1 := burnTxn1.Hash()
 
@@ -1922,6 +1902,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 					0,
 					nil,
 					-1,
+					map[string][]byte{},
 					100, /*feeRateNanosPerKB*/
 					nil,
 					[]*DeSoOutput{})
@@ -2060,11 +2041,11 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 
 	// The transaction should pass now
 	{
-		utxoView, _ := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
 
 		_, _, _, _, err :=
-			utxoView.ConnectTransaction(burnTxn1, txHash1, burnTxn1Size, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(burnTxn1, txHash1, blockHeight, 0, true, false)
 		require.NoError(err)
 	}
 
@@ -2151,8 +2132,7 @@ func TestSpendOffOfUnminedTxnsBitcoinExchange(t *testing.T) {
 	// the mempool's disconnect function to make sure we get the txns
 	// back during a reorg.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
@@ -2495,8 +2475,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 
 		// Add a placeholder where the rate update is going to be
 		fff := append([]*MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
@@ -2517,11 +2496,9 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 				bitcoinExchangeTxns[ii] = rateUpdateTxn
 				burnTxn := bitcoinExchangeTxns[ii]
-				burnTxnSize := getTxnSize(*burnTxn)
 				blockHeight := chain.blockTip().Height + 1
 				utxoOps, totalInput, totalOutput, fees, err :=
-					utxoView.ConnectTransaction(
-						burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+					utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 				_, _, _ = totalInput, totalOutput, fees
 				require.NoError(err)
 				utxoOpsList = append(utxoOpsList, utxoOps)
@@ -2529,11 +2506,9 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 			}
 
 			burnTxn := bitcoinExchangeTxns[ii]
-			burnTxnSize := getTxnSize(*burnTxn)
 			blockHeight := chain.blockTip().Height + 1
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(
-					burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 
 			require.Equal(2, len(utxoOps))
@@ -2643,8 +2618,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	{
 		// Rolling back all the transactions should work.
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		for ii := range bitcoinExchangeTxns {
 			index := len(bitcoinExchangeTxns) - 1 - ii
 			burnTxn := bitcoinExchangeTxns[index]
@@ -2679,13 +2653,11 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 	// flushing should be fine.
 	utxoOpsList = [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 		for ii, burnTxn := range bitcoinExchangeTxns {
 			blockHeight := chain.blockTip().Height + 1
-			burnTxnSize := getTxnSize(*burnTxn)
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 
 			if ii < len(expectedBitcoinBurnAmounts) {
@@ -2857,8 +2829,7 @@ func TestBitcoinExchangeWithAmountNanosNonZeroAtGenesis(t *testing.T) {
 
 	// Roll back the blocks and make sure we don't hit any errors.
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, chain.eventManager)
 
 		{
 			// Fetch the utxo operations for the block we're detaching. We need these
@@ -2986,14 +2957,10 @@ func TestUpdateExchangeRate(t *testing.T) {
 			newUSDCentsPerBitcoin)
 		require.NoError(err)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
-		require.NoError(err)
-		txnSize := getTxnSize(*updateExchangeRateTxn)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, chain.eventManager)
 		blockHeight := chain.blockTip().Height + 1
 		utxoOps, totalInput, totalOutput, fees, err :=
-			utxoView.ConnectTransaction(updateExchangeRateTxn,
-				updateExchangeRateTxn.Hash(), txnSize, blockHeight, true, /*verifySignature*/
-				false /*ignoreUtxos*/)
+			utxoView.ConnectTransaction(updateExchangeRateTxn, updateExchangeRateTxn.Hash(), blockHeight, 0, true, false)
 		require.NoError(err)
 		_, _, _, _ = utxoOps, totalInput, totalOutput, fees
 		require.NoError(utxoView.FlushToDb(0))

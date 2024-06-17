@@ -3,6 +3,14 @@ package integration_testing
 import (
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"reflect"
+	"sort"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
@@ -10,12 +18,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
-	"io/ioutil"
-	"os"
-	"reflect"
-	"sort"
-	"testing"
-	"time"
+	"github.com/tyler-smith/go-bip39"
 )
 
 // This testing suite is the first serious attempt at making a comprehensive functional testing framework for DeSo nodes.
@@ -55,11 +58,20 @@ func getDirectory(t *testing.T) string {
 func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) *cmd.Config {
 	config := &cmd.Config{}
 	params := lib.DeSoMainnetParams
-
-	params.DNSSeeds = []string{}
 	config.Params = &params
+	return _generateConfig(t, config, port, dataDir, maxPeers)
+}
+
+func generateConfigTestnet(t *testing.T, port uint32, dataDir string, maxPeers uint32) *cmd.Config {
+	config := &cmd.Config{}
+	params := lib.DeSoTestnetParams
+	config.Params = &params
+	return _generateConfig(t, config, port, dataDir, maxPeers)
+}
+
+func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir string, maxPeers uint32) *cmd.Config {
+	config.Params.DNSSeeds = []string{}
 	config.ProtocolPort = uint16(port)
-	// "/Users/piotr/data_dirs/n98_1"
 	config.DataDirectory = dataDir
 	if err := os.MkdirAll(config.DataDirectory, os.ModePerm); err != nil {
 		t.Fatalf("Could not create data directories (%s): %v", config.DataDirectory, err)
@@ -76,15 +88,74 @@ func generateConfig(t *testing.T, port uint32, dataDir string, maxPeers uint32) 
 	config.StallTimeoutSeconds = 900
 	config.MinFeerate = 1000
 	config.OneInboundPerIp = false
+	config.PeerConnectionRefreshIntervalMillis = 1000
 	config.MaxBlockTemplatesCache = 100
 	config.MaxSyncBlockHeight = 100
 	config.MinBlockUpdateInterval = 10
 	config.SnapshotBlockHeightPeriod = HyperSyncSnapshotPeriod
 	config.MaxSyncBlockHeight = MaxSyncBlockHeight
 	config.SyncType = lib.NodeSyncTypeBlockSync
+	config.MempoolBackupIntervalMillis = 30000
+	config.MempoolMaxValidationViewConnects = 10000
+	config.TransactionValidationRefreshIntervalMillis = 10
+
 	//config.ArchivalMode = true
 
 	return config
+}
+
+func spawnNodeProtocol1(t *testing.T, port uint32, id string) *cmd.Node {
+	dbDir := getDirectory(t)
+	t.Cleanup(func() {
+		os.RemoveAll(dbDir)
+	})
+	config := generateConfig(t, port, dbDir, 10)
+	config.SyncType = lib.NodeSyncTypeBlockSync
+	node := cmd.NewNode(config)
+	node.Params.UserAgent = id
+	node.Params.ProtocolVersion = lib.ProtocolVersion1
+	return node
+}
+
+func spawnNonValidatorNodeProtocol2(t *testing.T, port uint32, id string) *cmd.Node {
+	dbDir := getDirectory(t)
+	t.Cleanup(func() {
+		os.RemoveAll(dbDir)
+	})
+	config := generateConfig(t, port, dbDir, 10)
+	config.SyncType = lib.NodeSyncTypeBlockSync
+	node := cmd.NewNode(config)
+	node.Params.UserAgent = id
+	node.Params.ProtocolVersion = lib.ProtocolVersion2
+	return node
+}
+
+func spawnValidatorNodeProtocol2(t *testing.T, port uint32, id string, blsSeedPhrase string) *cmd.Node {
+	dbDir := getDirectory(t)
+	t.Cleanup(func() {
+		os.RemoveAll(dbDir)
+	})
+	config := generateConfig(t, port, dbDir, 10)
+	return _spawnValidatorNodeProtocol2(t, config, port, id, blsSeedPhrase)
+}
+
+func _spawnValidatorNodeProtocol2(t *testing.T, config *cmd.Config, port uint32, id string, blsSeedPhrase string) *cmd.Node {
+	config.SyncType = lib.NodeSyncTypeBlockSync
+	config.PosValidatorSeed = blsSeedPhrase
+	config.BlockProducerSeed = blsSeedPhrase
+	node := cmd.NewNode(config)
+	node.Params.UserAgent = id
+	node.Params.ProtocolVersion = lib.ProtocolVersion2
+	return node
+}
+
+func spawnValidatorNodeProtocol2Testnet(t *testing.T, port uint32, id string, blsSeedPhrase string) *cmd.Node {
+	dbDir := getDirectory(t)
+	t.Cleanup(func() {
+		os.RemoveAll(dbDir)
+	})
+	config := generateConfigTestnet(t, port, dbDir, 10)
+	return _spawnValidatorNodeProtocol2(t, config, port, id, blsSeedPhrase)
 }
 
 // waitForNodeToFullySync will busy-wait until provided node is fully current.
@@ -150,7 +221,8 @@ func compareNodesByChecksum(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node) {
 // compareNodesByState will look through all state records in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByState(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, lib.StatePrefixes.StatePrefixesList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Server.GetBlockchain().DB(), nodeB.Server.GetBlockchain().DB(),
+		lib.StatePrefixes.StatePrefixesList, verbose)
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB databases and will compare them.
@@ -164,7 +236,43 @@ func compareNodesByDB(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose in
 		}
 		prefixList = append(prefixList, []byte{prefix})
 	}
-	compareNodesByStateWithPrefixList(t, nodeA.ChainDB, nodeB.ChainDB, prefixList, verbose)
+	compareNodesByStateWithPrefixList(t, nodeA.Server.GetBlockchain().DB(), nodeB.Server.GetBlockchain().DB(),
+		prefixList, verbose)
+}
+
+func compareNodesByStateOffline(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
+	prefixList := lib.StatePrefixes.StatePrefixesList
+	dbA := GetChainDBFromNode(t, nodeA)
+	dbB := GetChainDBFromNode(t, nodeB)
+
+	compareNodesByStateWithPrefixList(t, dbA, dbB, prefixList, verbose)
+}
+
+func GetChainDBFromNode(t *testing.T, node *cmd.Node) *badger.DB {
+	// Setup chain database
+	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
+	var opts badger.Options
+	performanceOptions, err := lib.DbInitializedWithPerformanceOptions(node.Config.DataDirectory)
+
+	// If the db options haven't yet been saved, we should base the options on the sync type.
+	if os.IsNotExist(err) {
+		performanceOptions = !node.Config.HyperSync
+		// Save the db options for future runs.
+		lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
+	} else if err != nil {
+		// If we get an error other than "file does not exist", we should panic.
+		t.Fatalf("err: %v", err)
+	}
+
+	if performanceOptions {
+		opts = lib.PerformanceBadgerOptions(dbDir)
+	} else {
+		opts = lib.DefaultBadgerOptions(dbDir)
+	}
+	opts.ValueDir = dbDir
+	db, err := badger.Open(opts)
+	require.NoError(t, err)
+	return db
 }
 
 // compareNodesByDB will look through all records in nodeA and nodeB txindex databases and will compare them.
@@ -328,13 +436,14 @@ func computeNodeStateChecksum(t *testing.T, node *cmd.Node, blockHeight uint64) 
 	err := node.Server.GetBlockchain().DB().View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		for _, prefix := range prefixes {
+			opts.Prefix = prefix
 			it := txn.NewIterator(opts)
 			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 				item := it.Item()
 				key := item.Key()
 				err := item.Value(func(value []byte) error {
 					return carrierChecksum.AddOrRemoveBytesWithMigrations(key, value, blockHeight,
-						nil, true)
+						nil, &sync.RWMutex{}, true)
 				})
 				if err != nil {
 					return err
@@ -386,25 +495,25 @@ func restartNode(t *testing.T, node *cmd.Node) *cmd.Node {
 }
 
 // listenForBlockHeight busy-waits until the node's block tip reaches provided height.
-func listenForBlockHeight(t *testing.T, node *cmd.Node, height uint32, signal chan<- bool) {
+func listenForBlockHeight(node *cmd.Node, height uint32) (_listener chan bool) {
+	listener := make(chan bool)
 	ticker := time.NewTicker(1 * time.Millisecond)
 	go func() {
 		for {
 			<-ticker.C
 			if node.Server.GetBlockchain().BlockTip().Height >= height {
-				signal <- true
+				listener <- true
 				break
 			}
 		}
 	}()
+	return listener
 }
 
 // disconnectAtBlockHeight busy-waits until the node's block tip reaches provided height, and then disconnects
 // from the provided bridge.
-func disconnectAtBlockHeight(t *testing.T, syncingNode *cmd.Node, bridge *ConnectionBridge, height uint32) {
-	listener := make(chan bool)
-	listenForBlockHeight(t, syncingNode, height, listener)
-	<-listener
+func disconnectAtBlockHeight(syncingNode *cmd.Node, bridge *ConnectionBridge, height uint32) {
+	<-listenForBlockHeight(syncingNode, height)
 	bridge.Disconnect()
 }
 
@@ -414,7 +523,7 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *cmd.Node, source *cmd.N
 	height uint32) (_node *cmd.Node, _bridge *ConnectionBridge) {
 
 	require := require.New(t)
-	disconnectAtBlockHeight(t, node, currentBridge, height)
+	disconnectAtBlockHeight(node, currentBridge, height)
 	newNode := restartNode(t, node)
 	// Wait after the restart.
 	time.Sleep(1 * time.Second)
@@ -423,6 +532,16 @@ func restartAtHeightAndReconnectNode(t *testing.T, node *cmd.Node, source *cmd.N
 	bridge := NewConnectionBridge(newNode, source)
 	require.NoError(bridge.Start())
 	return newNode, bridge
+}
+
+func restartAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return restartNode(t, node)
+}
+
+func shutdownAtHeight(t *testing.T, node *cmd.Node, height uint32) *cmd.Node {
+	<-listenForBlockHeight(node, height)
+	return shutdownNode(t, node)
 }
 
 // listenForSyncPrefix will wait until the node starts downloading the provided syncPrefix in hypersync, and then sends
@@ -468,10 +587,85 @@ func restartAtSyncPrefixAndReconnectNode(t *testing.T, node *cmd.Node, source *c
 	return newNode, bridge
 }
 
+func restartAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return restartNode(t, node)
+}
+
+func shutdownAtSyncPrefix(t *testing.T, node *cmd.Node, syncPrefix []byte) *cmd.Node {
+	listener := make(chan bool)
+	listenForSyncPrefix(t, node, syncPrefix, listener)
+	<-listener
+	return shutdownNode(t, node)
+}
+
 func randomUint32Between(t *testing.T, min, max uint32) uint32 {
 	require := require.New(t)
 	randomNumber, err := wire.RandomUint64()
 	require.NoError(err)
 	randomHeight := uint32(randomNumber) % (max - min)
 	return randomHeight + min
+}
+
+func seedPhraseToPublicKeyBase58Check(t *testing.T, seedPhrase string, params *lib.DeSoParams) string {
+	seedBytes, err := bip39.NewSeedWithErrorChecking(seedPhrase, "")
+	if err != nil {
+		panic(err)
+	}
+	_, privKey, _, err := lib.ComputeKeysFromSeed(seedBytes, 0, params)
+	if err != nil {
+		panic(err)
+	}
+	return lib.Base58CheckEncode(privKey.PubKey().SerializeCompressed(), false, params)
+}
+
+func simplePosNode(t *testing.T, port uint32, id string, regtest bool) *cmd.Node {
+	blsSeedPhrase, err := bip39.NewMnemonic(lib.RandomBytes(32))
+	require.NoError(t, err)
+	node := spawnValidatorNodeProtocol2Testnet(t, port, id, blsSeedPhrase)
+	node.Config.MaxSyncBlockHeight = 0
+	node.Config.HyperSync = true
+	if regtest {
+		node.Config.MinerPublicKeys = []string{seedPhraseToPublicKeyBase58Check(t, blsSeedPhrase, node.Params)}
+		node.Config.Regtest = true
+		node.Params.EnableRegtest()
+	}
+	return node
+}
+
+func waitForCondition(t *testing.T, id string, condition func() bool) {
+	signalChan := make(chan struct{})
+	go func() {
+		for {
+			if condition() {
+				signalChan <- struct{}{}
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	select {
+	case <-signalChan:
+		return
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Condition timed out | %s", id)
+	}
+}
+
+func waitForConditionNoTimeout(t *testing.T, id string, condition func() bool) {
+	signalChan := make(chan struct{})
+	go func() {
+		for {
+			if condition() {
+				signalChan <- struct{}{}
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	<-signalChan
 }

@@ -3,11 +3,12 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/deso-protocol/go-deadlock"
@@ -129,7 +130,7 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 	// Note that we *DONT* pass server here because it is already tied to the main blockchain.
 	txIndexChain, err := NewBlockchain(
 		[]string{}, 0, coreChain.MaxSyncBlockHeight, params, chainlib.NewMedianTime(),
-		txIndexDb, nil, nil, nil, false)
+		txIndexDb, nil, nil, nil, false, nil)
 	if err != nil {
 		return nil, fmt.Errorf("NewTXIndex: Error initializing TxIndex: %v", err)
 	}
@@ -149,7 +150,11 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 }
 
 func (txi *TXIndex) FinishedSyncing() bool {
-	return txi.TXIndexChain.BlockTip().Height == txi.CoreChain.BlockTip().Height
+	committedTip, idx := txi.CoreChain.GetCommittedTip()
+	if idx == -1 {
+		return false
+	}
+	return txi.TXIndexChain.BlockTip().Height == committedTip.Height
 }
 
 func (txi *TXIndex) Start() {
@@ -220,23 +225,25 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	// The only thing we can really do in this case is rebuild the entire index
 	// from scratch. To do that, we return all the blocks in the index to detach
 	// and all the blocks in the real chain to attach.
-	txindexTipNode := txi.CoreChain.CopyBlockIndex()[*txindexTipHash.Hash]
+	blockIndexByHashCopy, _ := txi.TXIndexChain.CopyBlockIndexes()
+	txindexTipNode := blockIndexByHashCopy[*txindexTipHash.Hash]
 
+	// Get the committed tip.
+	committedTip, _ := txi.CoreChain.GetCommittedTip()
 	if txindexTipNode == nil {
 		glog.Info("GetTxindexUpdateBlockNodes: Txindex tip was not found; building txindex starting at genesis block")
 
 		newTxIndexBestChain, _ := txi.TXIndexChain.CopyBestChain()
 		newBlockchainBestChain, _ := txi.CoreChain.CopyBestChain()
 
-		return txindexTipNode, txi.CoreChain.BlockTip(), nil, newTxIndexBestChain, newBlockchainBestChain
+		return txindexTipNode, committedTip, nil, newTxIndexBestChain, newBlockchainBestChain
 	}
 
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	blockTip := txi.CoreChain.BlockTip()
-	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(txindexTipNode, blockTip)
+	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(txindexTipNode, committedTip)
 
-	return txindexTipNode, blockTip, commonAncestor, detachBlocks, attachBlocks
+	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
 }
 
 // Update syncs the transaction index with the blockchain.
@@ -317,11 +324,7 @@ func (txi *TXIndex) Update() error {
 
 		// Now that all the transactions have been deleted from our txindex,
 		// it's safe to disconnect the block from our txindex chain.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
-		if err != nil {
-			return fmt.Errorf(
-				"Update: Error initializing UtxoView: %v", err)
-		}
+		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
 		utxoOps, err := GetUtxoOperationsForBlock(
 			txi.TXIndexChain.DB(), nil, blockToDetach.Hash)
 		if err != nil {
@@ -364,13 +367,13 @@ func (txi *TXIndex) Update() error {
 		// Delete this block from the chain db so we don't get duplicate block errors.
 
 		// Remove this block from our bestChain data structures.
-		newBlockIndex := txi.TXIndexChain.CopyBlockIndex()
+		newBlockIndexByHash, newBlockIndexByHeight := txi.TXIndexChain.CopyBlockIndexes()
 		newBestChain, newBestChainMap := txi.TXIndexChain.CopyBestChain()
 		newBestChain = newBestChain[:len(newBestChain)-1]
 		delete(newBestChainMap, *(blockToDetach.Hash))
-		delete(newBlockIndex, *(blockToDetach.Hash))
+		delete(newBlockIndexByHash, *(blockToDetach.Hash))
 
-		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndex)
+		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndexByHash, newBlockIndexByHeight)
 
 		// At this point the entries for the block should have been removed
 		// from both our Txindex chain and our transaction index mappings.
@@ -401,15 +404,19 @@ func (txi *TXIndex) Update() error {
 		// us to extract custom metadata fields that we can show in our block explorer.
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
-		utxoView, err := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
-		if err != nil {
-			return fmt.Errorf(
-				"Update: Error initializing UtxoView: %v", err)
+		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
+		if blockToAttach.Header.PrevBlockHash != nil {
+			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
+			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash)
+			if err != nil {
+				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
+					blockToAttach.Header.PrevBlockHash, err)
+			}
+			utxoView = utxoViewAndUtxoOps.UtxoView
 		}
 
 		// Do each block update in a single transaction so we're safe in case the node
 		// restarts.
-		blockHeight := uint64(txi.CoreChain.BlockTip().Height)
 		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
 
 			// Iterate through each transaction in the block and do the following:
@@ -418,13 +425,14 @@ func (txi *TXIndex) Update() error {
 			// - add all its mappings to the db.
 			for txnIndexInBlock, txn := range blockMsg.Txns {
 				txnMeta, err := ConnectTxnAndComputeTransactionMetadata(
-					txn, utxoView, blockToAttach.Hash, blockToAttach.Height, uint64(txnIndexInBlock))
+					txn, utxoView, blockToAttach.Hash, blockToAttach.Height,
+					blockToAttach.Header.TstampNanoSecs, uint64(txnIndexInBlock))
 				if err != nil {
 					return fmt.Errorf("Update: Problem connecting txn %v to txindex: %v",
 						txn, err)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockHeight,
+				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockMsg.Header.Height,
 					txn, txi.Params, txnMeta, txi.CoreChain.eventManager)
 				if err != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
@@ -439,7 +447,7 @@ func (txi *TXIndex) Update() error {
 
 		// Now that we have added all the txns to our TxIndex db, attach the block
 		// to update our chain.
-		_, _, err = txi.TXIndexChain.ProcessBlock(blockMsg, false /*verifySignatures*/)
+		_, _, _, err = txi.TXIndexChain.ProcessBlock(blockMsg, false /*verifySignatures*/)
 		if err != nil {
 			return fmt.Errorf("Update: Problem attaching block %v: %v",
 				blockToAttach, err)
@@ -450,4 +458,27 @@ func (txi *TXIndex) Update() error {
 		txi.TXIndexChain.BlockTip().Height, txi.TXIndexChain.BlockTip().Hash)
 
 	return nil
+}
+
+func ConnectTxnAndComputeTransactionMetadata(
+	txn *MsgDeSoTxn, utxoView *UtxoView, blockHash *BlockHash,
+	blockHeight uint32, blockTimestampNanoSecs int64, txnIndexInBlock uint64) (*TransactionMetadata, error) {
+
+	totalNanosPurchasedBefore := utxoView.NanosPurchased
+	usdCentsPerBitcoinBefore := utxoView.GetCurrentUSDCentsPerBitcoin()
+
+	var utxoOps []*UtxoOperation
+	var totalInput, totalOutput, fees uint64
+	var err error
+	utxoOps, totalInput, totalOutput, fees, err = utxoView._connectTransaction(
+		txn, txn.Hash(), blockHeight, blockTimestampNanoSecs, false, false,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"UpdateTxindex: Error connecting txn to UtxoView: %v", err)
+	}
+
+	return ComputeTransactionMetadata(txn, utxoView, blockHash, totalNanosPurchasedBefore,
+		usdCentsPerBitcoinBefore, totalInput, totalOutput, fees, txnIndexInBlock, utxoOps, uint64(blockHeight)), nil
 }

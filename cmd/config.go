@@ -4,6 +4,7 @@ import (
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/viper"
+	"net/url"
 	"os"
 	"path/filepath"
 )
@@ -33,6 +34,9 @@ type Config struct {
 	MaxInboundPeers   uint32
 	OneInboundPerIp   bool
 
+	// NetworkingManager config
+	PeerConnectionRefreshIntervalMillis uint64
+
 	// Snapshot
 	HyperSync                 bool
 	ForceChecksum             bool
@@ -41,6 +45,14 @@ type Config struct {
 	SnapshotBlockHeightPeriod uint64
 	DisableEncoderMigrations  bool
 	HypersyncMaxQueueSize     uint32
+
+	// PoS Validator
+	PosValidatorSeed string
+
+	// Mempool
+	MempoolBackupIntervalMillis                uint64
+	MempoolMaxValidationViewConnects           uint64
+	TransactionValidationRefreshIntervalMillis uint64
 
 	// Mining
 	MinerPublicKeys  []string
@@ -67,7 +79,11 @@ type Config struct {
 	TimeEvents            bool
 
 	// State Syncer
-	StateChangeDir string
+	StateChangeDir                 string
+	StateSyncerMempoolTxnSyncLimit uint64
+
+	// PoS Checkpoint Syncing
+	CheckpointSyncingProviders []string
 }
 
 func LoadConfig() *Config {
@@ -107,6 +123,14 @@ func LoadConfig() *Config {
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 	config.HypersyncMaxQueueSize = viper.GetUint32("hypersync-max-queue-size")
 
+	// PoS Validator
+	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
+
+	// Mempool
+	config.MempoolBackupIntervalMillis = viper.GetUint64("mempool-backup-time-millis")
+	config.MempoolMaxValidationViewConnects = viper.GetUint64("mempool-max-validation-view-connects")
+	config.TransactionValidationRefreshIntervalMillis = viper.GetUint64("transaction-validation-refresh-interval-millis")
+
 	// Peers
 	config.ConnectIPs = viper.GetStringSlice("connect-ips")
 	config.AddIPs = viper.GetStringSlice("add-ips")
@@ -121,6 +145,9 @@ func LoadConfig() *Config {
 	config.IgnoreInboundInvs = viper.GetBool("ignore-inbound-invs")
 	config.MaxInboundPeers = viper.GetUint32("max-inbound-peers")
 	config.OneInboundPerIp = viper.GetBool("one-inbound-per-ip")
+
+	// NetworkManager config
+	config.PeerConnectionRefreshIntervalMillis = viper.GetUint64("peer-connection-refresh-interval-millis")
 
 	// Mining + Admin
 	config.MinerPublicKeys = viper.GetStringSlice("miner-public-keys")
@@ -151,6 +178,30 @@ func LoadConfig() *Config {
 
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")
+	config.StateSyncerMempoolTxnSyncLimit = viper.GetUint64("state-syncer-mempool-txn-sync-limit")
+
+	// PoS Checkpoint Syncing
+	config.CheckpointSyncingProviders = viper.GetStringSlice("checkpoint-syncing-providers")
+	for _, provider := range config.CheckpointSyncingProviders {
+		if _, err := url.ParseRequestURI(provider); err != nil {
+			glog.Fatalf("Invalid checkpoint syncing provider URL: %v", provider)
+		}
+	}
+	// TODO: If someone wants to sync w/o checkpoint syncing, they should be able to do so.
+	// How do we support this? another flag I guess or they just provide an invalid value
+	// to the checkpoint-syncing-providers flag.
+	if len(config.CheckpointSyncingProviders) == 0 && !config.Regtest {
+		if testnet {
+			config.CheckpointSyncingProviders = []string{lib.DefaultTestnetCheckpointProvider}
+		} else {
+			config.CheckpointSyncingProviders = []string{lib.DefaultMainnetCheckpointProvider}
+		}
+	}
+
+	if len(config.CheckpointSyncingProviders) == 0 && config.Regtest {
+		glog.Warningln("No checkpoint syncing providers specified. Syncing will require verification of signatures" +
+			" on all blocks, which may be slow. Consider specifying a checkpoint syncing provider.")
+	}
 
 	return &config
 }
@@ -166,6 +217,10 @@ func (config *Config) Print() {
 
 	if config.PostgresURI != "" {
 		glog.Infof("Postgres URI: %s", config.PostgresURI)
+	}
+
+	if config.PosValidatorSeed != "" {
+		glog.Infof(lib.CLog(lib.Blue, "PoS Validator: ON"))
 	}
 
 	if config.HyperSync {

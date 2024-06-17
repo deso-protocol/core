@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/spf13/viper"
 	"io"
 	"math"
 	"math/big"
@@ -17,6 +16,7 @@ import (
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
+	"github.com/spf13/viper"
 )
 
 type UtxoType uint8
@@ -111,6 +111,7 @@ const (
 	EncoderTypeDmThreadEntry                     EncoderType = 37
 	EncoderTypeDeSoNonce                         EncoderType = 38
 	EncoderTypeTransactorNonceEntry              EncoderType = 39
+
 	// EncoderTypeStateChangeEntry represents a state change to a DeSo encoder entry.
 	EncoderTypeStateChangeEntry EncoderType = 40
 	// EncoderTypeFollowEntry represents a follow relationship between two pkids.
@@ -122,45 +123,66 @@ const (
 	// EncoderTypeTxn represents a transaction in the blockchain.
 	EncoderTypeTxn EncoderType = 44
 
+	EncoderTypeValidatorEntry        EncoderType = 45
+	EncoderTypeStakeEntry            EncoderType = 46
+	EncoderTypeLockedStakeEntry      EncoderType = 47
+	EncoderTypeEpochEntry            EncoderType = 48
+	EncoderTypeLockedBalanceEntry    EncoderType = 49
+	EncoderTypeLockupYieldCurvePoint EncoderType = 50
+
+	// EncoderTypeBLSPublicKeyPKIDPairEntry represents a BLS public key <> PKID mapping.
+	EncoderTypeBLSPublicKeyPKIDPairEntry EncoderType = 51
+
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 45
+	EncoderTypeEndBlockView EncoderType = 52
 )
 
 // Txindex encoder types.
 const (
-	EncoderTypeTransactionMetadata                  EncoderType = 1000000
-	EncoderTypeBasicTransferTxindexMetadata         EncoderType = 1000001
-	EncoderTypeBitcoinExchangeTxindexMetadata       EncoderType = 1000002
-	EncoderTypeCreatorCoinTxindexMetadata           EncoderType = 1000003
-	EncoderTypeCreatorCoinTransferTxindexMetadata   EncoderType = 1000004
-	EncoderTypeDAOCoinTransferTxindexMetadata       EncoderType = 1000005
-	EncoderTypeFilledDAOCoinLimitOrderMetadata      EncoderType = 1000006
-	EncoderTypeDAOCoinLimitOrderTxindexMetadata     EncoderType = 1000007
-	EncoderTypeUpdateProfileTxindexMetadata         EncoderType = 1000008
-	EncoderTypeSubmitPostTxindexMetadata            EncoderType = 1000009
-	EncoderTypeLikeTxindexMetadata                  EncoderType = 1000010
-	EncoderTypeFollowTxindexMetadata                EncoderType = 1000011
-	EncoderTypePrivateMessageTxindexMetadata        EncoderType = 1000012
-	EncoderTypeSwapIdentityTxindexMetadata          EncoderType = 1000013
-	EncoderTypeNFTRoyaltiesMetadata                 EncoderType = 1000014
-	EncoderTypeNFTBidTxindexMetadata                EncoderType = 1000015
-	EncoderTypeAcceptNFTBidTxindexMetadata          EncoderType = 1000016
-	EncoderTypeNFTTransferTxindexMetadata           EncoderType = 1000017
-	EncoderTypeAcceptNFTTransferTxindexMetadata     EncoderType = 1000018
-	EncoderTypeBurnNFTTxindexMetadata               EncoderType = 1000019
-	EncoderTypeDAOCoinTxindexMetadata               EncoderType = 1000020
-	EncoderTypeCreateNFTTxindexMetadata             EncoderType = 1000021
-	EncoderTypeUpdateNFTTxindexMetadata             EncoderType = 1000022
-	EncoderTypeCreateUserAssociationTxindexMetadata EncoderType = 1000023
-	EncoderTypeDeleteUserAssociationTxindexMetadata EncoderType = 1000024
-	EncoderTypeCreatePostAssociationTxindexMetadata EncoderType = 1000025
-	EncoderTypeDeletePostAssociationTxindexMetadata EncoderType = 1000026
-	EncoderTypeAccessGroupTxindexMetadata           EncoderType = 1000027
-	EncoderTypeAccessGroupMembersTxindexMetadata    EncoderType = 1000028
-	EncoderTypeNewMessageTxindexMetadata            EncoderType = 1000029
+	EncoderTypeTransactionMetadata                   EncoderType = 1000000
+	EncoderTypeBasicTransferTxindexMetadata          EncoderType = 1000001
+	EncoderTypeBitcoinExchangeTxindexMetadata        EncoderType = 1000002
+	EncoderTypeCreatorCoinTxindexMetadata            EncoderType = 1000003
+	EncoderTypeCreatorCoinTransferTxindexMetadata    EncoderType = 1000004
+	EncoderTypeDAOCoinTransferTxindexMetadata        EncoderType = 1000005
+	EncoderTypeFilledDAOCoinLimitOrderMetadata       EncoderType = 1000006
+	EncoderTypeDAOCoinLimitOrderTxindexMetadata      EncoderType = 1000007
+	EncoderTypeUpdateProfileTxindexMetadata          EncoderType = 1000008
+	EncoderTypeSubmitPostTxindexMetadata             EncoderType = 1000009
+	EncoderTypeLikeTxindexMetadata                   EncoderType = 1000010
+	EncoderTypeFollowTxindexMetadata                 EncoderType = 1000011
+	EncoderTypePrivateMessageTxindexMetadata         EncoderType = 1000012
+	EncoderTypeSwapIdentityTxindexMetadata           EncoderType = 1000013
+	EncoderTypeNFTRoyaltiesMetadata                  EncoderType = 1000014
+	EncoderTypeNFTBidTxindexMetadata                 EncoderType = 1000015
+	EncoderTypeAcceptNFTBidTxindexMetadata           EncoderType = 1000016
+	EncoderTypeNFTTransferTxindexMetadata            EncoderType = 1000017
+	EncoderTypeAcceptNFTTransferTxindexMetadata      EncoderType = 1000018
+	EncoderTypeBurnNFTTxindexMetadata                EncoderType = 1000019
+	EncoderTypeDAOCoinTxindexMetadata                EncoderType = 1000020
+	EncoderTypeCreateNFTTxindexMetadata              EncoderType = 1000021
+	EncoderTypeUpdateNFTTxindexMetadata              EncoderType = 1000022
+	EncoderTypeCreateUserAssociationTxindexMetadata  EncoderType = 1000023
+	EncoderTypeDeleteUserAssociationTxindexMetadata  EncoderType = 1000024
+	EncoderTypeCreatePostAssociationTxindexMetadata  EncoderType = 1000025
+	EncoderTypeDeletePostAssociationTxindexMetadata  EncoderType = 1000026
+	EncoderTypeAccessGroupTxindexMetadata            EncoderType = 1000027
+	EncoderTypeAccessGroupMembersTxindexMetadata     EncoderType = 1000028
+	EncoderTypeNewMessageTxindexMetadata             EncoderType = 1000029
+	EncoderTypeRegisterAsValidatorTxindexMetadata    EncoderType = 1000030
+	EncoderTypeUnregisterAsValidatorTxindexMetadata  EncoderType = 1000031
+	EncoderTypeStakeTxindexMetadata                  EncoderType = 1000032
+	EncoderTypeUnstakeTxindexMetadata                EncoderType = 1000033
+	EncoderTypeUnlockStakeTxindexMetadata            EncoderType = 1000034
+	EncoderTypeUnjailValidatorTxindexMetadata        EncoderType = 1000035
+	EncoderTypeCoinLockupTxindexMetadata             EncoderType = 1000036
+	EncoderTypeUpdateCoinLockupParamsTxindexMetadata EncoderType = 1000037
+	EncoderTypeCoinLockupTransferTxindexMetadata     EncoderType = 1000038
+	EncoderTypeCoinUnlockTxindexMetadata             EncoderType = 1000039
+	EncoderTypeAtomicTxnsWrapperTxindexMetadata      EncoderType = 1000040
 
 	// EncoderTypeEndTxIndex encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndTxIndex EncoderType = 1000030
+	EncoderTypeEndTxIndex EncoderType = 1000036
 )
 
 // This function translates the EncoderType into an empty DeSoEncoder struct.
@@ -257,6 +279,20 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &MsgDeSoBlock{}
 	case EncoderTypeTxn:
 		return &MsgDeSoTxn{}
+	case EncoderTypeValidatorEntry:
+		return &ValidatorEntry{}
+	case EncoderTypeStakeEntry:
+		return &StakeEntry{}
+	case EncoderTypeLockedStakeEntry:
+		return &LockedStakeEntry{}
+	case EncoderTypeEpochEntry:
+		return &EpochEntry{}
+	case EncoderTypeLockedBalanceEntry:
+		return &LockedBalanceEntry{}
+	case EncoderTypeLockupYieldCurvePoint:
+		return &LockupYieldCurvePoint{}
+	case EncoderTypeBLSPublicKeyPKIDPairEntry:
+		return &BLSPublicKeyPKIDPairEntry{}
 	}
 
 	// Txindex encoder types
@@ -321,6 +357,28 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &AccessGroupMembersTxindexMetadata{}
 	case EncoderTypeNewMessageTxindexMetadata:
 		return &NewMessageTxindexMetadata{}
+	case EncoderTypeRegisterAsValidatorTxindexMetadata:
+		return &RegisterAsValidatorTxindexMetadata{}
+	case EncoderTypeUnregisterAsValidatorTxindexMetadata:
+		return &UnregisterAsValidatorTxindexMetadata{}
+	case EncoderTypeStakeTxindexMetadata:
+		return &StakeTxindexMetadata{}
+	case EncoderTypeUnstakeTxindexMetadata:
+		return &UnstakeTxindexMetadata{}
+	case EncoderTypeUnlockStakeTxindexMetadata:
+		return &UnlockStakeTxindexMetadata{}
+	case EncoderTypeUnjailValidatorTxindexMetadata:
+		return &UnjailValidatorTxindexMetadata{}
+	case EncoderTypeCoinLockupTxindexMetadata:
+		return &CoinLockupTxindexMetadata{}
+	case EncoderTypeUpdateCoinLockupParamsTxindexMetadata:
+		return &UpdateCoinLockupParamsTxindexMetadata{}
+	case EncoderTypeCoinLockupTransferTxindexMetadata:
+		return &CoinLockupTransferTxindexMetadata{}
+	case EncoderTypeCoinUnlockTxindexMetadata:
+		return &CoinUnlockTxindexMetadata{}
+	case EncoderTypeAtomicTxnsWrapperTxindexMetadata:
+		return &AtomicTxnsWrapperTxindexMetadata{}
 	default:
 		return nil
 	}
@@ -576,45 +634,59 @@ const (
 	// used when rolling back a txn to determine what kind of operations need
 	// to be performed. For example, rolling back a BitcoinExchange may require
 	// rolling back an AddUtxo operation.
-	OperationTypeAddUtxo                      OperationType = 0
-	OperationTypeSpendUtxo                    OperationType = 1
-	OperationTypeBitcoinExchange              OperationType = 2
-	OperationTypePrivateMessage               OperationType = 3
-	OperationTypeSubmitPost                   OperationType = 4
-	OperationTypeUpdateProfile                OperationType = 5
-	OperationTypeDeletePost                   OperationType = 7
-	OperationTypeUpdateBitcoinUSDExchangeRate OperationType = 8
-	OperationTypeFollow                       OperationType = 9
-	OperationTypeLike                         OperationType = 10
-	OperationTypeCreatorCoin                  OperationType = 11
-	OperationTypeSwapIdentity                 OperationType = 12
-	OperationTypeUpdateGlobalParams           OperationType = 13
-	OperationTypeCreatorCoinTransfer          OperationType = 14
-	OperationTypeCreateNFT                    OperationType = 15
-	OperationTypeUpdateNFT                    OperationType = 16
-	OperationTypeAcceptNFTBid                 OperationType = 17
-	OperationTypeNFTBid                       OperationType = 18
-	OperationTypeDeSoDiamond                  OperationType = 19
-	OperationTypeNFTTransfer                  OperationType = 20
-	OperationTypeAcceptNFTTransfer            OperationType = 21
-	OperationTypeBurnNFT                      OperationType = 22
-	OperationTypeAuthorizeDerivedKey          OperationType = 23
-	OperationTypeMessagingKey                 OperationType = 24
-	OperationTypeDAOCoin                      OperationType = 25
-	OperationTypeDAOCoinTransfer              OperationType = 26
-	OperationTypeSpendingLimitAccounting      OperationType = 27
-	OperationTypeDAOCoinLimitOrder            OperationType = 28
-	OperationTypeCreateUserAssociation        OperationType = 29
-	OperationTypeDeleteUserAssociation        OperationType = 30
-	OperationTypeCreatePostAssociation        OperationType = 31
-	OperationTypeDeletePostAssociation        OperationType = 32
-	OperationTypeAccessGroup                  OperationType = 33
-	OperationTypeAccessGroupMembers           OperationType = 34
-	OperationTypeNewMessage                   OperationType = 35
-	OperationTypeAddBalance                   OperationType = 36
-	OperationTypeSpendBalance                 OperationType = 37
-	OperationTypeDeleteExpiredNonces          OperationType = 38
-	// NEXT_TAG = 39
+	OperationTypeAddUtxo                       OperationType = 0
+	OperationTypeSpendUtxo                     OperationType = 1
+	OperationTypeBitcoinExchange               OperationType = 2
+	OperationTypePrivateMessage                OperationType = 3
+	OperationTypeSubmitPost                    OperationType = 4
+	OperationTypeUpdateProfile                 OperationType = 5
+	OperationTypeDeletePost                    OperationType = 7
+	OperationTypeUpdateBitcoinUSDExchangeRate  OperationType = 8
+	OperationTypeFollow                        OperationType = 9
+	OperationTypeLike                          OperationType = 10
+	OperationTypeCreatorCoin                   OperationType = 11
+	OperationTypeSwapIdentity                  OperationType = 12
+	OperationTypeUpdateGlobalParams            OperationType = 13
+	OperationTypeCreatorCoinTransfer           OperationType = 14
+	OperationTypeCreateNFT                     OperationType = 15
+	OperationTypeUpdateNFT                     OperationType = 16
+	OperationTypeAcceptNFTBid                  OperationType = 17
+	OperationTypeNFTBid                        OperationType = 18
+	OperationTypeDeSoDiamond                   OperationType = 19
+	OperationTypeNFTTransfer                   OperationType = 20
+	OperationTypeAcceptNFTTransfer             OperationType = 21
+	OperationTypeBurnNFT                       OperationType = 22
+	OperationTypeAuthorizeDerivedKey           OperationType = 23
+	OperationTypeMessagingKey                  OperationType = 24
+	OperationTypeDAOCoin                       OperationType = 25
+	OperationTypeDAOCoinTransfer               OperationType = 26
+	OperationTypeSpendingLimitAccounting       OperationType = 27
+	OperationTypeDAOCoinLimitOrder             OperationType = 28
+	OperationTypeCreateUserAssociation         OperationType = 29
+	OperationTypeDeleteUserAssociation         OperationType = 30
+	OperationTypeCreatePostAssociation         OperationType = 31
+	OperationTypeDeletePostAssociation         OperationType = 32
+	OperationTypeAccessGroup                   OperationType = 33
+	OperationTypeAccessGroupMembers            OperationType = 34
+	OperationTypeNewMessage                    OperationType = 35
+	OperationTypeAddBalance                    OperationType = 36
+	OperationTypeSpendBalance                  OperationType = 37
+	OperationTypeDeleteExpiredNonces           OperationType = 38
+	OperationTypeRegisterAsValidator           OperationType = 39
+	OperationTypeUnregisterAsValidator         OperationType = 40
+	OperationTypeStake                         OperationType = 41
+	OperationTypeUnstake                       OperationType = 42
+	OperationTypeUnlockStake                   OperationType = 43
+	OperationTypeUnjailValidator               OperationType = 44
+	OperationTypeCoinLockup                    OperationType = 45
+	OperationTypeCoinLockupTransfer            OperationType = 46
+	OperationTypeCoinUnlock                    OperationType = 47
+	OperationTypeUpdateCoinLockupParams        OperationType = 48
+	OperationTypeStakeDistributionRestake      OperationType = 49
+	OperationTypeStakeDistributionPayToBalance OperationType = 50
+	OperationTypeSetValidatorLastActiveAtEpoch OperationType = 51
+	OperationTypeAtomicTxnsWrapper             OperationType = 52
+	// NEXT_TAG = 53
 )
 
 func (op OperationType) String() string {
@@ -695,6 +767,34 @@ func (op OperationType) String() string {
 		return "OperationTypeSpendBalance"
 	case OperationTypeDeleteExpiredNonces:
 		return "OperationTypeDeleteExpiredNonces"
+	case OperationTypeRegisterAsValidator:
+		return "OperationTypeRegisterAsValidator"
+	case OperationTypeUnregisterAsValidator:
+		return "OperationTypeUnregisterAsValidator"
+	case OperationTypeStake:
+		return "OperationTypeStake"
+	case OperationTypeUnstake:
+		return "OperationTypeUnstake"
+	case OperationTypeUnlockStake:
+		return "OperationTypeUnlockStake"
+	case OperationTypeUnjailValidator:
+		return "OperationTypeUnjailValidator"
+	case OperationTypeCoinLockup:
+		return "OperationTypeCoinLockup"
+	case OperationTypeUpdateCoinLockupParams:
+		return "OperationTypeUpdateCoinLockupParams"
+	case OperationTypeCoinLockupTransfer:
+		return "OperationTypeCoinLockupTransfer"
+	case OperationTypeCoinUnlock:
+		return "OperationTypeCoinUnlock"
+	case OperationTypeStakeDistributionRestake:
+		return "OperationTypeStakeDistributionRestake"
+	case OperationTypeSetValidatorLastActiveAtEpoch:
+		return "OperationTypeSetValidatorLastActiveAtEpoch"
+	case OperationTypeStakeDistributionPayToBalance:
+		return "OperationTypeStakeDistributionPayToBalance"
+	case OperationTypeAtomicTxnsWrapper:
+		return "OperationTypeAtomicTxnsWrapper"
 	}
 	return "OperationTypeUNKNOWN"
 }
@@ -882,6 +982,88 @@ type UtxoOperation struct {
 
 	// Metadata related to the state change that this operation represents.
 	StateChangeMetadata DeSoEncoder
+
+	// PrevValidatorEntry is the previous ValidatorEntry prior to a
+	// register, unregister, stake, or unstake txn.
+	PrevValidatorEntry *ValidatorEntry
+
+	// PrevStakeEntries is a slice of StakeEntries prior to
+	// a register, unregister, stake, or unstake txn.
+	PrevStakeEntries []*StakeEntry
+
+	// PrevLockedStakeEntries is a slice of LockedStakeEntries
+	// prior to a unstake or unlock stake txn.
+	PrevLockedStakeEntries []*LockedStakeEntry
+
+	//
+	// Coin Lockup fields
+	//
+
+	// PrevLockedBalanceEntry is the previous LockedBalanceEntry prior
+	// to a DAO coin lockup. PrevCoinEntry defined above stores the
+	// CoinsInCirculation and NumberOfHolders prior to a lockup transaction.
+	//
+	// Vested lockups are a bit more confusing as we delete then set numerous locked balance entries.
+	// To revert this we must know what locked balance entries were set as well as what locked
+	// balance entries were deleted. We use PrevLockedBalanceEntries below and SetLockedBalanceEntries to convey
+	// these two pieces of state change for disconnects.
+	PrevLockedBalanceEntry  *LockedBalanceEntry
+	SetLockedBalanceEntries []*LockedBalanceEntry
+
+	// PrevLockupYieldCurvePoint and PrevLockupTransferRestriction are
+	// the previous yield curve and transfer restrictions associated
+	// with an UpdateCoinLockupParams transaction.
+	PrevLockupYieldCurvePoint     *LockupYieldCurvePoint
+	PrevLockupTransferRestriction TransferRestrictionStatus
+
+	// PrevSenderLockedBalanceEntry and PrevReceiverLockedBalanceEntry are the previous LockedBalanceEntry
+	// for both the sender and receiver in the coin lockup transfer operation.
+	PrevSenderLockedBalanceEntry   *LockedBalanceEntry
+	PrevReceiverLockedBalanceEntry *LockedBalanceEntry
+
+	// PrevLockedBalanceEntries is a slice of LockedBalanceEntry prior to a coin unlock.
+	// ModifiedLockedBalanceEntry is required due to the dynamic nature of the LockedBalanceEntryKey
+	// in the coin unlock transaction. Essentially we need to know what LockedBalanceEntryKey
+	// did not exist prior to the coin unlock to ensure it is properly deleted during a disconnect.
+	// There is at most one modified locked balance entry per unlock (a vested locked balance entry
+	// that has not fully expired yet).
+	PrevLockedBalanceEntries   []*LockedBalanceEntry
+	ModifiedLockedBalanceEntry *LockedBalanceEntry
+
+	// StakeAmountNanosDiff is used by Rosetta to return the amount of DESO that was added
+	// to a StakeEntry during the end-of-epoch hook. It's needed
+	// in order to avoid having to re-run the end of epoch hook.
+	StakeAmountNanosDiff uint64
+
+	// LockedAtEpochNumber is used by Rosetta to uniquely identify a subaccount representing
+	// a locked stake entry that is created during an Unlock transaction. Without this, we
+	// would need to consolidate many LockedStakeEntries into a single subaccount which would
+	// make it difficult to track the history of a particular stake entry and generally lead
+	// to more complexity in rosetta which is undesirable. Another alternative would be to
+	// require Rosetta to be able to compute epoch's based on block height, but this would
+	// require a more structural change to rosetta's codebase so that transaction parsing
+	// would be aware of the block height. This is also undesirable. Although adding a new
+	// field to theUtxoOperation struct is not ideal, the tradeoff is worth it for the
+	// simplicity it provides in rosetta. TODO: When refactoring UtxoOperations in the future,
+	// consider how we can maintain support for rosetta and situations like this where the
+	// transaction metadata itself doesn't specify the information we need to return to
+	// rosetta.
+	LockedAtEpochNumber uint64
+
+	// AtomicTxnInnerUtxoOps maintains a 2D slice of all UtxoOps collected from transactions
+	// who were executed atomically. The 2D array allows us to easily disconnect transactions
+	// who are part of an atomic transaction as we hold each of their UtxoOps separately.
+	//
+	// NOTE: While it may seem erroneous to have a field within the UtxoOperation struct of
+	// type UtxoOperation, this is valid because the size of the pointer is always known at
+	// compile time. Hence, there's no circular dependency as is the case if we were to use
+	// [][]UtxoOperation for this field instead. This could equivalently be a 2D array of
+	// void pointers from the compiler's perspective. In addition, it may seem as though
+	// there's a recursive issue in RawEncodeWithoutMetadata resulting from cyclic dependencies,
+	// this is not the case as we only call RawEncodeWithoutMetadata if the length of the
+	// AtomicTxnsInnerUtxoOps transaction is non-zero. This will always occur, meaning we
+	// can deterministically encode and decode AtomicTxnsInnerUtxoOps.
+	AtomicTxnsInnerUtxoOps [][]*UtxoOperation
 }
 
 // FIXME: This hackIsRunningStateSyncer() call is a hack to get around the fact that
@@ -1219,6 +1401,50 @@ func (op *UtxoOperation) RawEncodeWithoutMetadata(blockHeight uint64, skipMetada
 	// in with a release that requires a resync anyway.
 	if hackIsRunningStateSyncer() && op.StateChangeMetadata != nil {
 		data = append(data, EncodeToBytes(blockHeight, op.StateChangeMetadata, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// PrevValidatorEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevValidatorEntry, skipMetadata...)...)
+
+		// PrevStakeEntries
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevStakeEntries, blockHeight, skipMetadata...)...)
+
+		// PrevLockedStakeEntries
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedStakeEntries, blockHeight, skipMetadata...)...)
+
+		// Lockup Fields
+
+		// PrevLockedBalanceEntry, SetLockedBalanceEntries
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockedBalanceEntry, skipMetadata...)...)
+		data = append(data, EncodeDeSoEncoderSlice(op.SetLockedBalanceEntries, blockHeight, skipMetadata...)...)
+
+		// PrevLockupYieldCurvePoint, PrevLockupTransferRestrictions
+		data = append(data, EncodeToBytes(blockHeight, op.PrevLockupYieldCurvePoint, skipMetadata...)...)
+		data = append(data, byte(op.PrevLockupTransferRestriction))
+
+		// PrevSenderLockedBalanceEntry, PrevReceiverLockedBalanceEntry
+		data = append(data, EncodeToBytes(blockHeight, op.PrevSenderLockedBalanceEntry, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.PrevReceiverLockedBalanceEntry, skipMetadata...)...)
+
+		// PrevLockedBalanceEntries, ModifiedLockedBalanceEntry
+		data = append(data, EncodeDeSoEncoderSlice(op.PrevLockedBalanceEntries, blockHeight, skipMetadata...)...)
+		data = append(data, EncodeToBytes(blockHeight, op.ModifiedLockedBalanceEntry, skipMetadata...)...)
+
+		// StakeAmountNanosDiff
+		data = append(data, UintToBuf(op.StakeAmountNanosDiff)...)
+
+		// LockedAtEpochNumber
+		data = append(data, UintToBuf(op.LockedAtEpochNumber)...)
+
+		// AtomicTxnsInnerUtxoOps
+		data = append(data, UintToBuf(uint64(len(op.AtomicTxnsInnerUtxoOps)))...)
+		for _, entry := range op.AtomicTxnsInnerUtxoOps {
+			data = append(data, UintToBuf(uint64(len(entry)))...)
+			for _, utxoOps := range entry {
+				data = append(data, EncodeToBytes(blockHeight, utxoOps, skipMetadata...)...)
+			}
+		}
 	}
 
 	return data
@@ -1852,11 +2078,105 @@ func (op *UtxoOperation) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.
 		}
 	}
 
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// PrevValidatorEntry
+		if op.PrevValidatorEntry, err = DecodeDeSoEncoder(&ValidatorEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevValidatorEntry: ")
+		}
+
+		// PrevStakeEntries
+		if op.PrevStakeEntries, err = DecodeDeSoEncoderSlice[*StakeEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevStakeEntries: ")
+		}
+
+		// PrevLockedStakeEntries
+		if op.PrevLockedStakeEntries, err = DecodeDeSoEncoderSlice[*LockedStakeEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedStakeEntries: ")
+		}
+
+		// Lockup Fields
+
+		// PrevLockedBalanceEntry, SetLockedBalanceEntries
+		if op.PrevLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
+		}
+		if op.SetLockedBalanceEntries, err = DecodeDeSoEncoderSlice[*LockedBalanceEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading SetLockedBalanceEntries: ")
+		}
+
+		// PrevLockupYieldCurvePoint, PrevLockupTransferRestriction
+		if op.PrevLockupYieldCurvePoint, err = DecodeDeSoEncoder(&LockupYieldCurvePoint{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupYieldCurvePoint: ")
+		}
+		lockupTransferRestriction, err := rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockupTransferRestriction: ")
+		}
+		op.PrevLockupTransferRestriction = TransferRestrictionStatus(lockupTransferRestriction)
+
+		// PrevSenderLockedBalanceEntry, PrevReceiverLockedBalanceEntry
+		if op.PrevSenderLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevSenderLockedBalanceEntry: ")
+		}
+		if op.PrevReceiverLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem Reading PrevReceiverLockedBalanceEntry: ")
+		}
+
+		// PrevLockedBalanceEntries
+		if op.PrevLockedBalanceEntries, err = DecodeDeSoEncoderSlice[*LockedBalanceEntry](rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading PrevLockedBalanceEntry: ")
+		}
+		// ModifiedLockedBalanceEntry
+		if op.ModifiedLockedBalanceEntry, err = DecodeDeSoEncoder(&LockedBalanceEntry{}, rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem Reading ModifiedLockedBalanceEntry: ")
+		}
+
+		// StakeAmountNanosDiff
+		if op.StakeAmountNanosDiff, err = ReadUvarint(rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading StakeAmountNanosDiff: ")
+		}
+
+		// LockedAtEpochNumber
+		if op.LockedAtEpochNumber, err = ReadUvarint(rr); err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading LockedAtEpochNumber: ")
+		}
+
+		// AtomicTxnsInnerUtxoOps
+		lenAtomicTnxInnerUtxoOps, err := ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerUtxoOps")
+		}
+		for ii := uint64(0); ii < lenAtomicTnxInnerUtxoOps; ii++ {
+			lenInnerOperations, err := ReadUvarint(rr)
+			if err != nil {
+				return errors.Wrapf(err,
+					"UtxoOperation.Decode: Problem reading len of AtomicTxnsInnerUtxoOps[%d]", ii)
+			}
+
+			var innerOperations []*UtxoOperation
+			for jj := uint64(0); jj < lenInnerOperations; jj++ {
+				innerOperation := &UtxoOperation{}
+				if exist, err := DecodeFromBytes(innerOperation, rr); exist && err == nil {
+					innerOperations = append(innerOperations, innerOperation)
+				} else {
+					return errors.Wrapf(err,
+						"UtxoOperation.Decode: Problem decoding AtomicTxnsInnerUtxoOps[%d][%d]", ii, jj)
+				}
+			}
+			op.AtomicTxnsInnerUtxoOps = append(op.AtomicTxnsInnerUtxoOps, innerOperations)
+		}
+	}
+
 	return nil
 }
 
 func (op *UtxoOperation) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, BalanceModelMigration)
+	return GetMigrationVersion(
+		blockHeight,
+		AssociationsAndAccessGroupsMigration,
+		BalanceModelMigration,
+		ProofOfStake1StateSetupMigration,
+	)
 }
 
 func (op *UtxoOperation) GetEncoderType() EncoderType {
@@ -3022,6 +3342,15 @@ type ForbiddenPubKeyEntry struct {
 	isDeleted bool
 }
 
+func (entry *ForbiddenPubKeyEntry) Copy() *ForbiddenPubKeyEntry {
+	pubKeyCopy := make([]byte, len(entry.PubKey))
+	copy(pubKeyCopy, entry.PubKey)
+	return &ForbiddenPubKeyEntry{
+		PubKey:    pubKeyCopy,
+		isDeleted: entry.isDeleted,
+	}
+}
+
 func (entry *ForbiddenPubKeyEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 	data = append(data, EncodeByteArray(entry.PubKey)...)
@@ -3502,8 +3831,10 @@ func (key *DerivedKeyEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *byt
 }
 
 func (key *DerivedKeyEntry) GetVersionByte(blockHeight uint64) byte {
+	// Remember to update this every time there an encoder migration that impacts
+	// the TransactionSpendingLimit struct.
 	return GetMigrationVersion(blockHeight, UnlimitedDerivedKeysMigration, AssociationsAndAccessGroupsMigration,
-		BalanceModelMigration)
+		BalanceModelMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (key *DerivedKeyEntry) GetEncoderType() EncoderType {
@@ -3806,7 +4137,9 @@ type GlobalParamsEntry struct {
 	// The maximum number of NFT copies that are allowed to be minted.
 	MaxCopiesPerNFT uint64
 
-	// The new minimum fee the network will accept
+	// MinimumNetworkFeeNanosPerKB is the minimal fee rate in DeSo nanos per KB a transaction can have.
+	// If a transaction has a lower fee than MinimumNetworkFeeNanosPerKB, it will be
+	// rejected by the node's mempool.
 	MinimumNetworkFeeNanosPerKB uint64
 
 	// MaxNonceExpirationBlockHeightOffset is maximum value nodes will
@@ -3814,6 +4147,165 @@ type GlobalParamsEntry struct {
 	// and the expiration block height specified in the nonce for a
 	// transaction.
 	MaxNonceExpirationBlockHeightOffset uint64
+
+	// StakeLockupEpochDuration is the number of epochs that a
+	// user must wait before unlocking their unstaked stake.
+	StakeLockupEpochDuration uint64
+
+	// ValidatorJailEpochDuration is the number of epochs that a validator must
+	// wait after being jailed before submitting an UnjailValidator txn.
+	ValidatorJailEpochDuration uint64
+
+	// LeaderScheduleMaxNumValidators is the maximum number of validators that
+	// are included when generating a new Proof-of-Stake leader schedule. This
+	// must be less than or equal to ValidatorSetMaxNumValidators.
+	LeaderScheduleMaxNumValidators uint64
+
+	// ValidatorSetMaxNumValidators is the maximum number of validators that
+	// are included in the active validator set every epoch in the Proof-of-Stake
+	// consensus. This must be greater than or equal to LeaderScheduleMaxNumValidators.
+	ValidatorSetMaxNumValidators uint64
+
+	// StakingRewardsMaxNumStakes is the maximum number of stake entries that are
+	// eligible to receive block rewards every epoch in the Proof-of-Stake
+	// consensus.
+	StakingRewardsMaxNumStakes uint64
+
+	// StakingRewardsAPYBasisPoints determines the annual interest rate that stakers
+	// receive on their stake in the Proof-of-Stake consensus. Stake rewards are paid
+	// out at the end of every epoch based on the APY. The APY is configured as basis
+	// points. Example:
+	// - An APY of 5% corresponds to a value of 0.05 * 10000 = 500 basis points
+	StakingRewardsAPYBasisPoints uint64
+
+	// EpochDurationNumBlocks is the number of blocks included in one epoch.
+	EpochDurationNumBlocks uint64
+
+	// JailInactiveValidatorGracePeriodEpochs is the number of epochs we
+	// allow a validator to be inactive for (neither voting nor proposing
+	// blocks) before they are jailed.
+	JailInactiveValidatorGracePeriodEpochs uint64
+
+	// MaximumVestedIntersectionsPerLockupTransaction is used to limit the computational complexity of
+	// vested lockup transactions. Essentially, vested lockups may overlap in time creating either
+	// significant complexity on the lockup transaction or the unlock transaction. As a simple example,
+	// consider a user having the following five vested lockups:
+	//
+	//		January 1st 2024 -> January 1st 2025; Amount: 1 DESO
+	//		February 1st 2024 -> February 1st 2025; Amount: 1 DESO
+	//		March 1st 2024 -> March 1st 2025; Amount: 1 DESO
+	//		April 1st 2024 -> April 1st 2025; Amount: 1 DESO
+	//		May 1st 2024 -> May 1st 2025; Amount: 1 DESO
+	//
+	// Notice that between May 1st 2024 and January 1st 2025 anytime the user wants to perform an unlock
+	// on these vested locked balance entries they must read five distinct entries, update them,
+	// possible consolidate them with other existing entries in the db, and write them back to disk. Worse,
+	// this would happen on the unlock transaction which can be triggered every time. To get around this issue,
+	// we consolidate these transactions on the lockup instead. For example, what SHOULD be stored in the database
+	// for these five vested lockups is:
+	//
+	//		January 1st 2024 -> February 1st 2024; Amount: 1 DESO
+	//		February 1st 2024 -> March 1st 2024; Amount: 2 DESO
+	//		March 1st 2024 -> April 1st 2024; Amount: 3 DESO
+	//		April 1st 2024 -> May 1st 2024; Amount: 4 DESO
+	//		May 1st 2024 -> January 1st 2025; Amount: 5 DESO
+	//		January 1st 2025 -> February 1st 2025; Amount: 4 DESO
+	//		February 1st 2025 -> March 1st 2025; Amount: 3 DESO
+	//		March 1st 2025 -> April 1st 2025; Amount: 2 DESO
+	//		April 1st 2025 -> May 1st 2025; Amount: 1 DESO
+	//
+	// Notice that this is functionally identical but at any given point in time we hit exactly one vested
+	// locked balance entry. This consolidation on the lockup transaction operation could be computationally expensive.
+	// Hence, we limit this complexity with the MaximumVestedIntersectionsPerLockupTransactions (default: 1000).
+	// When connecting a lockup transaction we check to see how many existing vested locked balance entries
+	// we would intersect with. If we exceed the MaximumVestedIntersectionsPerLockupTransaction, we reject
+	// the transaction. A user must split their single transaction into multiple disjoint time intervals which
+	// satisfies the limit.
+	MaximumVestedIntersectionsPerLockupTransaction int
+
+	// FeeBucketGrowthRateBasisPoints is the rate of growth of the fee bucket ranges. This is part of the new
+	// PoS Mempool. The multiplier is given as basis points. For example a value of 1000 means that the fee bucket
+	// ranges will grow by 10% each time. If, let's say, we start with MinimumNetworkFeeNanosPerKB of 1000 nanos,
+	// then the first bucket will be [1000, 1099], the second bucket will be [1100, 1209], the third bucket will
+	// be [1210, 1330], etc.
+	FeeBucketGrowthRateBasisPoints uint64
+
+	// BlockTimestampDriftNanoSecs is the maximum number of nanoseconds from the current timestamp that
+	// we will allow a PoS block to be submitted.
+	BlockTimestampDriftNanoSecs int64
+
+	// MempoolMaxSizeBytes is the maximum size of the mempool in bytes.
+	MempoolMaxSizeBytes uint64
+
+	// MempoolFeeEstimatorNumMempoolBlocks is the number of possible future blocks to a txn may be placed
+	// into when consider when estimating the fee for a new txn.
+	MempoolFeeEstimatorNumMempoolBlocks uint64
+
+	// MempoolFeeEstimatorNumPastBlocks is the number of past blocks to reference txn fees from when estimating
+	// the fee for a new txn.
+	MempoolFeeEstimatorNumPastBlocks uint64
+
+	// DefaultMempoolCongestionFactorBasisPoints and DefaultMempoolPastBlocksCongestionFactorBasisPoints are the default values
+	// for GlobalParams.MempoolCongestionFactorBasisPoints and GlobalParams.DefaultMempoolPastBlocksCongestionFactorBasisPoints.
+	/// See comments in GlobalParamsEntry for a description of their usage.
+	MempoolCongestionFactorBasisPoints           uint64
+	MempoolPastBlocksCongestionFactorBasisPoints uint64
+
+	// MempoolPriorityPercentileBasisPoints and MempoolPastBlocksPriorityPercentileBasisPoints are the default values
+	// for GlobalParams.DefaultMempoolPriorityPercentileBasisPoints and GlobalParams.DefaultMempoolPastBlocksPriorityPercentileBasisPoints.
+	// See comments in GlobalParamsEntry for a description of their usage.
+	MempoolPriorityPercentileBasisPoints           uint64
+	MempoolPastBlocksPriorityPercentileBasisPoints uint64
+
+	// MaxBlockSizeBytesPoS is the maximum size of a block in bytes.
+	MaxBlockSizeBytesPoS uint64
+
+	// SoftMaxBlockSizeBytesPoS is the ideal steady state size of a block in bytes.
+	// This value will be used to control size of block production and congestion in fee estimation.
+	SoftMaxBlockSizeBytesPoS uint64
+
+	// MaxTxnSizeBytesPoS is the maximum size of a transaction in bytes allowed.
+	MaxTxnSizeBytesPoS uint64
+
+	// BlockProductionIntervalMillisecondsPoS is the time in milliseconds to produce blocks.
+	BlockProductionIntervalMillisecondsPoS uint64
+
+	// TimeoutIntervalMillisecondsPoS is the time in milliseconds to wait before timing out a view.
+	TimeoutIntervalMillisecondsPoS uint64
+}
+
+func (gp *GlobalParamsEntry) Copy() *GlobalParamsEntry {
+	return &GlobalParamsEntry{
+		USDCentsPerBitcoin:                             gp.USDCentsPerBitcoin,
+		CreateProfileFeeNanos:                          gp.CreateProfileFeeNanos,
+		CreateNFTFeeNanos:                              gp.CreateNFTFeeNanos,
+		MaxCopiesPerNFT:                                gp.MaxCopiesPerNFT,
+		MinimumNetworkFeeNanosPerKB:                    gp.MinimumNetworkFeeNanosPerKB,
+		MaxNonceExpirationBlockHeightOffset:            gp.MaxNonceExpirationBlockHeightOffset,
+		StakeLockupEpochDuration:                       gp.StakeLockupEpochDuration,
+		ValidatorJailEpochDuration:                     gp.ValidatorJailEpochDuration,
+		LeaderScheduleMaxNumValidators:                 gp.LeaderScheduleMaxNumValidators,
+		ValidatorSetMaxNumValidators:                   gp.ValidatorSetMaxNumValidators,
+		StakingRewardsMaxNumStakes:                     gp.StakingRewardsMaxNumStakes,
+		StakingRewardsAPYBasisPoints:                   gp.StakingRewardsAPYBasisPoints,
+		EpochDurationNumBlocks:                         gp.EpochDurationNumBlocks,
+		JailInactiveValidatorGracePeriodEpochs:         gp.JailInactiveValidatorGracePeriodEpochs,
+		MaximumVestedIntersectionsPerLockupTransaction: gp.MaximumVestedIntersectionsPerLockupTransaction,
+		FeeBucketGrowthRateBasisPoints:                 gp.FeeBucketGrowthRateBasisPoints,
+		BlockTimestampDriftNanoSecs:                    gp.BlockTimestampDriftNanoSecs,
+		MempoolMaxSizeBytes:                            gp.MempoolMaxSizeBytes,
+		MempoolFeeEstimatorNumMempoolBlocks:            gp.MempoolFeeEstimatorNumMempoolBlocks,
+		MempoolFeeEstimatorNumPastBlocks:               gp.MempoolFeeEstimatorNumPastBlocks,
+		MempoolCongestionFactorBasisPoints:             gp.MempoolCongestionFactorBasisPoints,
+		MempoolPastBlocksCongestionFactorBasisPoints:   gp.MempoolPastBlocksCongestionFactorBasisPoints,
+		MempoolPriorityPercentileBasisPoints:           gp.MempoolPriorityPercentileBasisPoints,
+		MempoolPastBlocksPriorityPercentileBasisPoints: gp.MempoolPastBlocksPriorityPercentileBasisPoints,
+		MaxBlockSizeBytesPoS:                           gp.MaxBlockSizeBytesPoS,
+		SoftMaxBlockSizeBytesPoS:                       gp.SoftMaxBlockSizeBytesPoS,
+		MaxTxnSizeBytesPoS:                             gp.MaxTxnSizeBytesPoS,
+		BlockProductionIntervalMillisecondsPoS:         gp.BlockProductionIntervalMillisecondsPoS,
+		TimeoutIntervalMillisecondsPoS:                 gp.TimeoutIntervalMillisecondsPoS,
+	}
 }
 
 func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
@@ -3826,6 +4318,31 @@ func (gp *GlobalParamsEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMe
 	data = append(data, UintToBuf(gp.MinimumNetworkFeeNanosPerKB)...)
 	if MigrationTriggered(blockHeight, BalanceModelMigration) {
 		data = append(data, UintToBuf(gp.MaxNonceExpirationBlockHeightOffset)...)
+	}
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		data = append(data, UintToBuf(gp.StakeLockupEpochDuration)...)
+		data = append(data, UintToBuf(gp.ValidatorJailEpochDuration)...)
+		data = append(data, UintToBuf(gp.LeaderScheduleMaxNumValidators)...)
+		data = append(data, UintToBuf(gp.ValidatorSetMaxNumValidators)...)
+		data = append(data, UintToBuf(gp.StakingRewardsMaxNumStakes)...)
+		data = append(data, UintToBuf(gp.StakingRewardsAPYBasisPoints)...)
+		data = append(data, UintToBuf(gp.EpochDurationNumBlocks)...)
+		data = append(data, UintToBuf(gp.JailInactiveValidatorGracePeriodEpochs)...)
+		data = append(data, IntToBuf(int64(gp.MaximumVestedIntersectionsPerLockupTransaction))...)
+		data = append(data, UintToBuf(gp.FeeBucketGrowthRateBasisPoints)...)
+		data = append(data, IntToBuf(gp.BlockTimestampDriftNanoSecs)...)
+		data = append(data, UintToBuf(gp.MempoolMaxSizeBytes)...)
+		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumMempoolBlocks)...)
+		data = append(data, UintToBuf(gp.MempoolFeeEstimatorNumPastBlocks)...)
+		data = append(data, UintToBuf(gp.MempoolCongestionFactorBasisPoints)...)
+		data = append(data, UintToBuf(gp.MempoolPastBlocksCongestionFactorBasisPoints)...)
+		data = append(data, UintToBuf(gp.MempoolPriorityPercentileBasisPoints)...)
+		data = append(data, UintToBuf(gp.MempoolPastBlocksPriorityPercentileBasisPoints)...)
+		data = append(data, UintToBuf(gp.MaxBlockSizeBytesPoS)...)
+		data = append(data, UintToBuf(gp.SoftMaxBlockSizeBytesPoS)...)
+		data = append(data, UintToBuf(gp.MaxTxnSizeBytesPoS)...)
+		data = append(data, UintToBuf(gp.BlockProductionIntervalMillisecondsPoS)...)
+		data = append(data, UintToBuf(gp.TimeoutIntervalMillisecondsPoS)...)
 	}
 	return data
 }
@@ -3859,15 +4376,133 @@ func (gp *GlobalParamsEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *by
 			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxNonceExpirationBlockHeightOffset")
 		}
 	}
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		gp.StakeLockupEpochDuration, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakeLockupEpochDuration: ")
+		}
+		gp.ValidatorJailEpochDuration, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorJailEpochDuration: ")
+		}
+		gp.LeaderScheduleMaxNumValidators, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading LeaderScheduleMaxNumValidators: ")
+		}
+		gp.ValidatorSetMaxNumValidators, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading ValidatorSetMaxNumValidators: ")
+		}
+		gp.StakingRewardsMaxNumStakes, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsMaxNumStakes: ")
+		}
+		gp.StakingRewardsAPYBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading StakingRewardsAPYBasisPoints: ")
+		}
+		gp.EpochDurationNumBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading EpochDurationNumBlocks: ")
+		}
+		gp.JailInactiveValidatorGracePeriodEpochs, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading JailInactiveValidatorGracePeriodEpochs: ")
+		}
+		maximumVestedIntersectionsPerLockupTransaction, err := ReadVarint(rr)
+		if err != nil {
+			return errors.Wrapf(err,
+				"GlobalParamsEntry.Decode: Problem reading MaximumVestedIntersectionsPerLockupTransaction")
+		}
+		gp.MaximumVestedIntersectionsPerLockupTransaction = int(maximumVestedIntersectionsPerLockupTransaction)
+		gp.FeeBucketGrowthRateBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading FeeBucketGrowthRateBasisPoints")
+		}
+		gp.BlockTimestampDriftNanoSecs, err = ReadVarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading BlockTimestampDriftNanoSecs")
+		}
+		gp.MempoolMaxSizeBytes, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolMaxSizeBytes")
+		}
+		gp.MempoolFeeEstimatorNumMempoolBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumMempoolBlocks")
+		}
+		gp.MempoolFeeEstimatorNumPastBlocks, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolFeeEstimatorNumPastBlocks")
+		}
+		gp.MempoolCongestionFactorBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolCongestionFactorBasisPoints")
+		}
+		gp.MempoolPastBlocksCongestionFactorBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolPastBlocksCongestionFactorBasisPoints")
+		}
+		gp.MempoolPriorityPercentileBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolPriorityPercentileBasisPoints")
+		}
+		gp.MempoolPastBlocksPriorityPercentileBasisPoints, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MempoolPastBlocksPriorityPercentileBasisPoints")
+		}
+		gp.MaxBlockSizeBytesPoS, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxBlockSizeBytesPoS")
+		}
+		gp.SoftMaxBlockSizeBytesPoS, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading SoftMaxBlockSizeBytesPoS")
+		}
+		gp.MaxTxnSizeBytesPoS, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading MaxTxnSizeBytesPoS")
+		}
+		gp.BlockProductionIntervalMillisecondsPoS, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading BlockProductionIntervalMillisecondsPoS")
+		}
+		gp.TimeoutIntervalMillisecondsPoS, err = ReadUvarint(rr)
+		if err != nil {
+			return errors.Wrapf(err, "GlobalParamsEntry.Decode: Problem reading TimeoutIntervalMillisecondsPoS")
+		}
+	}
 	return nil
 }
 
 func (gp *GlobalParamsEntry) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, BalanceModelMigration)
+	return GetMigrationVersion(blockHeight, BalanceModelMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (gp *GlobalParamsEntry) GetEncoderType() EncoderType {
 	return EncoderTypeGlobalParamsEntry
+}
+
+// ComputeFeeTimeBucketMinimumFeeAndMultiplier takes the MinimumNetworkFeeNanosPerKB and FeeBucketGrowthRateBasisPoints,
+// scales the growth rate into a multiplier, and returns the result as big.Floats.
+func (gp *GlobalParamsEntry) ComputeFeeTimeBucketMinimumFeeAndMultiplier() (
+	_minimumRate *big.Float,
+	_bucketMultiplier *big.Float,
+) {
+	minimumNetworkFeeNanosPerKB, growthRateBasisPoints := gp.GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints()
+	return minimumNetworkFeeNanosPerKB, ComputeMultiplierFromGrowthRateBasisPoints(growthRateBasisPoints)
+}
+
+// GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints returns the the MinimumNetworkFeeNanosPerKB and
+// FeeBucketGrowthRateBasisPoints params as returns them as big.Floats.
+func (gp *GlobalParamsEntry) GetFeeTimeBucketMinimumFeeAndGrowthRateBasisPoints() (
+	_minimumRate *big.Float,
+	_bucketMultiplier *big.Float,
+) {
+	minimumNetworkFeeNanosPerKB := NewFloat().SetUint64(gp.MinimumNetworkFeeNanosPerKB)
+	growthRateBasisPoints := NewFloat().SetUint64(gp.FeeBucketGrowthRateBasisPoints)
+
+	return minimumNetworkFeeNanosPerKB, growthRateBasisPoints
 }
 
 // This struct holds info on a readers interactions (e.g. likes) with a post.
@@ -4247,7 +4882,7 @@ func (be *BalanceEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadat
 
 	data = append(data, EncodeToBytes(blockHeight, be.HODLerPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, be.CreatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(&be.BalanceNanos)...)
+	data = append(data, VariableEncodeUint256(&be.BalanceNanos)...)
 	data = append(data, BoolToByte(be.HasPurchased))
 
 	return data
@@ -4269,7 +4904,7 @@ func (be *BalanceEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.R
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem decoding CreatorPKID")
 	}
 
-	balanceNanos, err := DecodeUint256(rr)
+	balanceNanos, err := VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "BalanceEntry.Decode: Problem reading BalanceNanos")
 	}
@@ -4372,17 +5007,23 @@ type CoinEntry struct {
 	MintingDisabled bool
 
 	TransferRestrictionStatus TransferRestrictionStatus
+
+	// ===== ENCODER MIGRATION ProofOfStake1StateSetupMigration =====
+	// LockupTransferRestrictionStatus specifies transfer restrictions
+	// for only those DAO coins actively locked up.
+	LockupTransferRestrictionStatus TransferRestrictionStatus
 }
 
 func (ce *CoinEntry) Copy() *CoinEntry {
 	return &CoinEntry{
-		CreatorBasisPoints:        ce.CreatorBasisPoints,
-		DeSoLockedNanos:           ce.DeSoLockedNanos,
-		NumberOfHolders:           ce.NumberOfHolders,
-		CoinsInCirculationNanos:   *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
-		CoinWatermarkNanos:        ce.CoinWatermarkNanos,
-		MintingDisabled:           ce.MintingDisabled,
-		TransferRestrictionStatus: ce.TransferRestrictionStatus,
+		CreatorBasisPoints:              ce.CreatorBasisPoints,
+		DeSoLockedNanos:                 ce.DeSoLockedNanos,
+		NumberOfHolders:                 ce.NumberOfHolders,
+		CoinsInCirculationNanos:         *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinWatermarkNanos:              ce.CoinWatermarkNanos,
+		MintingDisabled:                 ce.MintingDisabled,
+		TransferRestrictionStatus:       ce.TransferRestrictionStatus,
+		LockupTransferRestrictionStatus: ce.LockupTransferRestrictionStatus,
 	}
 }
 
@@ -4393,10 +5034,14 @@ func (ce *CoinEntry) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 	data = append(data, UintToBuf(ce.CreatorBasisPoints)...)
 	data = append(data, UintToBuf(ce.DeSoLockedNanos)...)
 	data = append(data, UintToBuf(ce.NumberOfHolders)...)
-	data = append(data, EncodeUint256(&ce.CoinsInCirculationNanos)...)
+	data = append(data, VariableEncodeUint256(&ce.CoinsInCirculationNanos)...)
 	data = append(data, UintToBuf(ce.CoinWatermarkNanos)...)
 	data = append(data, BoolToByte(ce.MintingDisabled))
 	data = append(data, byte(ce.TransferRestrictionStatus))
+
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		data = append(data, byte(ce.LockupTransferRestrictionStatus))
+	}
 
 	return data
 }
@@ -4417,7 +5062,7 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	if err != nil {
 		return errors.Wrapf(err, "CoinEntry.Decode: Problem reading NumberOfHolders")
 	}
-	coinsInCirculationNanos, err := DecodeUint256(rr)
+	coinsInCirculationNanos, err := VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "CoinEntry.Decode: Problem reading NumberOfHolders")
 	}
@@ -4439,11 +5084,22 @@ func (ce *CoinEntry) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Read
 	}
 	ce.TransferRestrictionStatus = TransferRestrictionStatus(statusByte)
 
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		lockedStatusByte, err := rr.ReadByte()
+		if err != nil {
+			return errors.Wrapf(err, "CoinEntry.Decode: Problem reading LockupTransferRestrictionStatus")
+		}
+		ce.LockupTransferRestrictionStatus = TransferRestrictionStatus(lockedStatusByte)
+	}
+
 	return nil
 }
 
 func (ce *CoinEntry) GetVersionByte(blockHeight uint64) byte {
-	return 0
+	return GetMigrationVersion(
+		blockHeight,
+		ProofOfStake1StateSetupMigration,
+	)
 }
 
 func (ce *CoinEntry) GetEncoderType() EncoderType {
@@ -4687,6 +5343,43 @@ func DecodeByteArray(reader io.Reader) ([]byte, error) {
 	} else {
 		return nil, nil
 	}
+}
+
+func EncodeUint64Array(uint64s []uint64) []byte {
+	var data []byte
+
+	data = append(data, UintToBuf(uint64(len(uint64s)))...)
+	for _, uint64 := range uint64s {
+		data = append(data, UintToBuf(uint64)...)
+	}
+
+	return data
+}
+
+func DecodeUint64Array(reader io.Reader) ([]uint64, error) {
+	arrLen, err := ReadUvarint(reader)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeUint64Array: Problem reading array length")
+	}
+
+	if arrLen == 0 {
+		return nil, nil
+	}
+
+	var result []uint64
+	result, err = SafeMakeSliceWithLength[uint64](arrLen)
+	if err != nil {
+		return nil, errors.Wrapf(err, "DecodeUint64Array: Problem creating slice")
+	}
+
+	for ii := uint64(0); ii < arrLen; ii++ {
+		result[ii], err = ReadUvarint(reader)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DecodeUint64Array: Problem reading uint64")
+		}
+	}
+
+	return result, nil
 }
 
 func EncodePKIDuint64Map(pkidMap map[PKID]uint64) []byte {
@@ -4952,7 +5645,12 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 	return nil, nil
 }
 
-func EncodeUint256(number *uint256.Int) []byte {
+// VariableEncodeUint256 is useful for space-efficient encoding of uint256s.
+// It does not guarantee fixed-width encoding, so should not be used
+// in BadgerDB keys. Use FixedWidthEncodeUint256 instead, which does
+// guarantee fixed-width encoding. Both VariableEncodeUint256 and
+// FixedWidthEncodeUint256 can handle nil inputs.
+func VariableEncodeUint256(number *uint256.Int) []byte {
 	var data []byte
 	if number != nil {
 		data = append(data, BoolToByte(true))
@@ -4964,7 +5662,7 @@ func EncodeUint256(number *uint256.Int) []byte {
 	return data
 }
 
-func DecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
+func VariableDecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 	if existenceByte, err := ReadBoolByte(rr); existenceByte && err == nil {
 		maxUint256BytesLen := len(MaxUint256.Bytes())
 		intLen, err := ReadUvarint(rr)
@@ -5058,6 +5756,10 @@ type DAOCoinLimitOrderEntry struct {
 	isDeleted bool
 }
 
+func (order *DAOCoinLimitOrderEntry) IsDeleted() bool {
+	return order.isDeleted
+}
+
 type DAOCoinLimitOrderOperationType uint8
 
 const (
@@ -5124,8 +5826,8 @@ func (order *DAOCoinLimitOrderEntry) RawEncodeWithoutMetadata(blockHeight uint64
 	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeUint256(order.QuantityToFillInBaseUnits)...)
+	data = append(data, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, VariableEncodeUint256(order.QuantityToFillInBaseUnits)...)
 	data = append(data, UintToBuf(uint64(order.OperationType))...)
 	data = append(data, UintToBuf(uint64(order.FillType))...)
 	data = append(data, UintToBuf(uint64(order.BlockHeight))...)
@@ -5168,12 +5870,12 @@ func (order *DAOCoinLimitOrderEntry) RawDecodeWithoutMetadata(blockHeight uint64
 	}
 
 	// ScaledExchangeRateCoinsToSellPerCoinToBuy
-	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = DecodeUint256(rr); err != nil {
+	if order.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading ScaledExchangeRateCoinsToSellPerCoinToBuy")
 	}
 
 	// QuantityToFillInBaseUnits
-	if order.QuantityToFillInBaseUnits, err = DecodeUint256(rr); err != nil {
+	if order.QuantityToFillInBaseUnits, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderEntry.Decode: Problem reading QuantityToFillInBaseUnits")
 	}
 
@@ -5418,8 +6120,8 @@ func (order *FilledDAOCoinLimitOrder) RawEncodeWithoutMetadata(blockHeight uint6
 	data = append(data, EncodeToBytes(blockHeight, order.TransactorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.BuyingDAOCoinCreatorPKID, skipMetadata...)...)
 	data = append(data, EncodeToBytes(blockHeight, order.SellingDAOCoinCreatorPKID, skipMetadata...)...)
-	data = append(data, EncodeUint256(order.CoinQuantityInBaseUnitsBought)...)
-	data = append(data, EncodeUint256(order.CoinQuantityInBaseUnitsSold)...)
+	data = append(data, VariableEncodeUint256(order.CoinQuantityInBaseUnitsBought)...)
+	data = append(data, VariableEncodeUint256(order.CoinQuantityInBaseUnitsSold)...)
 	data = append(data, BoolToByte(order.IsFulfilled))
 
 	return data
@@ -5461,12 +6163,12 @@ func (order *FilledDAOCoinLimitOrder) RawDecodeWithoutMetadata(blockHeight uint6
 	}
 
 	// CoinQuantityInBaseUnitsBought
-	if order.CoinQuantityInBaseUnitsBought, err = DecodeUint256(rr); err != nil {
+	if order.CoinQuantityInBaseUnitsBought, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading CoinQuantityInBaseUnitsBought")
 	}
 
 	// CoinQuantityInBaseUnitsSold
-	if order.CoinQuantityInBaseUnitsSold, err = DecodeUint256(rr); err != nil {
+	if order.CoinQuantityInBaseUnitsSold, err = VariableDecodeUint256(rr); err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimiteOrder.Decode: Problem reading CoinQuantityInBaseUnitsSold")
 	}
 

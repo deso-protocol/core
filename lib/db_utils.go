@@ -7,8 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/holiman/uint256"
 	"io"
 	"log"
 	"math"
@@ -18,6 +16,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/holiman/uint256"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/davecgh/go-spew/spew"
@@ -104,7 +106,7 @@ type DBPrefixes struct {
 	// How much Bitcoin is work in USD cents.
 	PrefixUSDCentsPerBitcoinExchangeRate []byte `prefix_id:"[27]" is_state:"true"`
 	// <prefix_id, key> -> <GlobalParamsEntry encoded>
-	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true"`
+	PrefixGlobalParams []byte `prefix_id:"[40]" is_state:"true" core_state:"true"`
 
 	// The prefix for the Bitcoin TxID map. If a key is set for a TxID that means this
 	// particular TxID has been processed as part of a BitcoinExchange transaction. If
@@ -226,6 +228,8 @@ type DBPrefixes struct {
 	// <prefix_id, PublicKey [33]byte> -> uint64
 	PrefixPublicKeyToDeSoBalanceNanos []byte `prefix_id:"[52]" is_state:"true" core_state:"true"`
 
+	// DEPRECATED as of the PoS cut-over. Block rewards are no longer stored in the db as
+	// we consider all block rewards to be mature immediately.
 	// Block reward prefix:
 	//   - This index is needed because block rewards take N blocks to mature, which means we need
 	//     a way to deduct them from balance calculations until that point. Without this index, it
@@ -460,7 +464,7 @@ type DBPrefixes struct {
 	// The Minor/Major distinction is used to deterministically map the two accessGroupIds of message's sender/recipient
 	// into a single pair based on the lexicographical ordering of the two accessGroupIds. This is done to ensure that
 	// both sides of the conversation have the same key for the same conversation, and we can store just a single message.
-	PrefixDmMessagesIndex []byte `prefix_id:"[75]" is_state:"true"`
+	PrefixDmMessagesIndex []byte `prefix_id:"[75]" is_state:"true" core_state:"true"`
 
 	// PrefixDmThreadIndex is modified by the NewMessage transaction and is used to store a DmThreadEntry
 	// for each existing dm thread. It answers the question: "Give me all the threads for a particular user."
@@ -487,8 +491,119 @@ type DBPrefixes struct {
 	// This isn't actually stored in badger, but is tracked by state syncer when processing mempool transactions.
 	PrefixTxnHashToUtxoOps []byte `prefix_id:"[79]" core_state:"true"`
 
-	// NEXT_TAG: 80
+	// PrefixValidatorByPKID: Retrieve a validator by PKID.
+	// Prefix, <ValidatorPKID [33]byte> -> ValidatorEntry
+	PrefixValidatorByPKID []byte `prefix_id:"[80]" is_state:"true" core_state:"true"`
 
+	// PrefixValidatorByStatusAndStakeAmount: Retrieve the top N active validators by stake.
+	// Prefix, <Status uint8>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
+	// Note that we save space by storing a nil value and parsing the ValidatorPKID from the key.
+	PrefixValidatorByStatusAndStakeAmount []byte `prefix_id:"[81]" is_state:"true"`
+
+	// PrefixStakeByValidatorAndStaker: Retrieve a StakeEntry.
+	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> StakeEntry
+	PrefixStakeByValidatorAndStaker []byte `prefix_id:"[82]" is_state:"true" core_state:"true"`
+
+	// PrefixStakeByStakeAmount: Retrieve the top N stake entries by stake amount.
+	// Prefix, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> nil
+	PrefixStakeByStakeAmount []byte `prefix_id:"[83]" is_state:"true"`
+
+	// PrefixLockedStakeByValidatorAndStakerAndLockedAt: Retrieve a LockedStakeEntry.
+	// Prefix, <ValidatorPKID [33]byte>, <StakerPKID [33]byte>, <LockedAtEpochNumber uint64> -> LockedStakeEntry
+	//
+	// The way staking works is that staking to a validator is instant and creates a StakeEntry
+	// immediately, but UNstaking from a validator has a "cooldown" period before the funds
+	// are returned to the user. This cooldown period is implemented in Unstake by decrementing
+	// from the StakeEntry and creating a new LockedStakeEntry with the amount being unstaked.
+	// the LockedStakeEntry has a LockedAtEpochNumber indicating when the Unstake occurred. This
+	// allows the user to then call a *second* Unlock txn to pull the LockedStake into their
+	// wallet balance after enough epochs have passed since LockedAtEpochNumber.
+	//
+	// Below is an example:
+	// - User stakes 100 DESO to a validator. A StakeEntry is created containing 100 DESO.
+	// - User unstakes 25 DESO at epoch 123. The StakeEntry is decremented to 75 DESO and a
+	//   LockedStakeEntry is created containing:
+	//   * <LockedStakeAmount=25 DESO, LockedAtEpochNumber=123>
+	// - Suppose the cooldown period is 3 epochs. If the user tries to call UnlockStake at
+	//   epoch 124, for example, which is one epoch after they called Unstake, the call will
+	//   fail because (CurrentEpoch - LockedAtEpockNumber) = 124 - 123 = 1, which is less
+	//   than cooldown = 3.
+	// - After 3 epochs have passed, however, the UnlockStake transaction will work. For
+	//   example, suppose the user calls UnlockStake at spoch 133. Now, we have
+	//   (CurrentEpoch - LockedAtEpochNumber) = 133 - 123 = 10, which is greater than
+	//   cooldown=3. Thus the UnlockStake will succeed, which will result in the
+	//   LockedStakeEntry being deleted and 25 DESO being added to the user's balance.
+	PrefixLockedStakeByValidatorAndStakerAndLockedAt []byte `prefix_id:"[84]" is_state:"true" core_state:"true"`
+
+	// PrefixCurrentEpoch: Retrieve the current EpochEntry.
+	// Prefix -> EpochEntry
+	PrefixCurrentEpoch []byte `prefix_id:"[85]" is_state:"true" core_state:"true"`
+
+	// PrefixCurrentRandomSeedHash: Retrieve the current RandomSeedHash.
+	// Prefix -> <RandomSeedHash [32]byte>.
+	PrefixCurrentRandomSeedHash []byte `prefix_id:"[86]" is_state:"true"`
+
+	// PrefixSnapshotGlobalParamsEntry: Retrieve a snapshot GlobalParamsEntry by SnapshotAtEpochNumber.
+	// Prefix, <SnapshotAtEpochNumber uint64> -> *GlobalParamsEntry
+	PrefixSnapshotGlobalParamsEntry []byte `prefix_id:"[87]" is_state:"true"`
+
+	// PrefixSnapshotValidatorSetByPKID: Retrieve a ValidatorEntry from a snapshot validator set by
+	// <SnapshotAtEpochNumber, PKID>.
+	// Prefix, <SnapshotAtEpochNumber uint64>, <ValidatorPKID [33]byte> -> *ValidatorEntry
+	PrefixSnapshotValidatorSetByPKID []byte `prefix_id:"[88]" is_state:"true" core_state:"true"`
+
+	// PrefixSnapshotValidatorSetByStakeAmount: Retrieve stake-ordered ValidatorEntries from a snapshot validator set
+	// by SnapshotAtEpochNumber.
+	// Prefix, <SnapshotAtEpochNumber uint64>, <TotalStakeAmountNanos *uint256.Int>, <ValidatorPKID [33]byte> -> nil
+	// Note: we parse the ValidatorPKID from the key and the value is nil to save space.
+	PrefixSnapshotValidatorSetByStakeAmount []byte `prefix_id:"[89]" is_state:"true"`
+
+	// Prefix 90 is deprecated. It was previously used for the PrefixSnapshotValidatorSetTotalStakeAmountNanos
+	// prefix. The data stored in this prefix was never used in consensus and just lead to unnecessary data
+	// in the DB, slowing down hypersync and encoder migrations.
+
+	// PrefixSnapshotLeaderSchedule: Retrieve a ValidatorPKID by <SnapshotAtEpochNumber, LeaderIndex>.
+	// Prefix, <SnapshotAtEpochNumber uint64>, <LeaderIndex uint16> -> ValidatorPKID
+	PrefixSnapshotLeaderSchedule []byte `prefix_id:"[91]" is_state:"true" core_state:"true"`
+
+	// PrefixSnapshotStakeToRewardByValidatorAndStaker: Retrieves snapshotted StakeEntries that are eligible to
+	// receive staking rewards for an epoch. StakeEntries can be retrieved by ValidatorPKID and StakerPKID.
+	// Prefix, <SnapshotAtEpochNumber>, <ValidatorPKID [33]byte>, <StakerPKID [33]byte> -> *StakeEntry
+	// Note, we parse the ValidatorPKID and StakerPKID from the key.
+	PrefixSnapshotStakeToRewardByValidatorAndStaker []byte `prefix_id:"[92]" is_state:"true"`
+
+	// PrefixLockedBalanceEntry:
+	// Retrieves LockedBalanceEntries that may or may not be claimable for unlock.
+	// A discriminator byte it placed before the UnlockTimestampNanoSecs to allow for separation
+	// among the vested and unvested locked balance entries without separate indexes.
+	// Prefix, <HodlerPKID [33]byte>, <ProfilePKID [33]byte>, <vested/unvested byte>,
+	// <UnlockTimestampNanoSecs [8]byte>, <VestingEndTimestampNanoSecs [8]byte> -> <LockedBalanceEntry>
+	PrefixLockedBalanceEntry []byte `prefix_id:"[93]" is_state:"true" core_state:"true"`
+
+	// PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs:
+	// Retrieves a LockupYieldCurvePoint.
+	// The structure of the key enables quick lookups for a (ProfilePKID, Duration) pair as well
+	// as quick construction of yield curve plots over time.
+	// Prefix, <ProfilePKID [33]byte>, <LockupDurationNanoSecs int64> -> <LockupYieldCurvePoint>
+	PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs []byte `prefix_id:"[94]" is_state:"true" core_state:"true"`
+
+	// PrefixValidatorBLSPublicKeyPKIDPairEntry: Retrieve a BLSPublicKeyPKIDPairEntry by BLS public key.
+	// Prefix, <BLSPublicKey [33]byte> -> *BLSPublicKeyPKIDPairEntry
+	PrefixValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[95]" is_state:"true" core_state:"true"`
+
+	// PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry: Retrieve a snapshotted BLSPublicKeyPKIDPairEntry
+	// by BLS Public Key and SnapshotAtEpochNumber.
+	// Prefix, <SnapshotAtEpochNumber uint64>, <BLSPublicKey []byte> -> *BLSPublicKeyPKIDPairEntry
+	PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry []byte `prefix_id:"[96]" is_state:"true" core_state:"true"`
+
+	// PrefixHypersyncSnapshotDBPrefix is used to store all the prefixes that are used in the hypersync snapshot logic.
+	// This migrates the old snapshot DB logic into the same badger instance and adds a single byte before the old
+	// prefix. To get the new prefix, you'll use getMainDbPrefix and then supply one of the prefixes specified at
+	// the top of snapshot.go. Only the hypersync snapshot logic will use this prefix and should write data here.
+	// When reading and writing data to this prefixes, please acquire the snapshotDbMutex in the snapshot.
+	PrefixHypersyncSnapshotDBPrefix []byte `prefix_id:"[97]"`
+
+	// NEXT_TAG: 98
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -734,6 +849,57 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixTxnHashToUtxoOps) {
 		// prefix_id:"[79]"
 		return true, &UtxoOperationBundle{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByPKID) {
+		// prefix_id:"[80]"
+		return true, &ValidatorEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorByStatusAndStakeAmount) {
+		// prefix_id:"[81]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByValidatorAndStaker) {
+		// prefix_id:"[82]"
+		return true, &StakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixStakeByStakeAmount) {
+		// prefix_id:"[83]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedStakeByValidatorAndStakerAndLockedAt) {
+		// prefix_id:"[84]"
+		return true, &LockedStakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentEpoch) {
+		// prefix_id:"[85]"
+		return true, &EpochEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixCurrentRandomSeedHash) {
+		// prefix_id:"[86]"
+		return false, nil
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotGlobalParamsEntry) {
+		// prefix_id:"[87]"
+		return true, &GlobalParamsEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByPKID) {
+		// prefix_id:"[88]"
+		return true, &ValidatorEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorSetByStakeAmount) {
+		// prefix_id:"[89]"
+		return false, nil
+		// prefix_id:"[90]" is deprecated. It was previously used for the PrefixSnapshotValidatorSetTotalStakeAmountNanos
+		// prefix. The data stored in this prefix was never used in consensus and just lead to unnecessary data
+		// in the DB, slowing down hypersync and encoder migrations.
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotLeaderSchedule) {
+		// prefix_id:"[91]"
+		return true, &PKID{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotStakeToRewardByValidatorAndStaker) {
+		// prefix_id:"[92]"
+		return true, &StakeEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockedBalanceEntry) {
+		// prefix_id:"[93]"
+		return true, &LockedBalanceEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs) {
+		// prefix_id:"[94]"
+		return true, &LockupYieldCurvePoint{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixValidatorBLSPublicKeyPKIDPairEntry) {
+		// prefix_id:"[95]"
+		return true, &BLSPublicKeyPKIDPairEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry) {
+		// prefix_id:"[96]"
+		return true, &BLSPublicKeyPKIDPairEntry{}
 	}
 
 	return true, nil
@@ -964,7 +1130,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		keyString := hex.EncodeToString(key)
 
 		// Update ancestral record structures depending on the existing DB record.
-		if err := snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound); err != nil {
+		if err = snap.PrepareAncestralRecord(keyString, ancestralValue, getError != badger.ErrKeyNotFound); err != nil {
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
@@ -989,6 +1155,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 				KeyBytes:             key,
 				EncoderBytes:         value,
 				AncestralRecordBytes: ancestralValue,
+				IsReverted:           false,
 			},
 			FlushId:      uuid.Nil,
 			IsMempoolTxn: eventManager.isMempoolManager,
@@ -1023,15 +1190,6 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	// If a flush takes place, we don't update cache. It will be updated in DBSetWithTxn.
-	if isState {
-		// Hold the snapshot memory lock just to be e
-		snap.Status.MemoryLock.Lock()
-		defer snap.Status.MemoryLock.Unlock()
-		if !snap.Status.IsFlushingWithoutLock() {
-			snap.DatabaseCache.Add(keyString, itemData)
-		}
-	}
 	return itemData, nil
 }
 
@@ -1091,6 +1249,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 				KeyBytes:             key,
 				EncoderBytes:         nil,
 				AncestralRecordBytes: ancestralValue,
+				IsReverted:           false,
 			},
 			FlushId:      uuid.Nil,
 			IsMempoolTxn: eventManager.isMempoolManager,
@@ -1103,42 +1262,50 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 // and beginning with the provided startKey. The chunk will have a total size of at least targetBytes.
 // If the startKey is a valid key in the db, it will be the first entry in the returned dbEntries.
 // If we have exhausted all entries for a prefix then _isChunkFull will be set as false, and true otherwise,
-// when there are more entries in the db at the prefix.
+// when there are more entries in the db at the prefix. This function calls DBIteratePrefixKeysWithTxn
+// with a new transaction.
 func DBIteratePrefixKeys(db *badger.DB, prefix []byte, startKey []byte, targetBytes uint32) (
+	_dbEntries []*DBEntry, _isChunkFull bool, _err error) {
+	var dbEntries []*DBEntry
+	var isChunkFull bool
+	err := db.View(func(txn *badger.Txn) error {
+		var innerErr error
+		dbEntries, isChunkFull, innerErr = DBIteratePrefixKeysWithTxn(txn, prefix, startKey, targetBytes)
+		return innerErr
+	})
+	return dbEntries, isChunkFull, err
+}
+
+// DBIteratePrefixKeysWithTxn performs the same operation as DBIteratePrefixKeys but with a provided transaction.
+func DBIteratePrefixKeysWithTxn(txn *badger.Txn, prefix []byte, startKey []byte, targetBytes uint32) (
 	_dbEntries []*DBEntry, _isChunkFull bool, _err error) {
 	var dbEntries []*DBEntry
 	var totalBytes int
 	var isChunkFull bool
 
-	err := db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
+	opts := badger.DefaultIteratorOptions
 
-		// Iterate over the prefix as long as there are valid keys in the DB.
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Seek(startKey); it.ValidForPrefix(prefix) && !isChunkFull; it.Next() {
-			item := it.Item()
-			key := item.Key()
-			// Add the key, value pair to our dbEntries list.
-			err := item.Value(func(value []byte) error {
-				dbEntries = append(dbEntries, KeyValueToDBEntry(key, value))
-				// If total amount of bytes in the dbEntries exceeds the target bytes size, we set the chunk as full.
-				totalBytes += len(key) + len(value)
-				if totalBytes > int(targetBytes) && len(dbEntries) > 1 {
-					isChunkFull = true
-				}
-				return nil
-			})
-			if err != nil {
-				return err
+	// Iterate over the prefix as long as there are valid keys in the DB.
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	for it.Seek(startKey); it.ValidForPrefix(prefix) && !isChunkFull; it.Next() {
+		item := it.Item()
+		key := item.Key()
+		// Add the key, value pair to our dbEntries list.
+		err := item.Value(func(value []byte) error {
+			dbEntries = append(dbEntries, KeyValueToDBEntry(key, value))
+			// If total amount of bytes in the dbEntries exceeds the target bytes size, we set the chunk as full.
+			totalBytes += len(key) + len(value)
+			if totalBytes > int(targetBytes) && len(dbEntries) > 1 {
+				isChunkFull = true
 			}
+			return nil
+		})
+		if err != nil {
+			// Return false for _isChunkFull to indicate that we shouldn't query this prefix again because
+			// something is wrong.
+			return nil, false, err
 		}
-		return nil
-	})
-	if err != nil {
-		// Return false for _isChunkFull to indicate that we shouldn't query this prefix again because
-		// something is wrong.
-		return nil, false, err
 	}
 	return dbEntries, isChunkFull, nil
 }
@@ -1175,6 +1342,7 @@ func DBDeleteAllStateRecords(db *badger.DB) (_shouldErase bool, _error error) {
 				opts := badger.DefaultIteratorOptions
 				opts.AllVersions = false
 				opts.PrefetchValues = false
+				opts.Prefix = prefix
 				// Iterate over the prefix as long as there are valid keys in the DB.
 				it := txn.NewIterator(opts)
 				defer it.Close()
@@ -1347,18 +1515,18 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []by
 	return nil
 }
 
-func EnumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byte, _valsFound [][]byte) {
-	return _enumerateKeysForPrefix(db, dbPrefix)
+func EnumerateKeysForPrefix(db *badger.DB, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte) {
+	return _enumerateKeysForPrefix(db, dbPrefix, keysOnly)
 }
 
 // A helper function to enumerate all of the values for a particular prefix.
-func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byte, _valsFound [][]byte) {
+func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		keysFound, valsFound, err = _enumerateKeysForPrefixWithTxn(txn, dbPrefix)
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithTxn(txn, dbPrefix, keysOnly)
 		if err != nil {
 			return err
 		}
@@ -1372,11 +1540,15 @@ func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte) (_keysFound [][]byt
 	return keysFound, valsFound
 }
 
-func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
+func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
 	opts := badger.DefaultIteratorOptions
+	if keysOnly {
+		opts.PrefetchValues = false
+	}
+	opts.Prefix = dbPrefix
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 	prefix := dbPrefix
@@ -1385,12 +1557,14 @@ func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFoun
 		keyCopy := make([]byte, len(key))
 		copy(keyCopy[:], key[:])
 
-		valCopy, err := nodeIterator.Item().ValueCopy(nil)
-		if err != nil {
-			return nil, nil, err
-		}
 		keysFound = append(keysFound, keyCopy)
-		valsFound = append(valsFound, valCopy)
+		if !keysOnly {
+			valCopy, err := nodeIterator.Item().ValueCopy(nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			valsFound = append(valsFound, valCopy)
+		}
 	}
 	return keysFound, valsFound, nil
 }
@@ -1410,6 +1584,7 @@ func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []
 
 	opts := badger.DefaultIteratorOptions
 	opts.PrefetchValues = false
+	opts.Prefix = dbPrefix
 
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
@@ -1462,6 +1637,7 @@ func _enumerateLimitedKeysReversedForPrefixAndStartingKeyWithTxn(txn *badger.Txn
 
 	// Go in reverse order
 	opts.Reverse = true
+	opts.Prefix = dbPrefix
 
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
@@ -1716,7 +1892,7 @@ func DBGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	_, valuesFound := _enumerateKeysForPrefix(handle, prefix)
+	_, valuesFound := _enumerateKeysForPrefix(handle, prefix, false)
 
 	privateMessages := []*MessageEntry{}
 	for _, valBytes := range valuesFound {
@@ -1937,7 +2113,7 @@ func DBGetMessagingGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *
 	// Setting the prefix to owner's public key will allow us to fetch all messaging keys
 	// for the user. We enumerate this prefix.
 	prefix := _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey)
-	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
@@ -3160,7 +3336,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicK
 	// This function is used to fetch all messaging
 	var messagingGroupEntries []*MessagingGroupEntry
 	prefix := _dbSeekPrefixForMessagingGroupMember(ownerPublicKey)
-	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
@@ -3426,7 +3602,7 @@ func DbGetPostHashesYouLike(handle *badger.DB, yourPublicKey []byte) (
 	_postHashes []*BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouLike(yourPublicKey)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	postHashesYouLike := []*BlockHash{}
 	for _, keyBytes := range keysFound {
@@ -3443,7 +3619,7 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 	_pubKeys [][]byte, _err error) {
 
 	prefix := _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	userPubKeys := [][]byte{}
 	for _, keyBytes := range keysFound {
@@ -3556,7 +3732,7 @@ func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(txn *badger.Txn,
 	snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
 
 	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true)
 	if err != nil {
 		return nil
 	}
@@ -3604,7 +3780,7 @@ func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry 
 func DbDeleteAllRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
 
 	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true)
 	if err != nil {
 		return nil
 	}
@@ -3621,7 +3797,7 @@ func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
 	_postHashes []*BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouRepost(yourPublicKey)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	postHashesYouRepost := []*BlockHash{}
 	for _, keyBytes := range keysFound {
@@ -3784,7 +3960,7 @@ func DbGetPKIDsYouFollow(handle *badger.DB, yourPKID *PKID) (
 	_pkids []*PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsYouFollow(yourPKID)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	pkidsYouFollow := []*PKID{}
 	for _, keyBytes := range keysFound {
@@ -3802,7 +3978,7 @@ func DbGetPKIDsFollowingYou(handle *badger.DB, yourPKID *PKID) (
 	_pkids []*PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsFollowingYou(yourPKID)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
 
 	pkidsFollowingYou := []*PKID{}
 	for _, keyBytes := range keysFound {
@@ -4061,7 +4237,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 		diamondReceiverStartIdx = 1 + btcec.PubKeyBytesLenCompressed
 		diamondReceiverEndIdx = 1 + 2*btcec.PubKeyBytesLenCompressed
 	}
-	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
 
 	pkidsToDiamondEntryMap := make(map[PKID][]*DiamondEntry)
 	for ii, keyBytes := range keysFound {
@@ -4135,7 +4311,7 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 	_diamondEntries []*DiamondEntry, _err error) {
 
 	prefix := _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID, senderPKID)
-	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix)
+	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
 	var diamondEntries []*DiamondEntry
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
@@ -4225,7 +4401,7 @@ func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurn
 }
 
 func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*BlockHash) {
-	keysFound, _ := _enumerateKeysForPrefix(handle, Prefixes.PrefixBitcoinBurnTxIDs)
+	keysFound, _ := _enumerateKeysForPrefix(handle, Prefixes.PrefixBitcoinBurnTxIDs, true)
 	bitcoinBurnTxIDs := []*BlockHash{}
 	for _, key := range keysFound {
 		bbtxid := &BlockHash{}
@@ -4280,6 +4456,33 @@ func EncodeUint64(num uint64) []byte {
 
 func DecodeUint64(scoreBytes []byte) uint64 {
 	return binary.BigEndian.Uint64(scoreBytes)
+}
+
+func EncodeUint16(num uint16) []byte {
+	numBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(numBytes, num)
+	return numBytes
+}
+
+func DecodeUint16(numBytes []byte) uint16 {
+	return binary.BigEndian.Uint16(numBytes)
+}
+
+func EncodeUint8(num uint8) []byte {
+	return []byte{num}
+}
+
+func DecodeUint8(numBytes []byte) uint8 {
+	return numBytes[0]
+}
+
+func ReadUint8(rr *bytes.Reader) (uint8, error) {
+	var numBytes [1]byte
+	_, err := io.ReadFull(rr, numBytes[:])
+	if err != nil {
+		return 0, err
+	}
+	return DecodeUint8(numBytes[:]), nil
 }
 
 func DbPutNanosPurchasedWithTxn(txn *badger.Txn, snap *Snapshot, nanosPurchased uint64, eventManager *EventManager) error {
@@ -4629,39 +4832,36 @@ func DeleteUtxoOperationsForBlockWithTxn(txn *badger.Txn, snap *Snapshot, blockH
 	return DBDeleteWithTxn(txn, snap, _DbKeyForUtxoOps(blockHash), eventManager, entryIsDeleted)
 }
 
+func blockNodeProofOfStakeCutoverMigrationTriggered(height uint32) bool {
+	return height >= GlobalDeSoParams.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight
+}
+
 func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 	data := []byte{}
 
-	// Hash
 	if blockNode.Hash == nil {
 		return nil, fmt.Errorf("SerializeBlockNode: Hash cannot be nil")
 	}
 	data = append(data, blockNode.Hash[:]...)
-
-	// Height
 	data = append(data, UintToBuf(uint64(blockNode.Height))...)
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
+		// DifficultyTarget
+		if blockNode.DifficultyTarget == nil {
+			return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
+		}
+		data = append(data, blockNode.DifficultyTarget[:]...)
 
-	// DifficultyTarget
-	if blockNode.DifficultyTarget == nil {
-		return nil, fmt.Errorf("SerializeBlockNode: DifficultyTarget cannot be nil")
+		// CumWork
+		data = append(data, BigintToHash(blockNode.CumWork)[:]...)
 	}
-	data = append(data, blockNode.DifficultyTarget[:]...)
-
-	// CumWork
-	data = append(data, BigintToHash(blockNode.CumWork)[:]...)
-
-	// Header
 	serializedHeader, err := blockNode.Header.ToBytes(false)
 	if err != nil {
-		return nil, errors.Wrapf(err, "SerializeBlockNode: Problem serializing header")
+		return nil, fmt.Errorf("serializePoSBlockNode: Problem serializing header: %v", err)
 	}
 	data = append(data, IntToBuf(int64(len(serializedHeader)))...)
 	data = append(data, serializedHeader...)
 
-	// Status
-	// It's assumed this field is one byte long.
 	data = append(data, UintToBuf(uint64(blockNode.Status))...)
-
 	return data, nil
 }
 
@@ -4674,11 +4874,9 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 		nil,          // CumWork
 		nil,          // Header
 		StatusNone,   // Status
-
 	)
 
 	rr := bytes.NewReader(data)
-
 	// Hash
 	_, err := io.ReadFull(rr, blockNode.Hash[:])
 	if err != nil {
@@ -4692,19 +4890,21 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	}
 	blockNode.Height = uint32(height)
 
-	// DifficultyTarget
-	_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
-	if err != nil {
-		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
-	}
+	if !blockNodeProofOfStakeCutoverMigrationTriggered(blockNode.Height) {
+		// DifficultyTarget
+		_, err = io.ReadFull(rr, blockNode.DifficultyTarget[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding DifficultyTarget")
+		}
 
-	// CumWork
-	tmp := BlockHash{}
-	_, err = io.ReadFull(rr, tmp[:])
-	if err != nil {
-		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
+		// CumWork
+		tmp := BlockHash{}
+		_, err = io.ReadFull(rr, tmp[:])
+		if err != nil {
+			return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding CumWork")
+		}
+		blockNode.CumWork = HashToBigint(&tmp)
 	}
-	blockNode.CumWork = HashToBigint(&tmp)
 
 	// Header
 	payloadLen, err := ReadVarint(rr)
@@ -4731,7 +4931,6 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 		return nil, errors.Wrapf(err, "DeserializeBlockNode: Problem decoding Status")
 	}
 	blockNode.Status = BlockStatus(uint32(status))
-
 	return blockNode, nil
 }
 
@@ -4840,33 +5039,39 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 	return blockRet, nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
-	if desoBlock.Header == nil {
-		return fmt.Errorf("PutBlockWithTxn: Header was nil in block %v", desoBlock)
+func PutBlockHashToBlockWithTxn(txn *badger.Txn, snap *Snapshot, block *MsgDeSoBlock, eventManager *EventManager) error {
+	if block.Header == nil {
+		return fmt.Errorf("PutBlockHashToBlockWithTxn: Header was nil in block %v", block)
 	}
-	blockHash, err := desoBlock.Header.Hash()
+	blockHash, err := block.Header.Hash()
 	if err != nil {
-		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
+		return errors.Wrap(err, "PutBlockHashToBlockWithTxn: Problem hashing header: ")
 	}
 	blockKey := BlockHashToBlockKey(blockHash)
-	data, err := desoBlock.ToBytes(false)
+	data, err := block.ToBytes(false)
 	if err != nil {
 		return err
 	}
 	// First check to see if the block is already in the db.
-	if _, err := DBGetWithTxn(txn, snap, blockKey); err == nil {
+	if _, err = DBGetWithTxn(txn, snap, blockKey); err == nil {
 		// err == nil means the block already exists in the db so
 		// no need to store it.
 		return nil
 	}
 	// If the block is not in the db then set it.
-	if err := DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
+	if err = DBSetWithTxn(txn, snap, blockKey, data, eventManager); err != nil {
 		return err
 	}
+	return nil
+}
 
-	// Index the block reward. Used for deducting immature block rewards from user balances.
-	if len(desoBlock.Txns) == 0 {
-		return fmt.Errorf("PutBlockWithTxn: Got block without any txns %v", desoBlock)
+func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
+	blockHash, err := desoBlock.Header.Hash()
+	if err != nil {
+		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
+	}
+	if err = PutBlockHashToBlockWithTxn(txn, snap, desoBlock, eventManager); err != nil {
+		return errors.Wrap(err, "PutBlockWithTxn: Problem putting block hash to block")
 	}
 	blockRewardTxn := desoBlock.Txns[0]
 	if blockRewardTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -4886,7 +5091,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, e
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
-		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
+		if err = DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
 			return err
 		}
 	}
@@ -4998,8 +5203,7 @@ func GetHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return nil
 	}
 
-	var blockNode *BlockNode
-	blockNode, err = DeserializeBlockNode(nodeBytes)
+	blockNode, err := DeserializeBlockNode(nodeBytes)
 	if err != nil {
 		return nil
 	}
@@ -5030,6 +5234,20 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return err
 	}
 	return nil
+}
+
+func PutHeightHashToNodeInfoBatch(handle *badger.DB, snap *Snapshot,
+	nodes []*BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
+
+	err := handle.Update(func(txn *badger.Txn) error {
+		for _, node := range nodes {
+			if err := PutHeightHashToNodeInfoWithTxn(txn, snap, node, bitcoinNodes, eventManager); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
 }
 
 func PutHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, node *BlockNode, bitcoinNodes bool, eventManager *EventManager) error {
@@ -5093,30 +5311,37 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// Set the best hash to the genesis block in the db since its the only node
 	// we're currently aware of. Set it for both the header chain and the block
 	// chain.
-	if snap != nil {
-		snap.PrepareAncestralRecordsFlush()
-	}
-
-	if err := PutBestHash(handle, snap, blockHash, ChainTypeDeSoBlock, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
-	}
-	// Add the genesis block to the (hash -> block) index.
-	if err := PutBlock(handle, snap, genesisBlock, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block into db")
-	}
-	// Add the genesis block to the (height, hash -> node info) index in the db.
-	if err := PutHeightHashToNodeInfo(handle, snap, genesisNode, false /*bitcoinNodes*/, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting (height, hash -> node) in db")
-	}
-	if err := DbPutNanosPurchased(handle, snap, params.DeSoNanosPurchasedAtGenesis, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
-	}
-	if err := DbPutGlobalParamsEntry(handle, snap, 0, InitialGlobalParamsEntry, eventManager); err != nil {
-		return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
-	}
-
-	if snap != nil {
-		snap.StartAncestralRecordsFlush(true)
+	if err := handle.Update(func(txn *badger.Txn) error {
+		if snap != nil {
+			snap.PrepareAncestralRecordsFlush()
+		}
+		if err := PutBestHashWithTxn(txn, snap, blockHash, ChainTypeDeSoBlock, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
+		}
+		// Add the genesis block to the (hash -> block) index.
+		if err := PutBlockWithTxn(txn, snap, genesisBlock, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block into db")
+		}
+		// Add the genesis block to the (height, hash -> node info) index in the db.
+		if err := PutHeightHashToNodeInfoWithTxn(txn, snap, genesisNode, false /*bitcoinNodes*/, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting (height, hash -> node) in db")
+		}
+		if err := DbPutNanosPurchasedWithTxn(txn, snap, params.DeSoNanosPurchasedAtGenesis, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
+		}
+		if err := DbPutGlobalParamsEntryWithTxn(txn, snap, 0, InitialGlobalParamsEntry, eventManager); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting GlobalParamsEntry into db for block chain")
+		}
+		// We can exit early if we're not using a snapshot.
+		if snap == nil {
+			return nil
+		}
+		if err := snap.FlushAncestralRecordsWithTxn(txn); err != nil {
+			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem flushing ancestral records")
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// We apply seed transactions here. This step is useful for setting
@@ -5128,11 +5353,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	// think things are initialized because we set the best block hash at the
 	// top. We should fix this at some point so that an error in this step
 	// wipes out the best hash.
-	utxoView, err := NewUtxoView(handle, params, postgres, snap, eventManager)
-	if err != nil {
-		return fmt.Errorf(
-			"InitDbWithDeSoGenesisBlock: Error initializing UtxoView")
-	}
+	utxoView := NewUtxoView(handle, params, postgres, snap, eventManager)
 
 	// Add the seed balances to the view.
 	for index, txOutput := range params.SeedBalances {
@@ -5150,7 +5371,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			UtxoKey:  &outputKey,
 		}
 
-		if _, err = utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, &utxoEntry, 0); err != nil {
+		if _, err := utxoView._addDESO(txOutput.AmountNanos, txOutput.PublicKey, &utxoEntry, 0); err != nil {
 			return fmt.Errorf("InitDbWithDeSoGenesisBlock: Error adding "+
 				"seed balance at index %v ; output: %v: %v", index, txOutput, err)
 		}
@@ -5178,8 +5399,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		// Set txnSizeBytes to 0 here as the minimum network fee is 0 at genesis block, so there is no need to serialize
 		// these transactions to check if they meet the minimum network fee requirement.
 		var utxoOpsForTxn []*UtxoOperation
-		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(
-			txn, txn.Hash(), 0, 0 /*blockHeight*/, false /*verifySignatures*/, true /*ignoreUtxos*/)
+		utxoOpsForTxn, _, _, _, err = utxoView.ConnectTransaction(txn, txn.Hash(), 0, 0, false, true)
 		if err != nil {
 			return fmt.Errorf(
 				"InitDbWithDeSoGenesisBlock: Error connecting transaction: %v, "+
@@ -5197,10 +5417,14 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			UtxoView: utxoView,
 			UtxoOps:  utxoOpsForBlock,
 		})
+		eventManager.blockCommitted(&BlockEvent{
+			Block:    genesisBlock,
+			UtxoView: utxoView,
+			UtxoOps:  utxoOpsForBlock,
+		})
 	}
 	// Flush all the data in the view.
-	err = utxoView.FlushToDb(0)
-	if err != nil {
+	if err := utxoView.FlushToDb(0); err != nil {
 		return fmt.Errorf(
 			"InitDbWithDeSoGenesisBlock: Error flushing seed txns to DB: %v", err)
 	}
@@ -5242,7 +5466,7 @@ func GetBlockTipHeight(handle *badger.DB, bitcoinNodes bool) (uint64, error) {
 	return blockHeight, err
 }
 
-func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNode, error) {
+func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (map[BlockHash]*BlockNode, error) {
 	blockIndex := make(map[BlockHash]*BlockNode)
 
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
@@ -5293,6 +5517,11 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool) (map[BlockHash]*BlockNo
 				// We found the parent node so connect it.
 				blockNode.Parent = parent
 			} else {
+				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
+				// be orphan blocks in the block index. In this case, we don't throw an error.
+				if bitcoinNodes == false && params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+					continue
+				}
 				// In this case we didn't find the parent so error. There shouldn't
 				// be any unconnectedTxns in our block index.
 				return fmt.Errorf("GetBlockIndex: Could not find parent for blockNode: %+v", blockNode)
@@ -5426,7 +5655,7 @@ func DbTxindexPublicKeyIndexToTxnKey(publicKey []byte, index uint32) []byte {
 
 func DbGetTxindexTxnsForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) []*BlockHash {
 	txIDs := []*BlockHash{}
-	_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, DbTxindexPublicKeyPrefix(publicKey))
+	_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, DbTxindexPublicKeyPrefix(publicKey), false)
 	if err != nil {
 		return txIDs
 	}
@@ -5458,14 +5687,16 @@ func _DbGetTxindexNextIndexForPublicKeBySeekWithTxn(txn *badger.Txn, publicKey [
 	// Go in reverse order.
 	opts.Reverse = true
 
-	it := txn.NewIterator(opts)
-	defer it.Close()
 	// Since we iterate backwards, the prefix must be bigger than all possible
 	// counts that could actually exist. We use four bytes since the index is
 	// encoded as a 32-bit big-endian byte slice, which will be four bytes long.
 	maxBigEndianUint32Bytes := []byte{0xFF, 0xFF, 0xFF, 0xFF}
 	prefix := append([]byte{}, dbPrefixx...)
 	prefix = append(prefix, maxBigEndianUint32Bytes...)
+	opts.Prefix = prefix
+	opts.PrefetchValues = false
+	it := txn.NewIterator(opts)
+	defer it.Close()
 	for it.Seek(prefix); it.ValidForPrefix(dbPrefixx); it.Next() {
 		countKey := it.Item().Key()
 
@@ -5915,7 +6146,7 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawEncodeWithoutMetadata(blockHei
 	var data []byte
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
-	data = append(data, EncodeUint256(&txnMeta.DAOCoinToTransferNanos)...)
+	data = append(data, VariableEncodeUint256(&txnMeta.DAOCoinToTransferNanos)...)
 	return data
 }
 
@@ -5928,7 +6159,7 @@ func (txnMeta *DAOCoinTransferTxindexMetadata) RawDecodeWithoutMetadata(blockHei
 	}
 	txnMeta.CreatorUsername = string(creatorUsernameBytes)
 
-	DAOCoinToTransferNanos, err := DecodeUint256(rr)
+	DAOCoinToTransferNanos, err := VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTransferTxindexMetadata.Decode: Problem reading DAOCoinToTransferNanos")
 	}
@@ -5958,8 +6189,8 @@ func (txnMeta *DAOCoinTxindexMetadata) RawEncodeWithoutMetadata(blockHeight uint
 	data = append(data, EncodeByteArray([]byte(txnMeta.CreatorUsername))...)
 	data = append(data, EncodeByteArray([]byte(txnMeta.OperationType))...)
 
-	data = append(data, EncodeUint256(txnMeta.CoinsToMintNanos)...)
-	data = append(data, EncodeUint256(txnMeta.CoinsToBurnNanos)...)
+	data = append(data, VariableEncodeUint256(txnMeta.CoinsToMintNanos)...)
+	data = append(data, VariableEncodeUint256(txnMeta.CoinsToBurnNanos)...)
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.TransferRestrictionStatus))...)
 	return data
@@ -5980,12 +6211,12 @@ func (txnMeta *DAOCoinTxindexMetadata) RawDecodeWithoutMetadata(blockHeight uint
 	}
 	txnMeta.OperationType = string(operationTypeBytes)
 
-	txnMeta.CoinsToMintNanos, err = DecodeUint256(rr)
+	txnMeta.CoinsToMintNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToMintNanos")
 	}
 
-	txnMeta.CoinsToBurnNanos, err = DecodeUint256(rr)
+	txnMeta.CoinsToBurnNanos, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinTxindexMetadata.Decode: problem reading CoinsToBurnNanos")
 	}
@@ -6022,8 +6253,8 @@ func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawEncodeWithoutMetadata(block
 	data = append(data, EncodeByteArray([]byte(orderMeta.TransactorPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(orderMeta.BuyingDAOCoinCreatorPublicKey))...)
 	data = append(data, EncodeByteArray([]byte(orderMeta.SellingDAOCoinCreatorPublicKey))...)
-	data = append(data, EncodeUint256(orderMeta.CoinQuantityInBaseUnitsBought)...)
-	data = append(data, EncodeUint256(orderMeta.CoinQuantityInBaseUnitsSold)...)
+	data = append(data, VariableEncodeUint256(orderMeta.CoinQuantityInBaseUnitsBought)...)
+	data = append(data, VariableEncodeUint256(orderMeta.CoinQuantityInBaseUnitsSold)...)
 	data = append(data, BoolToByte(orderMeta.IsFulfilled))
 
 	return data
@@ -6053,13 +6284,13 @@ func (orderMeta *FilledDAOCoinLimitOrderMetadata) RawDecodeWithoutMetadata(block
 	orderMeta.SellingDAOCoinCreatorPublicKey = string(sellingDAOCoinCreatorPublicKey)
 
 	// CoinQuantityInBaseUnitsBought
-	orderMeta.CoinQuantityInBaseUnitsBought, err = DecodeUint256(rr)
+	orderMeta.CoinQuantityInBaseUnitsBought, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading CoinQuantityInBaseUnitsBought")
 	}
 
 	// CoinQuantityInBaseUnitsSold
-	orderMeta.CoinQuantityInBaseUnitsSold, err = DecodeUint256(rr)
+	orderMeta.CoinQuantityInBaseUnitsSold, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "FilledDAOCoinLimitOrderMetadata.Decode: Problem reading CoinQuantityInBaseUnitsSold")
 	}
@@ -6092,8 +6323,8 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawEncodeWithoutMetadata(blockH
 
 	data = append(data, EncodeByteArray([]byte(daoMeta.BuyingDAOCoinCreatorPublicKey))...)
 	data = append(data, EncodeByteArray([]byte(daoMeta.SellingDAOCoinCreatorPublicKey))...)
-	data = append(data, EncodeUint256(daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	data = append(data, EncodeUint256(daoMeta.QuantityToFillInBaseUnits)...)
+	data = append(data, VariableEncodeUint256(daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	data = append(data, VariableEncodeUint256(daoMeta.QuantityToFillInBaseUnits)...)
 
 	data = append(data, UintToBuf(uint64(len(daoMeta.FilledDAOCoinLimitOrdersMetadata)))...)
 	for _, order := range daoMeta.FilledDAOCoinLimitOrdersMetadata {
@@ -6116,12 +6347,12 @@ func (daoMeta *DAOCoinLimitOrderTxindexMetadata) RawDecodeWithoutMetadata(blockH
 	}
 	daoMeta.SellingDAOCoinCreatorPublicKey = string(sellingDAOCoinCreatorPublicKey)
 
-	daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = DecodeUint256(rr)
+	daoMeta.ScaledExchangeRateCoinsToSellPerCoinToBuy, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading ScaledExchangeRateCoinsToSellPerCoinToBuy")
 	}
 
-	daoMeta.QuantityToFillInBaseUnits, err = DecodeUint256(rr)
+	daoMeta.QuantityToFillInBaseUnits, err = VariableDecodeUint256(rr)
 	if err != nil {
 		return errors.Wrapf(err, "DAOCoinLimitOrderTxindexMetadata.Decode: Problem reading QuantityToFillInBaseUnits")
 	}
@@ -6814,33 +7045,44 @@ type TransactionMetadata struct {
 	// when looking up output amounts
 	TxnOutputs []*DeSoOutput
 
-	BasicTransferTxindexMetadata         *BasicTransferTxindexMetadata         `json:",omitempty"`
-	BitcoinExchangeTxindexMetadata       *BitcoinExchangeTxindexMetadata       `json:",omitempty"`
-	CreatorCoinTxindexMetadata           *CreatorCoinTxindexMetadata           `json:",omitempty"`
-	CreatorCoinTransferTxindexMetadata   *CreatorCoinTransferTxindexMetadata   `json:",omitempty"`
-	UpdateProfileTxindexMetadata         *UpdateProfileTxindexMetadata         `json:",omitempty"`
-	SubmitPostTxindexMetadata            *SubmitPostTxindexMetadata            `json:",omitempty"`
-	LikeTxindexMetadata                  *LikeTxindexMetadata                  `json:",omitempty"`
-	FollowTxindexMetadata                *FollowTxindexMetadata                `json:",omitempty"`
-	PrivateMessageTxindexMetadata        *PrivateMessageTxindexMetadata        `json:",omitempty"`
-	SwapIdentityTxindexMetadata          *SwapIdentityTxindexMetadata          `json:",omitempty"`
-	NFTBidTxindexMetadata                *NFTBidTxindexMetadata                `json:",omitempty"`
-	AcceptNFTBidTxindexMetadata          *AcceptNFTBidTxindexMetadata          `json:",omitempty"`
-	NFTTransferTxindexMetadata           *NFTTransferTxindexMetadata           `json:",omitempty"`
-	AcceptNFTTransferTxindexMetadata     *AcceptNFTTransferTxindexMetadata     `json:",omitempty"`
-	BurnNFTTxindexMetadata               *BurnNFTTxindexMetadata               `json:",omitempty"`
-	DAOCoinTxindexMetadata               *DAOCoinTxindexMetadata               `json:",omitempty"`
-	DAOCoinTransferTxindexMetadata       *DAOCoinTransferTxindexMetadata       `json:",omitempty"`
-	CreateNFTTxindexMetadata             *CreateNFTTxindexMetadata             `json:",omitempty"`
-	UpdateNFTTxindexMetadata             *UpdateNFTTxindexMetadata             `json:",omitempty"`
-	DAOCoinLimitOrderTxindexMetadata     *DAOCoinLimitOrderTxindexMetadata     `json:",omitempty"`
-	CreateUserAssociationTxindexMetadata *CreateUserAssociationTxindexMetadata `json:",omitempty"`
-	DeleteUserAssociationTxindexMetadata *DeleteUserAssociationTxindexMetadata `json:",omitempty"`
-	CreatePostAssociationTxindexMetadata *CreatePostAssociationTxindexMetadata `json:",omitempty"`
-	DeletePostAssociationTxindexMetadata *DeletePostAssociationTxindexMetadata `json:",omitempty"`
-	AccessGroupTxindexMetadata           *AccessGroupTxindexMetadata           `json:",omitempty"`
-	AccessGroupMembersTxindexMetadata    *AccessGroupMembersTxindexMetadata    `json:",omitempty"`
-	NewMessageTxindexMetadata            *NewMessageTxindexMetadata            `json:",omitempty"`
+	BasicTransferTxindexMetadata          *BasicTransferTxindexMetadata          `json:",omitempty"`
+	BitcoinExchangeTxindexMetadata        *BitcoinExchangeTxindexMetadata        `json:",omitempty"`
+	CreatorCoinTxindexMetadata            *CreatorCoinTxindexMetadata            `json:",omitempty"`
+	CreatorCoinTransferTxindexMetadata    *CreatorCoinTransferTxindexMetadata    `json:",omitempty"`
+	UpdateProfileTxindexMetadata          *UpdateProfileTxindexMetadata          `json:",omitempty"`
+	SubmitPostTxindexMetadata             *SubmitPostTxindexMetadata             `json:",omitempty"`
+	LikeTxindexMetadata                   *LikeTxindexMetadata                   `json:",omitempty"`
+	FollowTxindexMetadata                 *FollowTxindexMetadata                 `json:",omitempty"`
+	PrivateMessageTxindexMetadata         *PrivateMessageTxindexMetadata         `json:",omitempty"`
+	SwapIdentityTxindexMetadata           *SwapIdentityTxindexMetadata           `json:",omitempty"`
+	NFTBidTxindexMetadata                 *NFTBidTxindexMetadata                 `json:",omitempty"`
+	AcceptNFTBidTxindexMetadata           *AcceptNFTBidTxindexMetadata           `json:",omitempty"`
+	NFTTransferTxindexMetadata            *NFTTransferTxindexMetadata            `json:",omitempty"`
+	AcceptNFTTransferTxindexMetadata      *AcceptNFTTransferTxindexMetadata      `json:",omitempty"`
+	BurnNFTTxindexMetadata                *BurnNFTTxindexMetadata                `json:",omitempty"`
+	DAOCoinTxindexMetadata                *DAOCoinTxindexMetadata                `json:",omitempty"`
+	DAOCoinTransferTxindexMetadata        *DAOCoinTransferTxindexMetadata        `json:",omitempty"`
+	CreateNFTTxindexMetadata              *CreateNFTTxindexMetadata              `json:",omitempty"`
+	UpdateNFTTxindexMetadata              *UpdateNFTTxindexMetadata              `json:",omitempty"`
+	DAOCoinLimitOrderTxindexMetadata      *DAOCoinLimitOrderTxindexMetadata      `json:",omitempty"`
+	CreateUserAssociationTxindexMetadata  *CreateUserAssociationTxindexMetadata  `json:",omitempty"`
+	DeleteUserAssociationTxindexMetadata  *DeleteUserAssociationTxindexMetadata  `json:",omitempty"`
+	CreatePostAssociationTxindexMetadata  *CreatePostAssociationTxindexMetadata  `json:",omitempty"`
+	DeletePostAssociationTxindexMetadata  *DeletePostAssociationTxindexMetadata  `json:",omitempty"`
+	AccessGroupTxindexMetadata            *AccessGroupTxindexMetadata            `json:",omitempty"`
+	AccessGroupMembersTxindexMetadata     *AccessGroupMembersTxindexMetadata     `json:",omitempty"`
+	NewMessageTxindexMetadata             *NewMessageTxindexMetadata             `json:",omitempty"`
+	RegisterAsValidatorTxindexMetadata    *RegisterAsValidatorTxindexMetadata    `json:",omitempty"`
+	UnregisterAsValidatorTxindexMetadata  *UnregisterAsValidatorTxindexMetadata  `json:",omitempty"`
+	StakeTxindexMetadata                  *StakeTxindexMetadata                  `json:",omitempty"`
+	UnstakeTxindexMetadata                *UnstakeTxindexMetadata                `json:",omitempty"`
+	UnlockStakeTxindexMetadata            *UnlockStakeTxindexMetadata            `json:",omitempty"`
+	UnjailValidatorTxindexMetadata        *UnjailValidatorTxindexMetadata        `json:",omitempty"`
+	CoinLockupTxindexMetadata             *CoinLockupTxindexMetadata             `json:",omitempty"`
+	UpdateCoinLockupParamsTxindexMetadata *UpdateCoinLockupParamsTxindexMetadata `json:",omitempty"`
+	CoinLockupTransferTxindexMetadata     *CoinLockupTransferTxindexMetadata     `json:",omitempty"`
+	CoinUnlockTxindexMetadata             *CoinUnlockTxindexMetadata             `json:",omitempty"`
+	AtomicTxnsWrapperTxindexMetadata      *AtomicTxnsWrapperTxindexMetadata      `json:",omitempty"`
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEncoder {
@@ -6899,6 +7141,28 @@ func (txnMeta *TransactionMetadata) GetEncoderForTxType(txnType TxnType) DeSoEnc
 		return txnMeta.AccessGroupMembersTxindexMetadata
 	case TxnTypeNewMessage:
 		return txnMeta.NewMessageTxindexMetadata
+	case TxnTypeRegisterAsValidator:
+		return txnMeta.RegisterAsValidatorTxindexMetadata
+	case TxnTypeUnregisterAsValidator:
+		return txnMeta.UnregisterAsValidatorTxindexMetadata
+	case TxnTypeStake:
+		return txnMeta.StakeTxindexMetadata
+	case TxnTypeUnstake:
+		return txnMeta.UnstakeTxindexMetadata
+	case TxnTypeUnlockStake:
+		return txnMeta.UnlockStakeTxindexMetadata
+	case TxnTypeUnjailValidator:
+		return txnMeta.UnjailValidatorTxindexMetadata
+	case TxnTypeCoinLockup:
+		return txnMeta.CoinLockupTxindexMetadata
+	case TxnTypeUpdateCoinLockupParams:
+		return txnMeta.UpdateCoinLockupParamsTxindexMetadata
+	case TxnTypeCoinLockupTransfer:
+		return txnMeta.CoinLockupTransferTxindexMetadata
+	case TxnTypeCoinUnlock:
+		return txnMeta.CoinUnlockTxindexMetadata
+	case TxnTypeAtomicTxnsWrapper:
+		return txnMeta.AtomicTxnsWrapperTxindexMetadata
 	default:
 		return nil
 	}
@@ -6981,6 +7245,23 @@ func (txnMeta *TransactionMetadata) RawEncodeWithoutMetadata(blockHeight uint64,
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.AccessGroupMembersTxindexMetadata, skipMetadata...)...)
 		// encoding NewMessageTxindexMetadata
 		data = append(data, EncodeToBytes(blockHeight, txnMeta.NewMessageTxindexMetadata, skipMetadata...)...)
+	}
+
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// encoding RegisterAsValidatorTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.RegisterAsValidatorTxindexMetadata, skipMetadata...)...)
+		// encoding UnregisterAsValidatorTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnregisterAsValidatorTxindexMetadata, skipMetadata...)...)
+		// encoding StakeTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.StakeTxindexMetadata, skipMetadata...)...)
+		// encoding UnstakeTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnstakeTxindexMetadata, skipMetadata...)...)
+		// encoding UnlockStakeTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnlockStakeTxindexMetadata, skipMetadata...)...)
+		// encoding UnjailValidatorTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.UnjailValidatorTxindexMetadata, skipMetadata...)...)
+		// encoding AtomicTxnsWrapperTxindexMetadata
+		data = append(data, EncodeToBytes(blockHeight, txnMeta.AtomicTxnsWrapperTxindexMetadata, skipMetadata...)...)
 	}
 
 	return data
@@ -7182,28 +7463,28 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		CopyCreateUserAssociationTxindexMetadata := &CreateUserAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyCreateUserAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.CreateUserAssociationTxindexMetadata = CopyCreateUserAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreateUserAssociationTxindexMetadata")
 		}
 		// decoding DeleteUserAssociationTxindexMetadata
 		CopyDeleteUserAssociationTxindexMetadata := &DeleteUserAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyDeleteUserAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.DeleteUserAssociationTxindexMetadata = CopyDeleteUserAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeleteUserAssociationTxindexMetadata")
 		}
 		// decoding CreatePostAssociationTxindexMetadata
 		CopyCreatePostAssociationTxindexMetadata := &CreatePostAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyCreatePostAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.CreatePostAssociationTxindexMetadata = CopyCreatePostAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading CreatePostAssociationTxindexMetadata")
 		}
 		// decoding DeletePostAssociationTxindexMetadata
 		CopyDeletePostAssociationTxindexMetadata := &DeletePostAssociationTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyDeletePostAssociationTxindexMetadata, rr); exist && err == nil {
 			txnMeta.DeletePostAssociationTxindexMetadata = CopyDeletePostAssociationTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading DeletePostAssociationTxindexMetadata")
 		}
 	}
@@ -7213,29 +7494,61 @@ func (txnMeta *TransactionMetadata) RawDecodeWithoutMetadata(blockHeight uint64,
 		CopyAccessGroupTxindexMetadata := &AccessGroupTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyAccessGroupTxindexMetadata, rr); exist && err == nil {
 			txnMeta.AccessGroupTxindexMetadata = CopyAccessGroupTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupTxindexMetadata")
 		}
 		// decoding AccessGroupMembersTxindexMetadata
 		CopyAccessGroupMembersTxindexMetadata := &AccessGroupMembersTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyAccessGroupMembersTxindexMetadata, rr); exist && err == nil {
 			txnMeta.AccessGroupMembersTxindexMetadata = CopyAccessGroupMembersTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AccessGroupMembersTxindexMetadata")
 		}
 		// decoding NewMessageTxindexMetadata
 		CopyNewMessageTxindexMetadata := &NewMessageTxindexMetadata{}
 		if exist, err := DecodeFromBytes(CopyNewMessageTxindexMetadata, rr); exist && err == nil {
 			txnMeta.NewMessageTxindexMetadata = CopyNewMessageTxindexMetadata
-		} else {
+		} else if err != nil {
 			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading NewMessageTxindexMetadata")
 		}
 	}
+
+	if MigrationTriggered(blockHeight, ProofOfStake1StateSetupMigration) {
+		// decoding RegisterAsValidatorTxindexMetadata
+		if txnMeta.RegisterAsValidatorTxindexMetadata, err = DecodeDeSoEncoder(&RegisterAsValidatorTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading RegisterAsValidatorTxindexMetadata: ")
+		}
+		// decoding UnregisterAsValidatorTxindexMetadata
+		if txnMeta.UnregisterAsValidatorTxindexMetadata, err = DecodeDeSoEncoder(&UnregisterAsValidatorTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnregisterAsValidatorTxindexMetadata: ")
+		}
+		// decoding StakeTxindexMetadata
+		if txnMeta.StakeTxindexMetadata, err = DecodeDeSoEncoder(&StakeTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading StakeTxindexMetadata: ")
+		}
+		// decoding UnstakeTxindexMetadata
+		if txnMeta.UnstakeTxindexMetadata, err = DecodeDeSoEncoder(&UnstakeTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnstakeTxindexMetadata: ")
+		}
+		// decoding UnlockStakeTxindexMetadata
+		if txnMeta.UnlockStakeTxindexMetadata, err = DecodeDeSoEncoder(&UnlockStakeTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnlockStakeTxindexMetadata: ")
+		}
+		// decoding UnjailValidatorTxindexMetadata
+		if txnMeta.UnjailValidatorTxindexMetadata, err = DecodeDeSoEncoder(&UnjailValidatorTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading UnjailValidatorTxindexMetadata: ")
+		}
+		// decoding AtomicTxnsWrapperTxindexMetadata
+		if txnMeta.AtomicTxnsWrapperTxindexMetadata, err = DecodeDeSoEncoder(&AtomicTxnsWrapperTxindexMetadata{}, rr); err != nil {
+			return errors.Wrapf(err, "TransactionMetadata.Decode: Problem reading AtomicTxnsWrapperTxindexMetadata: ")
+		}
+	}
+
 	return nil
 }
 
 func (txnMeta *TransactionMetadata) GetVersionByte(blockHeight uint64) byte {
-	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration)
+	return GetMigrationVersion(blockHeight, AssociationsAndAccessGroupsMigration, ProofOfStake1StateSetupMigration)
 }
 
 func (txnMeta *TransactionMetadata) GetEncoderType() EncoderType {
@@ -8044,7 +8357,7 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 	nftEntries := []*NFTEntry{}
 	prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, nftPostHash[:]...)
-	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
 		rr := bytes.NewReader(byteString)
@@ -8091,7 +8404,7 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 	var nftEntries []*NFTEntry
 	prefix := append([]byte{}, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
-	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
 		rr := bytes.NewReader(byteString)
@@ -8333,7 +8646,7 @@ func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntr
 	{
 		prefix := append([]byte{}, Prefixes.PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
 		keyPrefix := append(prefix, bidderPKID[:]...)
-		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix)
+		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
 		bidderPKIDLength := len(bidderPKID[:])
 		for ii, keyFound := range keysFound {
 
@@ -8370,7 +8683,7 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 		prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID...)
 		keyPrefix := append(prefix, nftPostHash[:]...)
 		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
-		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix)
+		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix, true)
 		for _, keyFound := range keysFound {
 			bidAmountStartIdx := 1 + HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
 			bidAmountEndIdx := bidAmountStartIdx + 8   // Add the length of the bid amount (uint64).
@@ -8538,7 +8851,7 @@ func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicK
 	_entries []*DerivedKeyEntry, _err error) {
 
 	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
-	_, valsFound := _enumerateKeysForPrefix(handle, prefix)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
 
 	var derivedEntries []*DerivedKeyEntry
 	for _, keyBytes := range valsFound {
@@ -9006,7 +9319,7 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, snap *Snapshot, pkid *PKID, filte
 	{
 		prefix := _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			rr := bytes.NewReader(byteString)
@@ -9028,7 +9341,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, snap *Snapshot, pkid *PKID, fi
 	{
 		prefix := _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			rr := bytes.NewReader(byteString)
@@ -9349,7 +9662,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order)
-	key = append(key, EncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	key = append(key, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
 	// Store MaxUint32 - block height to guarantee FIFO
 	// orders as we seek in reverse order.
 	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
@@ -9520,16 +9833,36 @@ func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
-func DBGetAllDAOCoinLimitOrdersForThisTransactor(handle *badger.DB, transactorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
-	// Get all DAO coin limit orders for this transactor.
+func DBGetAllDAOCoinLimitOrdersForThisTransactor(
+	handle *badger.DB,
+	transactorPKID *PKID,
+	buyingCoinPKID *PKID,
+	sellingCoinPKID *PKID,
+) (
+	[]*DAOCoinLimitOrderEntry,
+	error,
+) {
+	if buyingCoinPKID != nil && sellingCoinPKID == nil ||
+		buyingCoinPKID == nil && sellingCoinPKID != nil {
+
+		return nil, errors.New("GetAllDAOCoinLimitOrdersForThisTransactor: Must specify " +
+			"NONE or BOTH buying and selling coin PKIDs")
+	}
+
+	// Get all DAO coin limit orders for this transactor. Potentially filter by the
+	// buying/selling coin pkids if provided
 	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, transactorPKID[:]...)
+	if buyingCoinPKID != nil && sellingCoinPKID != nil {
+		key = append(key, buyingCoinPKID[:]...)
+		key = append(key, sellingCoinPKID[:]...)
+	}
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
 func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
 	// Get all DAO coin limit orders containing this prefix.
-	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey, false)
 	orders := []*DAOCoinLimitOrderEntry{}
 
 	// Cast resulting values from bytes to order entries.
@@ -9661,7 +9994,7 @@ func DbGetMempoolTxn(db *badger.DB, snap *Snapshot, mempoolTx *MempoolTx) *MsgDe
 }
 
 func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*MsgDeSoTxn, _error error) {
-	_, valuesFound := _enumerateKeysForPrefix(handle, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn)
+	_, valuesFound := _enumerateKeysForPrefix(handle, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, false)
 
 	mempoolTxns := []*MsgDeSoTxn{}
 	for _, mempoolTxnBytes := range valuesFound {
@@ -9680,7 +10013,7 @@ func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*Ms
 }
 
 func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot, eventManager *EventManager, entryIsDeleted bool) error {
-	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn)
+	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, true)
 	if err != nil {
 		return errors.Wrapf(err, "DbDeleteAllMempoolTxnsWithTxn: ")
 	}
@@ -9763,7 +10096,7 @@ func DbDeleteMempoolTxnKeyWithTxn(txn *badger.Txn, snap *Snapshot, txnKey []byte
 func LogDBSummarySnapshot(db *badger.DB) {
 	keyCountMap := make(map[byte]int)
 	for prefixByte := byte(0); prefixByte < byte(40); prefixByte++ {
-		keysForPrefix, _ := EnumerateKeysForPrefix(db, []byte{prefixByte})
+		keysForPrefix, _ := EnumerateKeysForPrefix(db, []byte{prefixByte}, true)
 		keyCountMap[prefixByte] = len(keysForPrefix)
 	}
 	glog.Info(spew.Printf("LogDBSummarySnapshot: Current DB summary snapshot: %v", keyCountMap))
@@ -10595,6 +10928,829 @@ func DBDeletePostAssociationWithTxn(txn *badger.Txn, snap *Snapshot, association
 }
 
 // -------------------------------------------------------------------------------------
+// Lockup DB Operations
+// -------------------------------------------------------------------------------------
+
+// LockedBalanceEntry DB Key Operations
+
+const (
+	// NOTE: By delineating the vested and unvested locked balance entries with the byte below,
+	// we know that all vested keys will be lexicographically less than all unvested keys. This enables
+	// us to construct db key prefixes based on either the vested or unvested keys and use said prefixes
+	// for seeks through either the unvested or vested keys. This is a convenient optimization that prevents
+	// us from needing seperate indexes with the addition of only a single added key.
+
+	VestedLockedBalanceEntriesKeyByte   = 0
+	UnvestedLockedBalanceEntriesKeyByte = 1
+)
+
+func _dbKeyForLockedBalanceEntry(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
+
+	// Delineate between vested and unvested locked balance entries.
+	if lockedBalanceEntry.UnlockTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		key = append(key, UnvestedLockedBalanceEntriesKeyByte)
+	} else {
+		key = append(key, VestedLockedBalanceEntriesKeyByte)
+	}
+
+	key = append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs))...)
+}
+
+func DBPrefixForLockedBalanceEntriesOnHodler(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	return key
+}
+
+func DBPrefixForVestedLockedBalanceEntriesOnUnlockTimestamp(lockedBalanceEntry *LockedBalanceEntry) ([]byte, error) {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
+
+	// Delineate between vested and unvested locked balance entries.
+	if lockedBalanceEntry.UnlockTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		return nil, errors.New("DBPrefixForVestedLockedBalanceEntries: called with unvested lockedBalanceEntry")
+	} else {
+		key = append(key, VestedLockedBalanceEntriesKeyByte)
+	}
+
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...), nil
+}
+
+func DBPrefixForLockedBalanceEntriesOnType(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
+
+	// Delineate between vested and unvested locked balance entries.
+	if lockedBalanceEntry.UnlockTimestampNanoSecs == lockedBalanceEntry.VestingEndTimestampNanoSecs {
+		key = append(key, UnvestedLockedBalanceEntriesKeyByte)
+	} else {
+		key = append(key, VestedLockedBalanceEntriesKeyByte)
+	}
+
+	return key
+}
+
+func DBKeyForUnvestedLockedBalanceEntryWithVestedType(lockedBalanceEntry *LockedBalanceEntry) []byte {
+	// NOTE: This key seems odd, but it's used for seeking through vested locked balance entries
+	// given the current timestamp. Since the current timestamp must be used for both
+	// the UnlockTimestampNanoSecs and VestingEndTimestampNanoSecs, the other DBKey functions would not
+	// use the VestedLockedBalanceEntriesKeyByte but rather the UnvestedLockedBalanceEntriesKeyByte.
+	key := append([]byte{}, Prefixes.PrefixLockedBalanceEntry...)
+	key = append(key, lockedBalanceEntry.HODLerPKID[:]...)
+	key = append(key, lockedBalanceEntry.ProfilePKID[:]...)
+	key = append(key, VestedLockedBalanceEntriesKeyByte)
+	key = append(key, EncodeUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs))...)
+	return append(key, EncodeUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs))...)
+}
+
+// LockedBalanceEntry Put/Delete Operations (Badger Writes)
+
+func DbPutLockedBalanceEntryMappingsWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	blockHeight uint64,
+	lockedBalanceEntry LockedBalanceEntry,
+	eventManager *EventManager,
+) error {
+	// Sanity check the fields in the LockedBalanceEntry used in constructing the key.
+	if len(lockedBalanceEntry.HODLerPKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutLockedBalanceEntryMappingsWithTxn: HODLer PKID "+
+			"length %d != %d", len(lockedBalanceEntry.HODLerPKID), btcec.PubKeyBytesLenCompressed)
+	}
+	if len(lockedBalanceEntry.ProfilePKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutLockedBalanceEntryMappingsWithTxn: Profile PKID "+
+			"length %d != %d", len(lockedBalanceEntry.ProfilePKID), btcec.PubKeyBytesLenCompressed)
+	}
+
+	if err := DBSetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(&lockedBalanceEntry),
+		EncodeToBytes(blockHeight, &lockedBalanceEntry), eventManager); err != nil {
+		return errors.Wrapf(err, "DbPutLockedBalanceEntryMappingsWithTxn: "+
+			"Problem adding locked balance entry to db")
+	}
+	return nil
+}
+
+func DbDeleteLockedBalanceEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	lockedBalanceEntry LockedBalanceEntry,
+	eventManager *EventManager,
+	entryIsDeleted bool,
+) error {
+	// First check that a mapping exists. If one doesn't then there's nothing to do.
+	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockedBalanceEntry(&lockedBalanceEntry))
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil
+	}
+	if err != nil {
+		return errors.Wrapf(err, "DbDeleteLockedBalanceEntryWithTxn: Problem getting "+
+			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
+			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
+			lockedBalanceEntry.UnlockTimestampNanoSecs)
+	}
+
+	// When a locked balance entry exists, delete the locked balance entry mapping.
+	if err := DBDeleteWithTxn(txn, snap,
+		_dbKeyForLockedBalanceEntry(&lockedBalanceEntry), eventManager, entryIsDeleted); err != nil {
+		return errors.Wrapf(err, "DbDeleteLockedBalanceEntryWithTxn: Deleting "+
+			"locked balance entry for HODLer PKID %s, Profile PKID %s, expiration timestamp %d",
+			lockedBalanceEntry.HODLerPKID.ToString(), lockedBalanceEntry.ProfilePKID.ToString(),
+			lockedBalanceEntry.UnlockTimestampNanoSecs)
+	}
+	return nil
+}
+
+// LockedBalanceEntry Get Operations (Badger Reads)
+
+func DBGetLockedBalanceEntryForLockedBalanceEntryKey(
+	handle *badger.DB,
+	snap *Snapshot,
+	lockedBalanceEntryKey LockedBalanceEntryKey,
+) (
+	_lockedBalanceEntry *LockedBalanceEntry,
+	_err error,
+) {
+	var ret *LockedBalanceEntry
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		ret, err = DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn(txn, snap, lockedBalanceEntryKey)
+		return err
+	})
+	return ret, err
+}
+
+func DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	lockedBalanceEntryKey LockedBalanceEntryKey,
+) (
+	_lockedBalanceEntry *LockedBalanceEntry,
+	_err error,
+) {
+	// Construct a key from the LockedBalanceEntry.
+	key := _dbKeyForLockedBalanceEntry(&LockedBalanceEntry{
+		HODLerPKID:                  &lockedBalanceEntryKey.HODLerPKID,
+		ProfilePKID:                 &lockedBalanceEntryKey.ProfilePKID,
+		UnlockTimestampNanoSecs:     lockedBalanceEntryKey.UnlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: lockedBalanceEntryKey.VestingEndTimestampNanoSecs,
+	})
+
+	// Get the key from the db.
+	lockedBalanceEntryBytes, err := DBGetWithTxn(txn, snap, key)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil,
+			errors.Wrap(err,
+				"DBGetLockedBalanceEntryForLockedBalanceEntryKeyWithTxn")
+	}
+
+	return DecodeDeSoEncoder(&LockedBalanceEntry{}, bytes.NewReader(lockedBalanceEntryBytes))
+}
+
+func DBGetAllLockedBalanceEntriesForHodlerPKID(
+	handle *badger.DB,
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	var lockedBalanceEntries []*LockedBalanceEntry
+	var err error
+
+	// Validate profilePKID is not nil.
+	if hodlerPKID == nil {
+		return nil, errors.New("DBGetAllLockedBalanceEntriesForHodlerPKID: " +
+			"called with nil hodlerPKID; this shouldn't happen")
+	}
+
+	handle.View(func(txn *badger.Txn) error {
+		lockedBalanceEntries, err = DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(txn, hodlerPKID)
+		return nil
+	})
+	return lockedBalanceEntries, err
+}
+
+func DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler>
+	startKey := DBPrefixForLockedBalanceEntriesOnHodler(&LockedBalanceEntry{
+		HODLerPKID: hodlerPKID,
+	})
+
+	// Valid for prefix <prefix, hodler>
+	prefixKey := DBPrefixForLockedBalanceEntriesOnHodler(&LockedBalanceEntry{
+		HODLerPKID: hodlerPKID,
+	})
+
+	// Create a reverse iterator.
+	opts := badger.DefaultIteratorOptions
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store relevant LockedBalanceEntries to return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+
+	// Loop until we've exhausted all unlockable unvested locked balance entries.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: "+
+					"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: "+
+					"error decoding LockedBalanceEntry: ")
+		}
+
+		// Sanity check the locked balance entry as relevant.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) {
+			return nil,
+				errors.New("DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn: " +
+					"found invalid LockedBalanceEntry; this shouldn't happen")
+		}
+
+		// Add the locked balance entry to the return list.
+		lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntries, nil
+
+}
+
+func DBGetUnlockableLockedBalanceEntries(
+	handle *badger.DB,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) (
+	_unvestedUnlockabeLockedBalanceEntries []*LockedBalanceEntry,
+	_vestedUnlockableLockedEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Validate profilePKID and holderPKID are not nil.
+	if profilePKID == nil {
+		return nil, nil,
+			errors.New("DBGetUnlockableLockedBalanceEntries: " +
+				"called with nil profilePKID; this shouldn't happen")
+	}
+	if hodlerPKID == nil {
+		return nil, nil,
+			errors.New("DBGetUnlockableLockedBalanceEntries: " +
+				"called with nil hodlerPKID; this shouldn't happen")
+	}
+
+	var unvested []*LockedBalanceEntry
+	var vested []*LockedBalanceEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		unvested, vested, err = DBGetUnlockableLockedBalanceEntriesWithTxn(
+			txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+		return nil
+	})
+	return unvested, vested, err
+}
+
+func DBGetUnlockableLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) (
+	_unlockableUnvestedLockedBalanceEntries []*LockedBalanceEntry,
+	_unlockableVestedLockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Get vested unlockable locked balance entries.
+	unlockableVestedLockedBalanceEntries, err := DBGetUnlockableVestedLockedBalanceEntriesWithTxn(
+		txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+	if err != nil {
+		return nil, nil,
+			errors.Wrap(err, "DBGetUnlockableLockedBalanceEntriesWithTxn")
+	}
+
+	// Get unvested unlockable locked balance entries.
+	unlockableUnvestedLockedBalanceEntries, err := DBGetUnlockableUnvestedLockedBalanceEntriesWithTxn(
+		txn, hodlerPKID, profilePKID, currentTimestampUnixNanoSecs)
+	if err != nil {
+		return nil, nil,
+			errors.Wrap(err, "DBGetUnlockableLockedBalanceEntriesWithTxn")
+	}
+
+	return unlockableUnvestedLockedBalanceEntries, unlockableVestedLockedBalanceEntries, nil
+}
+
+func DBGetUnlockableVestedLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) (
+	_unlockableVestedLockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler, profile, vested, current timestamp, current timestamp>
+	startKey := DBKeyForUnvestedLockedBalanceEntryWithVestedType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs,
+	})
+
+	// Valid for prefix <prefix, hodler, profile, vested>
+	// We set the VestingEndTimestampNanoSecs to currentTimestampUnixNanoSecs + 1 to
+	// make a pusedo-vested LockedBalanceEntry for the purpose of constructing a key prefix.
+	prefixKey := DBPrefixForLockedBalanceEntriesOnType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs + 1,
+	})
+
+	// Create a reverse iterator.
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store relevant LockedBalanceEntries to return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+
+	// Loop until we've exhausted all unlockable unvested locked balance entries.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error decoding LockedBalanceEntry: ")
+		}
+
+		// Sanity check the locked balance entry as relevant.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) ||
+			!lockedBalanceEntry.ProfilePKID.Eq(profilePKID) ||
+			lockedBalanceEntry.UnlockTimestampNanoSecs > currentTimestampUnixNanoSecs {
+			return nil,
+				errors.New("DBGetLimitedVestedLockedBalanceEntriesWithTxn: " +
+					"found invalid LockedBalanceEntry; this shouldn't happen")
+		}
+
+		// Add the locked balance entry to the return list.
+		lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntries, nil
+}
+
+func DBGetUnlockableUnvestedLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	currentTimestampUnixNanoSecs int64,
+) (
+	_unlockableUnvestedLockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler, profile, unvested, current timestamp, current timestamp>
+	startKey := _dbKeyForLockedBalanceEntry(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs,
+	})
+
+	// Valid for prefix <prefix, hodler, profile, unvested>
+	prefixKey := DBPrefixForLockedBalanceEntriesOnType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     currentTimestampUnixNanoSecs,
+		VestingEndTimestampNanoSecs: currentTimestampUnixNanoSecs,
+	})
+
+	// Create a reverse iterator.
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = true
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store relevant LockedBalanceEntries to return.
+	var lockedBalanceEntries []*LockedBalanceEntry
+
+	// Loop until we've exhausted all unlockable unvested locked balance entries.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(prefixKey); iterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil,
+				errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"error decoding LockedBalanceEntry: ")
+		}
+
+		// Sanity check the locked balance entry as relevant.
+		if !lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) ||
+			!lockedBalanceEntry.ProfilePKID.Eq(profilePKID) ||
+			lockedBalanceEntry.UnlockTimestampNanoSecs > currentTimestampUnixNanoSecs {
+			return nil,
+				errors.New("DBGetLimitedVestedLockedBalanceEntriesWithTxn: " +
+					"found invalid LockedBalanceEntry; this shouldn't happen")
+		}
+
+		// Add the locked balance entry to the return list.
+		lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+	}
+
+	return lockedBalanceEntries, nil
+}
+
+func DBGetLimitedVestedLockedBalanceEntries(
+	handle *badger.DB,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
+	limitToFetch int,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// NOTE: For this operation to work properly, it's important to understand that
+	// no two vested locked balance entries for a given hodler and profile pair can
+	// ever overlap in time. This is by design, as during the lockup transaction any
+	// consolidation to ensure no two vested locked balance entries results in
+	// overlap occurs. Why is this important? If you imagine a world in which
+	// overlapping entries are allowed, it makes it extremely inefficient to find
+	// those entries which straddle unlockTimestampNanoSecs without making a second
+	// index based on vestingEndTimestampNanoSecs. Our index sorts on
+	// unlockTimestampNanoSecs first and then vestingEndTimestampNanoSecs later.
+	// However, because we know that there is no overlap we can simply do a reverse
+	// iteration on the specified unlockTimestampNanoSecs, check for an overlapping
+	// entry, and move on.
+
+	// Validate profilePKID and holderPKID are not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetLimitedVestedLockedBalanceEntries: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+	if hodlerPKID == nil {
+		return nil, errors.New("DBGetLimitedVestedLockedBalanceEntries: " +
+			"called with nil hodlerPKID; this shouldn't happen")
+	}
+
+	var lockedBalanceEntries []*LockedBalanceEntry
+	var err error
+	handle.View(func(txn *badger.Txn) error {
+		lockedBalanceEntries, err = DBGetLimitedVestedLockedBalanceEntriesWithTxn(
+			txn, hodlerPKID, profilePKID, unlockTimestampNanoSecs, vestingEndTimestampNanoSecs, limitToFetch)
+		return nil
+	})
+	return lockedBalanceEntries, err
+}
+
+func DBGetLimitedVestedLockedBalanceEntriesWithTxn(
+	txn *badger.Txn,
+	hodlerPKID *PKID,
+	profilePKID *PKID,
+	unlockTimestampNanoSecs int64,
+	vestingEndTimestampNanoSecs int64,
+	limitToFetch int,
+) (
+	_lockedBalanceEntries []*LockedBalanceEntry,
+	_err error,
+) {
+	// Start at <prefix, hodler, profile, vested, unlock timestamp>
+	startKey, err := DBPrefixForVestedLockedBalanceEntriesOnUnlockTimestamp(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     unlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: vestingEndTimestampNanoSecs,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "DBGetLimitedVestedLockedBalanceEntries")
+	}
+
+	// Valid for prefix <prefix, hodler, profile, vested>
+	prefixKey := DBPrefixForLockedBalanceEntriesOnType(&LockedBalanceEntry{
+		HODLerPKID:                  hodlerPKID,
+		ProfilePKID:                 profilePKID,
+		UnlockTimestampNanoSecs:     unlockTimestampNanoSecs,
+		VestingEndTimestampNanoSecs: vestingEndTimestampNanoSecs,
+	})
+
+	// Store matching LockedBalanceEntries to return and track entries found.
+	var lockedBalanceEntries []*LockedBalanceEntry
+	var entriesFound int
+
+	// Create a backwards iterator.
+	backwardOpts := badger.DefaultIteratorOptions
+	backwardOpts.Reverse = true
+	backwardOpts.Prefix = prefixKey
+	backwardIterator := txn.NewIterator(backwardOpts)
+	defer backwardIterator.Close()
+
+	// Seek backwards and check for a vested locked balance entry which straddles the start time.
+	// NOTE: Per the comment on the badger Seek implementation, the Seek operation in the reverse direction will find
+	// the largest key less than the specified start key. Because the specified startKey doesn't ever have an
+	// exact match (as we're using a prefix of an actual key), we know this operation can only ever return either an
+	// invalid lockedBalanceEntry or a lockedBalanceEntry which straddles the unlockTimestampNanoSecs specified.
+	// In the case the lockedBalanceEntry straddles the unlockTimestampNanoSecs, we add it to the lockedBalanceEntries
+	// list and increment the entriesFound.
+	backwardIterator.Seek(startKey)
+	if backwardIterator.ValidForPrefix(prefixKey) {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := backwardIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+				"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+				"error decoding LockedBalanceEntry: ")
+		}
+
+		// Check if the LockedBalanceEntry straddles the start time of the period specified.
+		if lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) &&
+			lockedBalanceEntry.ProfilePKID.Eq(profilePKID) &&
+			lockedBalanceEntry.UnlockTimestampNanoSecs < unlockTimestampNanoSecs &&
+			lockedBalanceEntry.VestingEndTimestampNanoSecs >= unlockTimestampNanoSecs {
+			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+			entriesFound++
+		}
+	}
+
+	// Create a forward iterator. We will use t
+	forwardOpts := badger.DefaultIteratorOptions
+	forwardOpts.Prefix = prefixKey
+	forwardIterator := txn.NewIterator(forwardOpts)
+	defer forwardIterator.Close()
+
+	// Loop until we find an out of range vested locked balance entry.
+	for forwardIterator.Seek(startKey); forwardIterator.ValidForPrefix(prefixKey); forwardIterator.Next() {
+		// Retrieve the LockedBalanceEntryBytes.
+		lockedBalanceEntryBytes, err := forwardIterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+				"error retrieveing LockedBalanceEntry: ")
+		}
+
+		// Convert the LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockedBalanceEntryBytes)
+		lockedBalanceEntry, err := DecodeDeSoEncoder(&LockedBalanceEntry{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+				"error decoding LockedBalanceEntry: ")
+		}
+
+		// Check if the LockedBalanceEntry is relevant to the limited query.
+		if lockedBalanceEntry.HODLerPKID.Eq(hodlerPKID) &&
+			lockedBalanceEntry.ProfilePKID.Eq(profilePKID) &&
+			lockedBalanceEntry.UnlockTimestampNanoSecs >= unlockTimestampNanoSecs &&
+			lockedBalanceEntry.UnlockTimestampNanoSecs <= vestingEndTimestampNanoSecs {
+			lockedBalanceEntries = append(lockedBalanceEntries, lockedBalanceEntry)
+			entriesFound++
+		}
+
+		// Check if we've found too many entries.
+		if entriesFound > limitToFetch {
+			return nil, errors.Wrap(RuleErrorCoinLockupViolatesVestingIntersectionLimit,
+				"DBGetLimitedVestedLockedBalanceEntriesWithTxn: "+
+					"limit exhausted. Found too many relevant LockedBalanceEntries.")
+		}
+	}
+
+	return lockedBalanceEntries, nil
+}
+
+// LockupYieldCurvePoint DB Key Operations
+
+func _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint LockupYieldCurvePoint) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs...)
+	key := append(prefixCopy, lockupYieldCurvePoint.ProfilePKID[:]...)
+
+	// Note that while we typically use UintToBuf to encode int64 and uint64 data,
+	// we cannot use that here. The variable length encoding of the int64 LockupDuration
+	// would make unpredictable badgerDB seeks. We must ensure the int64 and uint64
+	// encodings to be fixed length (i.e. 8-bytes) to ensure proper BadgerDB seeks.
+	// Hence, we use the encoding/binary library in place of the lib/varint package.
+	//
+	// Also note we explicitly use BigEndian formatting for encoding the lockup duration.
+	// BigEndian means for the uint64 0x0123456789ABCDEF, the resulting byte slice will be:
+	// []byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}. For comparison, LittleEndian would result in
+	// a byte slice of: []byte{0xEF, 0xCD, 0xAB, 0x89, 0x67, 0x45, 0x23, 0x01}
+	// This is crucial for badgerDB seeks as badger lexicographically seeks to nearest keys and
+	// BigEndian formatting ensures the lexicographic seeks function properly.
+
+	key = append(key, EncodeUint64(uint64(lockupYieldCurvePoint.LockupDurationNanoSecs))...)
+
+	return key
+}
+
+func DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID *PKID) []byte {
+	// Make a copy to avoid multiple calls to this function re-using the same slice.
+	prefixCopy := append([]byte{}, Prefixes.PrefixLockupYieldCurvePointByProfilePKIDAndDurationNanoSecs...)
+	key := append(prefixCopy, profilePKID[:]...)
+	return key
+}
+
+// LockupYieldCurvePoint Put/Delete Operations (Badger Writes)
+
+func DbPutLockupYieldCurvePointMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeight uint64,
+	lockupYieldCurvePoint LockupYieldCurvePoint, eventManager *EventManager) error {
+	// Sanity check the fields in the LockupYieldCurvePoint used in constructing the key.
+	if len(lockupYieldCurvePoint.ProfilePKID) != btcec.PubKeyBytesLenCompressed {
+		return fmt.Errorf("DbPutLockupYieldCurvePointMappingsWithTxn: Profile PKID "+
+			"length %d != %d", len(lockupYieldCurvePoint.ProfilePKID), btcec.PubKeyBytesLenCompressed)
+	}
+	if lockupYieldCurvePoint.LockupDurationNanoSecs <= 0 {
+		return fmt.Errorf("DbPutLockupYieldCurvePointMappingsWithTxn: Trying to put "+
+			"lockup yield curve point with negative duration: %d", lockupYieldCurvePoint.LockupDurationNanoSecs)
+	}
+
+	if err := DBSetWithTxn(txn, snap, _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint),
+		EncodeToBytes(blockHeight, &lockupYieldCurvePoint), eventManager); err != nil {
+		return errors.Wrapf(err, "DbPutLockupYieldCurvePointMappingsWithTxn: "+
+			"Problem adding locked balance entry to db")
+	}
+	return nil
+}
+
+func DbDeleteLockupYieldCurvePointWithTxn(txn *badger.Txn, snap *Snapshot,
+	lockupYieldCurvePoint LockupYieldCurvePoint, eventManager *EventManager, entryIsDeleted bool) error {
+	// First check that a mapping exists. If one doesn't then there's nothing to do.
+	_, err := DBGetWithTxn(txn, snap, _dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint))
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil
+	}
+	if err != nil {
+		return errors.Wrapf(err, "DbDeleteLockupYieldCurvePointWithTxn: Problem getting "+
+			"locked balance entry for Profile PKID %s, Duration %d, APY Yield Basis Points %d",
+			lockupYieldCurvePoint.ProfilePKID.ToString(), lockupYieldCurvePoint.LockupDurationNanoSecs,
+			lockupYieldCurvePoint.LockupYieldAPYBasisPoints)
+	}
+
+	// When a locked balance entry exists, delete the locked balance entry mapping.
+	if err := DBDeleteWithTxn(txn, snap,
+		_dbKeyForLockupYieldCurvePoint(lockupYieldCurvePoint), eventManager, entryIsDeleted); err != nil {
+		return errors.Wrapf(err, "DbDeleteLockupYieldCurvePointWithTxn: Deleting "+
+			"locked balance entry for Profile PKID %s, Duration %d, APY Yield Basis Points %d",
+			lockupYieldCurvePoint.ProfilePKID.ToString(), lockupYieldCurvePoint.LockupDurationNanoSecs,
+			lockupYieldCurvePoint.LockupYieldAPYBasisPoints)
+	}
+	return nil
+}
+
+// LockupYieldCurvePoint Get Operations (Badger Reads)
+
+func DBGetAllYieldCurvePointsByProfilePKID(handle *badger.DB, snap *Snapshot,
+	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
+	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+
+	// Validate profilePKID is not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetAllYieldCurvePointsByProfilePKID: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		lockupYieldCurvePoints, err = DBGetAllYieldCurvePointsByProfilePKIDWithTxn(
+			txn, snap, profilePKID)
+		return err
+	})
+	return lockupYieldCurvePoints, err
+}
+
+func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapshot,
+	profilePKID *PKID) (_lockupYieldCurvePoints []*LockupYieldCurvePoint, _err error) {
+	// Construct the key prefix.
+	startKey := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
+		ProfilePKID:            profilePKID,
+		LockupDurationNanoSecs: 0,
+	})
+	validKey := DBPrefixKeyForLockupYieldCurvePointsByProfilePKID(profilePKID)
+
+	// Create an iterator.
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = validKey
+	iterator := txn.NewIterator(opts)
+	defer iterator.Close()
+
+	// Store matching LockupYieldCurvePoints to return.
+	var lockupYieldCurvePoints []*LockupYieldCurvePoint
+
+	// Loop.
+	for iterator.Seek(startKey); iterator.ValidForPrefix(validKey); iterator.Next() {
+		// Retrieve the LockupYieldCurvePointBytes.
+		lockupYieldCurvePointBytes, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllYieldCurvePointsByProfilePKIDWithTxn: "+
+				"error retrieveing LockupYieldCurvePoint: ")
+		}
+
+		// Convert LockedBalanceEntryBytes to LockedBalanceEntry.
+		rr := bytes.NewReader(lockupYieldCurvePointBytes)
+		lockupYieldCurvePoint, err := DecodeDeSoEncoder(&LockupYieldCurvePoint{}, rr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "DBGetAllYieldCurvePointsByProfilePKIDWithTxn: "+
+				"error decoding LockupYieldCurvePoint: ")
+		}
+
+		// Append to the array to return.
+		lockupYieldCurvePoints = append(lockupYieldCurvePoints, lockupYieldCurvePoint)
+	}
+
+	return lockupYieldCurvePoints, nil
+}
+
+func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs(handle *badger.DB, snap *Snapshot, profilePKID *PKID,
+	lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
+	var lockupYieldCurvePoint *LockupYieldCurvePoint
+
+	// Validate profilePKID is not nil.
+	if profilePKID == nil {
+		return nil, errors.New("DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs: " +
+			"called with nil profilePKID; this shouldn't happen")
+	}
+
+	err := handle.View(func(txn *badger.Txn) error {
+		var err error
+		lockupYieldCurvePoint, err = DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(
+			txn, snap, profilePKID, lockupDurationNanoSecs)
+		return err
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecs")
+
+	}
+	return lockupYieldCurvePoint, nil
+}
+
+func DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn(txn *badger.Txn, snap *Snapshot,
+	profilePKID *PKID, lockupDurationNanoSecs int64) (_lockupYieldCurvePoint *LockupYieldCurvePoint, _err error) {
+	// Construct the key.
+	key := _dbKeyForLockupYieldCurvePoint(LockupYieldCurvePoint{
+		ProfilePKID:            profilePKID,
+		LockupDurationNanoSecs: lockupDurationNanoSecs,
+	})
+
+	// Fetch the point from the database.
+	lockupYieldCurvePointBytes, err := DBGetWithTxn(txn, snap, key)
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errors.Wrapf(err,
+			"DBGetYieldCurvePointsByProfilePKIDAndDurationNanoSecsWithTxn: failed getting "+
+				"lockup yield curve point with PKID %s and duration %d",
+			profilePKID.ToString(), lockupDurationNanoSecs)
+	}
+
+	// Parse the bytes beneath the key.
+	return DecodeDeSoEncoder(&LockupYieldCurvePoint{}, bytes.NewReader(lockupYieldCurvePointBytes))
+}
+
+// -------------------------------------------------------------------------------------
 // DeSo nonce mapping functions
 // -------------------------------------------------------------------------------------
 
@@ -10612,10 +11768,15 @@ func _dbPrefixForNonceEntryIndexWithBlockHeight(blockHeight uint64) []byte {
 	return append(prefixCopy, EncodeUint64(blockHeight)...)
 }
 
-func DbGetTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+func DbGetTransactorNonceEntryWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	nonce *DeSoNonce,
+	pkid *PKID,
+) (*TransactorNonceEntry, error) {
 	key := _dbKeyForTransactorNonceEntry(nonce, pkid)
-	_, err := txn.Get(key)
-	if err == badger.ErrKeyNotFound {
+	_, err := DBGetWithTxn(txn, snap, key)
+	if errors.Is(err, badger.ErrKeyNotFound) {
 		return nil, nil
 	}
 	if err != nil {
@@ -10627,11 +11788,16 @@ func DbGetTransactorNonceEntryWithTxn(txn *badger.Txn, nonce *DeSoNonce, pkid *P
 	}, nil
 }
 
-func DbGetTransactorNonceEntry(db *badger.DB, nonce *DeSoNonce, pkid *PKID) (*TransactorNonceEntry, error) {
+func DbGetTransactorNonceEntry(
+	db *badger.DB,
+	snap *Snapshot,
+	nonce *DeSoNonce,
+	pkid *PKID,
+) (*TransactorNonceEntry, error) {
 	var ret *TransactorNonceEntry
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		ret, err = DbGetTransactorNonceEntryWithTxn(txn, nonce, pkid)
+		ret, err = DbGetTransactorNonceEntryWithTxn(txn, snap, nonce, pkid)
 		return errors.Wrap(err, "DbGetTransactorNonceEntry: ")
 	})
 	if dbErr != nil {
@@ -10667,22 +11833,25 @@ func DbGetTransactorNonceEntriesToExpireAtBlockHeight(handle *badger.DB, blockHe
 }
 
 func DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn *badger.Txn, blockHeight uint64) []*TransactorNonceEntry {
-	startPrefix := _dbKeyForTransactorNonceEntry(&DeSoNonce{ExpirationBlockHeight: blockHeight, PartialID: math.MaxUint64}, &MaxPKID)
 	endPrefix := append([]byte{}, Prefixes.PrefixNoncePKIDIndex...)
 	opts := badger.DefaultIteratorOptions
-	opts.Reverse = true
+	opts.Prefix = endPrefix
+	opts.PrefetchValues = false
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 	var transactorNonceEntries []*TransactorNonceEntry
-	for nodeIterator.Seek(startPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
-		transactorNonceEntries = append(transactorNonceEntries,
-			TransactorNonceKeyToTransactorNonceEntry(nodeIterator.Item().Key()))
+	for nodeIterator.Seek(endPrefix); nodeIterator.ValidForPrefix(endPrefix); nodeIterator.Next() {
+		transactorNonceEntry := TransactorNonceKeyToTransactorNonceEntry(nodeIterator.Item().Key())
+		if transactorNonceEntry.Nonce.ExpirationBlockHeight > blockHeight {
+			break
+		}
+		transactorNonceEntries = append(transactorNonceEntries, transactorNonceEntry)
 	}
 	return transactorNonceEntries
 }
 
 func DbGetAllTransactorNonceEntries(handle *badger.DB) []*TransactorNonceEntry {
-	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex)
+	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex, true)
 	nonceEntries := []*TransactorNonceEntry{}
 	for _, key := range keys {
 		// Convert key to nonce entry.
@@ -10726,7 +11895,7 @@ func EnumerateKeysForPrefixWithLimitOffsetOrder(
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
 		keysFound, valsFound, err = _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
-			txn, prefix, limit, lastSeenKey, sortDescending, skipKeys,
+			txn, prefix, limit, lastSeenKey, sortDescending, _setMembershipCheckFunc(skipKeys),
 		)
 		return err
 	})
@@ -10746,7 +11915,7 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 	limit int,
 	lastSeenKey []byte,
 	sortDescending bool,
-	skipKeys *Set[string],
+	canSkipKey func([]byte) bool,
 ) ([][]byte, [][]byte, error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
@@ -10770,6 +11939,7 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		opts.Reverse = true
 		startingKey = append(startingKey, 0xff)
 	}
+	opts.Prefix = prefix
 	nodeIterator := txn.NewIterator(opts)
 	defer nodeIterator.Close()
 
@@ -10788,8 +11958,8 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 			}
 			haveSeenLastSeenKey = true
 		}
-		// Skip if key is included in the set of skipKeys.
-		if skipKeys.Includes(string(key)) {
+		// Skip if key can be skipped.
+		if canSkipKey(key) {
 			continue
 		}
 		// Copy key.
@@ -10805,6 +11975,95 @@ func _enumerateKeysForPrefixWithLimitOffsetOrderWithTxn(
 		valsFound = append(valsFound, valCopy)
 	}
 	return keysFound, valsFound, nil
+}
+
+func EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc(
+	db *badger.DB,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, error) {
+	keysFound := [][]byte{}
+
+	dbErr := db.View(func(txn *badger.Txn) error {
+		var err error
+		keysFound, err = _enumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+			txn, prefix, limit, lastSeenKey, sortDescending, canSkipKey,
+		)
+		return err
+	})
+	if dbErr != nil {
+		return nil, errors.Wrapf(
+			dbErr,
+			"EnumerateKeysOnlyForPrefixWithLimitOffsetOrderAndSkipFunc: problem fetching keys from db: ",
+		)
+	}
+
+	return keysFound, nil
+}
+
+func _enumerateKeysOnlyForPrefixWithLimitOffsetOrderWithTxn(
+	txn *badger.Txn,
+	prefix []byte,
+	limit int,
+	lastSeenKey []byte,
+	sortDescending bool,
+	canSkipKey func([]byte) bool,
+) ([][]byte, error) {
+	keysFound := [][]byte{}
+
+	// If provided, start at the last seen key.
+	startingKey := prefix
+	haveSeenLastSeenKey := true
+	if lastSeenKey != nil {
+		startingKey = lastSeenKey
+		haveSeenLastSeenKey = false
+		if limit > 0 {
+			// Need to increment limit by one (if non-zero) since
+			// we include the lastSeenKey/lastSeenValue.
+			limit += 1
+		}
+	}
+
+	opts := badger.DefaultIteratorOptions
+	// Search keys in reverse order if sort DESC.
+	if sortDescending {
+		opts.Reverse = true
+		startingKey = append(startingKey, 0xff)
+	}
+	opts.PrefetchValues = false
+	opts.Prefix = prefix
+	nodeIterator := txn.NewIterator(opts)
+	defer nodeIterator.Close()
+
+	for nodeIterator.Seek(startingKey); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+		// Break if at or beyond limit.
+		if limit > 0 && len(keysFound) >= limit {
+			break
+		}
+		key := nodeIterator.Item().Key()
+		// Skip if key is before the last seen key. The caller
+		// needs to filter out the lastSeenKey in the view as
+		// we return any key >= the lastSeenKey.
+		if !haveSeenLastSeenKey {
+			if !bytes.Equal(key, lastSeenKey) {
+				continue
+			}
+			haveSeenLastSeenKey = true
+		}
+		// Skip if key can be skipped.
+		if canSkipKey(key) {
+			continue
+		}
+		// Copy key.
+		keyCopy := make([]byte, len(key))
+		copy(keyCopy[:], key[:])
+		// Append found entry to return slices.
+		keysFound = append(keysFound, keyCopy)
+	}
+	return keysFound, nil
 }
 
 // Check to see if the badger db has already been initialized with the performance options.
@@ -10824,4 +12083,10 @@ func GetDbPerformanceOptionsFilePath(dataDir string) string {
 
 func DbOptsArePerformance(opts *badger.Options) bool {
 	return opts.MemTableSize == PerformanceMemTableSize && opts.ValueLogFileSize == PerformanceLogValueSize
+}
+
+func _setMembershipCheckFunc(set *Set[string]) func([]byte) bool {
+	return func(key []byte) bool {
+		return set.Includes(string(key))
+	}
 }

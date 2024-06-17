@@ -3,21 +3,22 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
-	"github.com/holiman/uint256"
-	"github.com/stretchr/testify/require"
 	"math"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBalanceModelDAOCoinLimitOrders(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t)
-	TestDAOCoinLimitOrder(t)
-	TestFlushingDAOCoinLimitOrders(t)
+	t.Run("TestZeroCostOrderEdgeCaseDAOCoinLimitOrder", TestZeroCostOrderEdgeCaseDAOCoinLimitOrder)
+	t.Run("TestDAOCoinLimitOrder", TestDAOCoinLimitOrder)
+	t.Run("TestFlushingDAOCoinLimitOrders", TestFlushingDAOCoinLimitOrders)
 }
 func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	// -----------------------
@@ -37,12 +38,11 @@ func TestZeroCostOrderEdgeCaseDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.BlockRewardMaturity = time.Second
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	dbAdapter := utxoView.GetDbAdapter()
 
 	// Mine a few blocks to give the senderPkString some money.
-	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
 	_, err = miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
@@ -628,12 +628,11 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	params.ForkHeights.OrderBookDBFetchOptimizationBlockHeight = uint32(0)
 	params.BlockRewardMaturity = time.Second
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	dbAdapter := utxoView.GetDbAdapter()
 
 	// Mine a few blocks to give the senderPkString some money.
-	_, err = miner.MineAndProcessSingleBlock(0, mempool)
+	_, err := miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
 	_, err = miner.MineAndProcessSingleBlock(0, mempool)
 	require.NoError(err)
@@ -963,17 +962,53 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 	{
 		// Test database query.
 		// Confirm 1 existing limit order, and it's from m0.
-		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
 
 		// Test UTXO view query.
 		// Confirm 1 existing limit order, and it's from m0.
-		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+	}
+
+	// Test GetAllDAOCoinLimitOrdersForThisTransactor() with buying/selling pkid specified
+	{
+		buyingPkid := NewPKID(m0PkBytes)
+		sellingPkid := NewPKID(ZeroPublicKey[:])
+		// Test database query.
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, buyingPkid, sellingPkid)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+
+		// Test UTXO view query.
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, buyingPkid, sellingPkid)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 1)
+		require.True(orderEntries[0].Eq(metadataM0.ToEntry(m0PKID.PKID, savedHeight, toPKID)))
+	}
+
+	// Test GetAllDAOCoinLimitOrdersForThisTransactor() with WRONG buying/selling pkid specified
+	{
+		buyingPkid := NewPKID(m0PkBytes)
+		sellingPkid := NewPKID(ZeroPublicKey[:])
+		// Test database query.
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, sellingPkid, buyingPkid)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 0)
+
+		// Test UTXO view query.
+		// Confirm 1 existing limit order, and it's from m0.
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, sellingPkid, buyingPkid)
+		require.NoError(err)
+		require.Equal(len(orderEntries), 0)
 	}
 
 	// Construct metadata for a m1 limit order:
@@ -1368,7 +1403,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 2)
 
 		// m0 cancels their order.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		cancelMetadataM0 := DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
@@ -1512,7 +1547,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 			metadataM1,
 		)
 
-		m2Orders, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m2PKID.PKID)
+		m2Orders, err := dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m2PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Len(m2Orders, 0)
 	}
@@ -1709,7 +1744,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		//   Selling:    $DESO
 		//   Price:      0.1 $DESO / DAO coin
 		//   Quantity:   100 DAO coin units
-		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = utxoView.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		exchangeRate, err = CalculateScaledExchangeRate(0.1)
@@ -1828,12 +1863,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 3)
 
 		// m0 has 3 open orders.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 3)
 
 		// No open orders for m1.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
 
@@ -1879,7 +1914,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 2)
 
 		// m0 has 2 remaining open orders.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 
@@ -1927,7 +1962,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
 
 		// m0 has 1 remaining open orders.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 	}
@@ -2353,12 +2388,12 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(desoBalanceM0Before, desoBalanceM0After)
 
 		// m1 cancels the above txn.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		metadataM1 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
 	}
@@ -2461,8 +2496,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.NotEmpty(utxoEntriesM0) // Unspent UTXOs exist for m0.
 
 		// Spend m0's existing UTXO.
-		tempUtxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-		require.NoError(err)
+		tempUtxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 		utxoOp, err := tempUtxoView._spendUtxo(utxoEntriesM0[0].UtxoKey)
 		require.NoError(err)
 		err = tempUtxoView.FlushToDb(0)
@@ -3396,18 +3430,18 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Equal(len(orderEntries), 2)
 
 		// Confirm 1 order belonging to m0.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
 		// Confirm 1 order belonging to m1.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
 		// Confirm 0 orders belonging to m3.
 		m3PKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, m3PkBytes)
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
 
@@ -3421,10 +3455,10 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.True(m3PKID.PKID.Eq(originalM0PKID))
 
 		// Validate m0's 1 existing order was transferred to m3.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m0PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 
@@ -3448,17 +3482,17 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		require.Contains(err.Error(), RuleErrorDAOCoinLimitOrderMatchingOwnOrder)
 
 		// Validate m3 can cancel their open order.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		metadataM3 = DAOCoinLimitOrderMetadata{CancelOrderID: orderEntries[0].OrderID}
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m3Pub, m3Priv, metadataM3)
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m3PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Empty(orderEntries)
 
 		// Validate m1's orders for m3 DAO coins still persist.
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 1)
 		require.True(orderEntries[0].SellingDAOCoinCreatorPKID.Eq(m3PKID.PKID))
@@ -3478,7 +3512,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
 
-		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID)
+		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrdersForThisTransactor(m1PKID.PKID, nil, nil)
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
 	}
@@ -4087,14 +4121,13 @@ func _connectDAOCoinLimitOrderTxn(
 	require := require.New(testMeta.t)
 	testMeta.expectedSenderBalances = append(
 		testMeta.expectedSenderBalances, _getBalance(testMeta.t, testMeta.chain, nil, publicKey))
-	currentUtxoView, err := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
-	require.NoError(err)
+	currentUtxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, testMeta.chain.eventManager)
 	// Sign the transaction now that its inputs are set up.
 	_signTxn(testMeta.t, txn, privateKey)
 	// Always use savedHeight (blockHeight+1) for validation since it's
 	// assumed the transaction will get mined into the next block.
 	utxoOps, totalInput, totalOutput, fees, err := currentUtxoView.ConnectTransaction(
-		txn, txn.Hash(), getTxnSize(*txn), testMeta.savedHeight, true, false)
+		txn, txn.Hash(), testMeta.savedHeight, 0, true, false)
 	if err != nil {
 		// If error, remove most-recent expected sender balance added for this txn.
 		testMeta.expectedSenderBalances = testMeta.expectedSenderBalances[:len(testMeta.expectedSenderBalances)-1]
@@ -4141,8 +4174,7 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(TransactorPublicKeyBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateDAOCoinLimitOrderTxn(
 		updaterPkBytes,
@@ -4167,7 +4199,7 @@ func _doDAOCoinLimitOrderTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}

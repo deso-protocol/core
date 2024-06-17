@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/core/collections/bitset"
+	"github.com/holiman/uint256"
 
 	"github.com/davecgh/go-spew/spew"
 
@@ -114,6 +117,64 @@ type UtxoView struct {
 	// Map of DeSoNonce and PKID to TransactorNonceEntry
 	TransactorNonceMapKeyToTransactorNonceEntry map[TransactorNonceMapKey]*TransactorNonceEntry
 
+	// Validator mappings
+	ValidatorPKIDToValidatorEntry map[PKID]*ValidatorEntry
+	// ValidatorBLSPublicKeyPKIDPairEntries is a mapping of BLS Public Key to BLSPublicKeyPKIDPairEntry.
+	// Used for enforcing uniqueness of BLS Public Keys in the validator set.
+	ValidatorBLSPublicKeyPKIDPairEntries map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry
+
+	// Stake mappings
+	StakeMapKeyToStakeEntry map[StakeMapKey]*StakeEntry
+
+	// Locked stake mappings
+	LockedStakeMapKeyToLockedStakeEntry map[LockedStakeMapKey]*LockedStakeEntry
+
+	// Locked DAO coin and locked DESO balance entry mapping.
+	// NOTE: See comment on LockedBalanceEntryKey before altering.
+	LockedBalanceEntryKeyToLockedBalanceEntry map[LockedBalanceEntryKey]*LockedBalanceEntry
+
+	// Lockup yield curve points.
+	// NOTE: While the nested map does break convention, this enables us to quickly read, scan, and modify
+	// lockup yield curve points without needing to traverse yield curve points held by other PKIDs.
+	// This enables us to have a high performance means of computing yield during lockup transactions without
+	// having to scan all yield curve points for all users stored in the view.
+	PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint
+
+	// Current EpochEntry
+	CurrentEpochEntry *EpochEntry
+
+	// Current RandomSeedHash
+	CurrentRandomSeedHash *RandomSeedHash
+
+	// SnapshotGlobalParamEntries is a map of SnapshotAtEpochNumber to a GlobalParamsEntry.
+	// It contains the snapshot value of the GlobalParamsEntry at the given SnapshotAtEpochNumber.
+	SnapshotGlobalParamEntries map[uint64]*GlobalParamsEntry
+
+	// SnapshotValidatorSet is a map of <SnapshotAtEpochNumber, ValidatorPKID> to a ValidatorEntry.
+	// It contains the snapshot value of every ValidatorEntry that makes up the validator set at
+	// the given SnapshotAtEpochNumber.
+	SnapshotValidatorSet map[SnapshotValidatorSetMapKey]*ValidatorEntry
+	// HasFullSnapshotValidatorSetByEpoch is a map of SnapshotAtEpochNumber to a boolean. If all
+	// validator entries for a given epoch have been loaded from the DB, the value is true.
+	HasFullSnapshotValidatorSetByEpoch map[uint64]bool
+
+	// SnapshotValidatorBLSPublicKeyPKIDPairEntries is a map of <SnapshotAtEpochNumber, bls.SerializedPublicKey>
+	// to a BLSPublicKeyPKIDPairEntry. It contains the snapshot value of the BLSPublicKeyPKIDPairEntry
+	// of every validator that makes up the validator set at the given SnapshotAtEpochNumber.
+	SnapshotValidatorBLSPublicKeyPKIDPairEntries map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry
+
+	// SnapshotLeaderSchedule is a map of <SnapshotAtEpochNumber, LeaderIndex> to a ValidatorPKID.
+	// It contains the PKID of the validator at the given index in the leader schedule
+	// generated at the given SnapshotAtEpochNumber.
+	SnapshotLeaderSchedule map[SnapshotLeaderScheduleMapKey]*PKID
+	// HasFullSnapshotLeaderScheduleByEpoch is a map of SnapshotAtEpochNumber to a boolean. If the leader entire schedule
+	// for a given epoch has been loaded from the DB, the value is true.
+	HasFullSnapshotLeaderScheduleByEpoch map[uint64]bool
+
+	// SnapshotStakesToReward is a map of <SnapshotAtEpochNumber, ValidatorPKID, StakerPKID>
+	// to a snapshotted StakeEntry for the ValidatorPKID and StakerPKID pair at a given SnapshotAtEpochNumber.
+	SnapshotStakesToReward map[SnapshotStakeMapKey]*StakeEntry
+
 	// The hash of the tip the view is currently referencing. Mainly used
 	// for error-checking when doing a bulk operation on the view.
 	TipHash *BlockHash
@@ -215,13 +276,54 @@ func (bav *UtxoView) _ResetViewMappingsAfterFlush() {
 
 	// Transaction nonce map
 	bav.TransactorNonceMapKeyToTransactorNonceEntry = make(map[TransactorNonceMapKey]*TransactorNonceEntry)
+
+	// Locked Balance Entries Map
+	bav.LockedBalanceEntryKeyToLockedBalanceEntry = make(map[LockedBalanceEntryKey]*LockedBalanceEntry)
+
+	// Lockup Yield Curve Points Map
+	bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints = make(map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint)
+
+	// ValidatorEntries
+	bav.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry)
+	// Validator BLS PublicKey to PKID
+	bav.ValidatorBLSPublicKeyPKIDPairEntries = make(map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry)
+
+	// StakeEntries
+	bav.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry)
+
+	// LockedStakeEntries
+	bav.LockedStakeMapKeyToLockedStakeEntry = make(map[LockedStakeMapKey]*LockedStakeEntry)
+
+	// CurrentEpochEntry
+	bav.CurrentEpochEntry = nil
+
+	// SnapshotGlobalParamEntries
+	bav.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry)
+
+	// SnapshotValidatorSet
+	bav.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry)
+	bav.HasFullSnapshotValidatorSetByEpoch = make(map[uint64]bool)
+
+	// SnapshotValidatorBLSPublicKeyPKIDPairEntries
+	bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries = make(map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry)
+
+	// SnapshotLeaderSchedule
+	bav.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID)
+	bav.HasFullSnapshotLeaderScheduleByEpoch = make(map[uint64]bool)
+
+	// SnapshotStakesToReward
+	bav.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*StakeEntry)
 }
 
-func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
-	newView, err := NewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
-	if err != nil {
-		return nil, err
-	}
+func (bav *UtxoView) CopyUtxoView() *UtxoView {
+	newView := initNewUtxoView(bav.Handle, bav.Params, bav.Postgres, bav.Snapshot, bav.EventManager)
+
+	newView.TipHash = bav.TipHash.NewBlockHash()
+	// Handle items loaded from DB with _ResetViewMappingsAfterFlush
+	newView.NumUtxoEntries = bav.NumUtxoEntries
+	newView.NanosPurchased = bav.NanosPurchased
+	newView.USDCentsPerBitcoin = bav.USDCentsPerBitcoin
+	newView.GlobalParamsEntry = bav.GlobalParamsEntry.Copy()
 
 	// Copy the UtxoEntry data
 	// Note that using _setUtxoMappings is dangerous because the Pos within
@@ -250,6 +352,16 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 	// Copy the GlobalParamsEntry
 	newGlobalParamsEntry := *bav.GlobalParamsEntry
 	newView.GlobalParamsEntry = &newGlobalParamsEntry
+
+	// Copy the forbidden public keys map
+	newView.ForbiddenPubKeyToForbiddenPubKeyEntry = make(
+		map[PkMapKey]*ForbiddenPubKeyEntry, len(bav.ForbiddenPubKeyToForbiddenPubKeyEntry))
+	for pkMapKey, forbiddenPubKeyEntry := range bav.ForbiddenPubKeyToForbiddenPubKeyEntry {
+		if forbiddenPubKeyEntry == nil {
+			continue
+		}
+		newView.ForbiddenPubKeyToForbiddenPubKeyEntry[pkMapKey] = forbiddenPubKeyEntry.Copy()
+	}
 
 	// Copy the post data
 	newView.PostHashToPostEntry = make(map[BlockHash]*PostEntry, len(bav.PostHashToPostEntry))
@@ -467,7 +579,163 @@ func (bav *UtxoView) CopyUtxoView() (*UtxoView, error) {
 		newView.TransactorNonceMapKeyToTransactorNonceEntry[entryKey] = &newEntry
 	}
 
-	return newView, nil
+	// Copy the LockedBalanceEntries
+	newView.LockedBalanceEntryKeyToLockedBalanceEntry = make(map[LockedBalanceEntryKey]*LockedBalanceEntry,
+		len(bav.LockedBalanceEntryKeyToLockedBalanceEntry))
+	for entryKey, entry := range bav.LockedBalanceEntryKeyToLockedBalanceEntry {
+		newView.LockedBalanceEntryKeyToLockedBalanceEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the LockupYieldCurvePoints
+	newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints =
+		make(map[PKID]map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, len(bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints))
+	for pkid, lockupYieldCurvePointMap := range bav.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints {
+		// Copy the map for the given PKID
+		newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid] =
+			make(map[LockupYieldCurvePointKey]*LockupYieldCurvePoint, len(lockupYieldCurvePointMap))
+
+		// Go through all LockupYieldCurvePoints in the LockupYieldCurvePoint map.
+		for entryKey, entry := range lockupYieldCurvePointMap {
+			newView.PKIDToLockupYieldCurvePointKeyToLockupYieldCurvePoints[pkid][entryKey] = entry.Copy()
+		}
+	}
+
+	// Copy the ValidatorEntries
+	newView.ValidatorPKIDToValidatorEntry = make(map[PKID]*ValidatorEntry, len(bav.ValidatorPKIDToValidatorEntry))
+	for entryKey, entry := range bav.ValidatorPKIDToValidatorEntry {
+		newView.ValidatorPKIDToValidatorEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the validator BLS PublicKey to PKID map
+	newView.ValidatorBLSPublicKeyPKIDPairEntries = make(map[bls.SerializedPublicKey]*BLSPublicKeyPKIDPairEntry, len(bav.ValidatorBLSPublicKeyPKIDPairEntries))
+	for entryKey, entry := range bav.ValidatorBLSPublicKeyPKIDPairEntries {
+		newView.ValidatorBLSPublicKeyPKIDPairEntries[entryKey] = entry.Copy()
+	}
+
+	// Copy the StakeEntries
+	newView.StakeMapKeyToStakeEntry = make(map[StakeMapKey]*StakeEntry, len(bav.StakeMapKeyToStakeEntry))
+	for entryKey, entry := range bav.StakeMapKeyToStakeEntry {
+		newView.StakeMapKeyToStakeEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the LockedStakeEntries
+	newView.LockedStakeMapKeyToLockedStakeEntry = make(
+		map[LockedStakeMapKey]*LockedStakeEntry, len(bav.LockedStakeMapKeyToLockedStakeEntry),
+	)
+	for entryKey, entry := range bav.LockedStakeMapKeyToLockedStakeEntry {
+		newView.LockedStakeMapKeyToLockedStakeEntry[entryKey] = entry.Copy()
+	}
+
+	// Copy the CurrentEpochEntry
+	if bav.CurrentEpochEntry != nil {
+		newView.CurrentEpochEntry = bav.CurrentEpochEntry.Copy()
+	}
+
+	// Copy the CurrentRandomSeedHash
+	if bav.CurrentRandomSeedHash != nil {
+		newView.CurrentRandomSeedHash = bav.CurrentRandomSeedHash.Copy()
+	}
+
+	// Copy the SnapshotGlobalParamEntries
+	newView.SnapshotGlobalParamEntries = make(map[uint64]*GlobalParamsEntry, len(bav.SnapshotGlobalParamEntries))
+	for epochNumber, globalParamsEntry := range bav.SnapshotGlobalParamEntries {
+		newView.SnapshotGlobalParamEntries[epochNumber] = globalParamsEntry.Copy()
+	}
+
+	// Copy the SnapshotValidatorSet
+	newView.SnapshotValidatorSet = make(map[SnapshotValidatorSetMapKey]*ValidatorEntry, len(bav.SnapshotValidatorSet))
+	for mapKey, validatorEntry := range bav.SnapshotValidatorSet {
+		newView.SnapshotValidatorSet[mapKey] = validatorEntry.Copy()
+	}
+
+	newView.HasFullSnapshotValidatorSetByEpoch = make(map[uint64]bool, len(bav.HasFullSnapshotValidatorSetByEpoch))
+	for mapKey, hasFullSnapshotValidatorSet := range bav.HasFullSnapshotValidatorSetByEpoch {
+		newView.HasFullSnapshotValidatorSetByEpoch[mapKey] = hasFullSnapshotValidatorSet
+	}
+
+	newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries = make(
+		map[SnapshotValidatorBLSPublicKeyMapKey]*BLSPublicKeyPKIDPairEntry,
+		len(bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries),
+	)
+	for mapKey, blsPublicKeyPKIDPairEntry := range bav.SnapshotValidatorBLSPublicKeyPKIDPairEntries {
+		newView.SnapshotValidatorBLSPublicKeyPKIDPairEntries[mapKey] = blsPublicKeyPKIDPairEntry.Copy()
+	}
+
+	// Copy the SnapshotLeaderSchedule
+	newView.SnapshotLeaderSchedule = make(map[SnapshotLeaderScheduleMapKey]*PKID, len(bav.SnapshotLeaderSchedule))
+	for mapKey, validatorPKID := range bav.SnapshotLeaderSchedule {
+		newView.SnapshotLeaderSchedule[mapKey] = validatorPKID.NewPKID()
+	}
+	newView.HasFullSnapshotLeaderScheduleByEpoch = make(map[uint64]bool, len(bav.HasFullSnapshotLeaderScheduleByEpoch))
+	for mapKey, hasFullSnapshotLeaderSchedule := range bav.HasFullSnapshotLeaderScheduleByEpoch {
+		newView.HasFullSnapshotLeaderScheduleByEpoch[mapKey] = hasFullSnapshotLeaderSchedule
+	}
+
+	// Copy the SnapshotStakesToReward
+	newView.SnapshotStakesToReward = make(map[SnapshotStakeMapKey]*StakeEntry, len(bav.SnapshotStakesToReward))
+	for mapKey, snapshotStakeToReward := range bav.SnapshotStakesToReward {
+		newView.SnapshotStakesToReward[mapKey] = snapshotStakeToReward.Copy()
+	}
+
+	newView.TipHash = bav.TipHash.NewBlockHash()
+
+	return newView
+}
+
+func NewUtxoViewWithSnapshotCache(
+	_handle *badger.DB,
+	_params *DeSoParams,
+	_postgres *Postgres,
+	_snapshot *Snapshot,
+	_eventManager *EventManager,
+	_snapshotCache *SnapshotCache,
+) *UtxoView {
+	utxoView := NewUtxoView(_handle, _params, _postgres, _snapshot, _eventManager)
+	if _snapshotCache != nil {
+		allValidatorSetEntries := _snapshotCache.GetAllCachedSnapshotValidatorSetEntries()
+		for snapshotAtEpochNumber, validatorSetEntries := range allValidatorSetEntries {
+			for _, validatorEntry := range validatorSetEntries {
+				utxoView.SnapshotValidatorSet[SnapshotValidatorSetMapKey{
+					SnapshotAtEpochNumber: snapshotAtEpochNumber,
+					ValidatorPKID:         *validatorEntry.ValidatorPKID,
+				}] = validatorEntry.Copy()
+			}
+			utxoView.HasFullSnapshotValidatorSetByEpoch[snapshotAtEpochNumber] = true
+		}
+
+		allLeaderScheduleEntries := _snapshotCache.GetAllCachedLeaderSchedules()
+		for snapshotAtEpochNumber, leaderSchedule := range allLeaderScheduleEntries {
+			for leaderIndex, validatorPKID := range leaderSchedule {
+				utxoView.SnapshotLeaderSchedule[SnapshotLeaderScheduleMapKey{
+					SnapshotAtEpochNumber: snapshotAtEpochNumber,
+					LeaderIndex:           uint16(leaderIndex),
+				}] = validatorPKID.NewPKID()
+			}
+			utxoView.HasFullSnapshotLeaderScheduleByEpoch[snapshotAtEpochNumber] = true
+		}
+		allGlobalParamsEntries := _snapshotCache.GetAllCachedSnapshotGlobalParams()
+		for snapshotAtEpochNumber, globalParamsEntry := range allGlobalParamsEntries {
+			utxoView.SnapshotGlobalParamEntries[snapshotAtEpochNumber] = globalParamsEntry.Copy()
+		}
+	}
+	return utxoView
+}
+
+func initNewUtxoView(
+	_handle *badger.DB,
+	_params *DeSoParams,
+	_postgres *Postgres,
+	_snapshot *Snapshot,
+	_eventManager *EventManager,
+) *UtxoView {
+	return &UtxoView{
+		Handle:       _handle,
+		Params:       _params,
+		Postgres:     _postgres,
+		Snapshot:     _snapshot,
+		EventManager: _eventManager,
+		// Set everything else in _ResetViewMappings()
+	}
 }
 
 func NewUtxoView(
@@ -476,23 +744,9 @@ func NewUtxoView(
 	_postgres *Postgres,
 	_snapshot *Snapshot,
 	_eventManager *EventManager,
-) (*UtxoView, error) {
+) *UtxoView {
 
-	view := UtxoView{
-		Handle: _handle,
-		Params: _params,
-		// Note that the TipHash does not get reset as part of
-		// _ResetViewMappingsAfterFlush because it is not something that is affected by a
-		// flush operation. Moreover, its value is consistent with the view regardless of
-		// whether the view is flushed or not. Additionally, the utxo view does not concern
-		// itself with the header chain (see comment on GetBestHash for more info on that).
-		TipHash: DbGetBestHash(_handle, _snapshot, ChainTypeDeSoBlock /* don't get the header chain */),
-
-		Postgres:     _postgres,
-		Snapshot:     _snapshot,
-		EventManager: _eventManager,
-		// Set everything else in _ResetViewMappings()
-	}
+	view := initNewUtxoView(_handle, _params, _postgres, _snapshot, _eventManager)
 
 	// Note that the TipHash does not get reset as part of
 	// _ResetViewMappingsAfterFlush because it is not something that is affected by a
@@ -513,7 +767,7 @@ func NewUtxoView(
 	// but we can use it here to initialize the mappings.
 	view._ResetViewMappingsAfterFlush()
 
-	return &view, nil
+	return view
 }
 
 func (bav *UtxoView) _deleteUtxoMappings(utxoEntry *UtxoEntry) error {
@@ -814,6 +1068,16 @@ func (bav *UtxoView) _addBalance(amountNanos uint64, balancePublicKey []byte,
 		BalancePublicKey:   balancePublicKey,
 		BalanceAmountNanos: amountNanos,
 	}, nil
+}
+
+func (bav *UtxoView) _addBalanceForStakeReward(amountNanos uint64, balancePublicKey []byte,
+) (*UtxoOperation, error) {
+	utxoOp, err := bav._addBalance(amountNanos, balancePublicKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "_addBalanceForStakeReward: ")
+	}
+	utxoOp.Type = OperationTypeStakeDistributionPayToBalance
+	return utxoOp, nil
 }
 
 func (bav *UtxoView) _addDESO(amountNanos uint64, publicKey []byte, utxoEntry *UtxoEntry, blockHeight uint32,
@@ -1167,6 +1431,17 @@ func (bav *UtxoView) _disconnectUpdateGlobalParams(
 
 func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *BlockHash,
 	utxoOpsForTxn []*UtxoOperation, blockHeight uint32) error {
+	// Atomic transactions must have their inner transactions disconnected in series, while the
+	// wrapper must skip the nonce resetting mentioned below.
+	if currentTxn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		return bav._disconnectAtomicTxnsWrapper(
+			OperationTypeAtomicTxnsWrapper,
+			currentTxn,
+			txnHash,
+			utxoOpsForTxn,
+			blockHeight,
+		)
+	}
 
 	// Start by resetting the expected nonce for this txn's public key.
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight && currentTxn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
@@ -1309,6 +1584,42 @@ func (bav *UtxoView) DisconnectTransaction(currentTxn *MsgDeSoTxn, txnHash *Bloc
 	case TxnTypeNewMessage:
 		return bav._disconnectNewMessage(
 			OperationTypeNewMessage, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeRegisterAsValidator:
+		return bav._disconnectRegisterAsValidator(
+			OperationTypeRegisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnregisterAsValidator:
+		return bav._disconnectUnregisterAsValidator(
+			OperationTypeUnregisterAsValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeStake:
+		return bav._disconnectStake(
+			OperationTypeStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnstake:
+		return bav._disconnectUnstake(
+			OperationTypeUnstake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnlockStake:
+		return bav._disconnectUnlockStake(
+			OperationTypeUnlockStake, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeUnjailValidator:
+		return bav._disconnectUnjailValidator(
+			OperationTypeUnjailValidator, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
+	case TxnTypeCoinLockup:
+		return bav._disconnectCoinLockup(OperationTypeCoinLockup, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeUpdateCoinLockupParams:
+		return bav._disconnectUpdateCoinLockupParams(
+			OperationTypeUpdateCoinLockupParams, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCoinLockupTransfer:
+		return bav._disconnectCoinLockupTransfer(
+			OperationTypeCoinLockupTransfer, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+	case TxnTypeCoinUnlock:
+		return bav._disconnectCoinUnlock(OperationTypeCoinUnlock, currentTxn, txnHash, utxoOpsForTxn, blockHeight)
+
 	}
 
 	return fmt.Errorf("DisconnectBlock: Unimplemented txn type %v", currentTxn.TxnMeta.GetTxnType().String())
@@ -1414,6 +1725,9 @@ func (bav *UtxoView) DisconnectBlock(
 
 	// After the balance model block height, we may have a delete expired nonces utxo operation.
 	// We need to revert this before iterating over the transactions in the block.
+	// After the proof of stake fork height, we may have utxo operations for stake distributions.
+	// Stake distribution UtxoOps may be either an AddBalance or a StakeDistribution operation type.
+	// We need to revert these before iterating over the transactions in the block.
 	if desoBlock.Header.Height >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
 		if len(utxoOps) != len(desoBlock.Txns)+1 {
 			return fmt.Errorf(
@@ -1421,20 +1735,51 @@ func (bav *UtxoView) DisconnectBlock(
 					" delete expired nonces operation for block %d",
 				desoBlock.Header.Height)
 		}
-		// We need to revert the delete expired nonces operation.
-		deleteExpiredNoncesUtxoOps := utxoOps[len(utxoOps)-1]
-		if deleteExpiredNoncesUtxoOps[0].Type != OperationTypeDeleteExpiredNonces {
-			return fmt.Errorf(
-				"DisconnectBlock: Expected last utxo op to be delete expired nonces operation for block %d",
-				desoBlock.Header.Height)
+		var isLastBlockInEpoch bool
+		isLastBlockInEpoch, err = bav.IsLastBlockInCurrentEpoch(desoBlock.Header.Height)
+		if err != nil {
+			return errors.Wrapf(err, "DisconnectBlock: Problem checking if block is last in epoch")
 		}
-		if len(deleteExpiredNoncesUtxoOps) != 1 {
-			return fmt.Errorf(
-				"DisconnectBlock: Expected exactly utxo op for deleting expired nonces operation for block %d",
-				desoBlock.Header.Height)
-		}
-		for _, nonceEntry := range deleteExpiredNoncesUtxoOps[0].PrevNonceEntries {
-			bav.SetTransactorNonceEntry(nonceEntry)
+		blockLevelUtxoOps := utxoOps[len(utxoOps)-1]
+		for ii := len(blockLevelUtxoOps) - 1; ii >= 0; ii-- {
+			utxoOp := blockLevelUtxoOps[ii]
+			switch utxoOp.Type {
+			case OperationTypeDeleteExpiredNonces:
+				// We need to revert the delete expired nonces operation.
+				for _, nonceEntry := range utxoOp.PrevNonceEntries {
+					bav.SetTransactorNonceEntry(nonceEntry)
+				}
+			case OperationTypeStakeDistributionPayToBalance:
+				// We don't allow add balance utxo operations unless it's the end of an epoch.
+				if !isLastBlockInEpoch {
+					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+
+						"of an epoch", desoBlock.Header.Height)
+				}
+				// We need to revert the add balance operation.
+				if err = bav._unAddBalance(utxoOp.BalanceAmountNanos, utxoOp.BalancePublicKey); err != nil {
+					return errors.Wrapf(err, "DisconnectBlock: Problem unAdding balance %v: ", utxoOp.BalanceAmountNanos)
+				}
+			case OperationTypeStakeDistributionRestake:
+				// We don't allow stake distribution utxo operations unless it's the end of an epoch.
+				if !isLastBlockInEpoch {
+					return fmt.Errorf("DisconnectBlock: Found add balance operation in block %d that is not the end "+
+						"of an epoch", desoBlock.Header.Height)
+				}
+				if len(utxoOp.PrevStakeEntries) != 1 {
+					return fmt.Errorf("DisconnectBlock: Expected exactly one prev stake entry for stake distribution op")
+				}
+				if utxoOp.PrevValidatorEntry == nil {
+					return fmt.Errorf("DisconnectBlock: Expected prev validator entry for stake distribution op")
+				}
+				bav._setStakeEntryMappings(utxoOp.PrevStakeEntries[0])
+				bav._setValidatorEntryMappings(utxoOp.PrevValidatorEntry)
+			case OperationTypeSetValidatorLastActiveAtEpoch:
+				if utxoOp.PrevValidatorEntry == nil {
+					return fmt.Errorf("DisconnectBlock: Expected prev validator entry for set validator last active " +
+						"at epoch op")
+				}
+				bav._setValidatorEntryMappings(utxoOp.PrevValidatorEntry)
+			}
 		}
 	}
 
@@ -1446,8 +1791,7 @@ func (bav *UtxoView) DisconnectBlock(
 		utxoOpsForTxn := utxoOps[txnIndex]
 		desoBlockHeight := desoBlock.Header.Height
 
-		err := bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(desoBlockHeight))
-		if err != nil {
+		if err = bav.DisconnectTransaction(currentTxn, txnHash, utxoOpsForTxn, uint32(desoBlockHeight)); err != nil {
 			return errors.Wrapf(err, "DisconnectBlock: Problem disconnecting transaction: %v", currentTxn)
 		}
 	}
@@ -1476,6 +1820,10 @@ func _isEntryImmatureBlockReward(utxoEntry *UtxoEntry, blockHeight uint32, param
 		}
 	}
 	return false
+}
+
+func (bav *UtxoView) VerifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
+	return bav._verifySignature(txn, blockHeight)
 }
 
 func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_derivedPkBytes []byte, _err error) {
@@ -1944,31 +2292,8 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 
 	// If signature verification is requested then do that as well.
 	if verifySignatures {
-		// When we looped through the inputs we verified that all of them belong
-		// to the public key specified in the transaction. So, as long as the transaction
-		// public key has signed the transaction as a whole, we can assume that
-		// all of the inputs are authorized to be spent. One signature to rule them
-		// all.
-		//
-		// UPDATE: Transaction can be signed by a different key, called a derived key.
-		// The derived key must be authorized through an AuthorizeDerivedKey transaction,
-		// and then passed along in ExtraData for evey transaction signed with it.
-		//
-		// We treat block rewards as a special case in that we actually require that they
-		// not have a transaction-level public key and that they not be signed. Doing this
-		// simplifies things operationally for miners because it means they can run their
-		// mining operation without having any private key material on any of the mining
-		// nodes. Block rewards are the only transactions that get a pass on this. They are
-		// also not allowed to have any inputs because they by construction cannot authorize
-		// the spending of any inputs.
-		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
-			if len(txn.PublicKey) != 0 || txn.Signature.Sign != nil {
-				return 0, 0, nil, RuleErrorBlockRewardTxnNotAllowedToHaveSignature
-			}
-		} else {
-			if _, err := bav._verifySignature(txn, blockHeight); err != nil {
-				return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem verifying txn signature: ")
-			}
+		if err := bav._verifyTxnSignature(txn, blockHeight); err != nil {
+			return 0, 0, nil, errors.Wrapf(err, "_connectBasicTransferWithExtraSpend ")
 		}
 	}
 
@@ -1993,6 +2318,36 @@ func (bav *UtxoView) _connectBasicTransferWithExtraSpend(
 	// Now that we've processed the transaction, return all of the computed
 	// data.
 	return totalInput, totalOutput, utxoOpsForTxn, nil
+}
+
+func (bav *UtxoView) _verifyTxnSignature(txn *MsgDeSoTxn, blockHeight uint32) error {
+	// When we looped through the inputs we verified that all of them belong
+	// to the public key specified in the transaction. So, as long as the transaction
+	// public key has signed the transaction as a whole, we can assume that
+	// all of the inputs are authorized to be spent. One signature to rule them
+	// all.
+	//
+	// UPDATE: Transaction can be signed by a different key, called a derived key.
+	// The derived key must be authorized through an AuthorizeDerivedKey transaction,
+	// and then passed along in ExtraData for evey transaction signed with it.
+	//
+	// We treat block rewards as a special case in that we actually require that they
+	// not have a transaction-level public key and that they not be signed. Doing this
+	// simplifies things operationally for miners because it means they can run their
+	// mining operation without having any private key material on any of the mining
+	// nodes. Block rewards are the only transactions that get a pass on this. They are
+	// also not allowed to have any inputs because they by construction cannot authorize
+	// the spending of any inputs.
+	if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+		if len(txn.PublicKey) != 0 || txn.Signature.Sign != nil {
+			return RuleErrorBlockRewardTxnNotAllowedToHaveSignature
+		}
+	} else {
+		if _, err := bav._verifySignature(txn, blockHeight); err != nil {
+			return errors.Wrapf(err, "_connectBasicTransferWithExtraSpend Problem verifying txn signature: ")
+		}
+	}
+	return nil
 }
 
 func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
@@ -2124,7 +2479,7 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 		var buyingCoinPublicKey []byte
 		var sellingCoinPublicKey []byte
 		if txnMeta.CancelOrderID != nil {
-			orderEntry, err := bav._getDAOCoinLimitOrderEntry(txnMeta.CancelOrderID)
+			orderEntry, err := bav.GetDAOCoinLimitOrderEntry(txnMeta.CancelOrderID)
 			if err != nil || orderEntry == nil {
 				return utxoOpsForTxn, errors.Wrapf(
 					RuleErrorDerivedKeyInvalidDAOCoinLimitOrderOrderID,
@@ -2254,6 +2609,76 @@ func (bav *UtxoView) _checkAndUpdateDerivedKeySpendingLimit(
 	case TxnTypeAccessGroupMembers:
 		txnMeta := txn.TxnMeta.(*AccessGroupMembersMetadata)
 		if derivedKeyEntry, err = bav._checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEntry(
+			derivedKeyEntry, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeCoinLockup:
+		txnMeta := txn.TxnMeta.(*CoinLockupMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUpdateCoinLockupParams:
+		txnUpdatesYieldCurve := false
+		txnUpdatesTransferRestrictions := false
+		// NOTE: While this breaks convention, we allow the UpdateCoinLockupParamsMetadata to decrement
+		//       two different derived key limits independently for added flexibility. We could
+		//       have a limit as to the number of UpdateCoinLockupParams transactions but given the
+		//       importance of security regarding the lockup yield curve it makes more sense to break
+		//       derived key limits for UpdateCoinLockupParams into multiple behavior specific limits.
+		txnMeta := txn.TxnMeta.(*UpdateCoinLockupParamsMetadata)
+		// Check if we're updating the transactor's yield curve.
+		// NOTE: It's described in a longer comment in UpdateCoinLockupParamsMetadata that if
+		//       LockupYieldDurationNanoSecs is zero, the other fields associated with updating
+		//       the yield curve are ignored. Hence, the check below checks that any update
+		//       to the yield curve exists in the given transaction.
+		if txnMeta.LockupYieldDurationNanoSecs > 0 {
+			txnUpdatesYieldCurve = true
+			if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+				derivedKeyEntry, NewPublicKey(txn.PublicKey), UpdateCoinLockupYieldCurveOperation); err != nil {
+				return utxoOpsForTxn, err
+			}
+		}
+		// Check if we're updating the transactor's transfer restrictions.
+		if txnMeta.NewLockupTransferRestrictions {
+			txnUpdatesTransferRestrictions = true
+			if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+				derivedKeyEntry, NewPublicKey(txn.PublicKey), UpdateCoinLockupTransferRestrictionsOperation); err != nil {
+				return utxoOpsForTxn, err
+			}
+		}
+		// Throw an error if this transaction does nothing. A derived key transaction should decrement
+		// at least one limit as otherwise it's spending fees and accomplishing nothing.
+		if !txnUpdatesYieldCurve && !txnUpdatesTransferRestrictions {
+			return utxoOpsForTxn, RuleErrorDerivedKeyUpdateCoinLockupParamsIsNoOp
+		}
+	case TxnTypeCoinLockupTransfer:
+		txnMeta := txn.TxnMeta.(*CoinLockupTransferMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupTransferOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeCoinUnlock:
+		txnMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+		if derivedKeyEntry, err = bav._checkLockupTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta.ProfilePublicKey, CoinLockupUnlockOperation); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeStake:
+		txnMeta := txn.TxnMeta.(*StakeMetadata)
+		if derivedKeyEntry, err = bav._checkStakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txn.PublicKey, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUnstake:
+		txnMeta := txn.TxnMeta.(*UnstakeMetadata)
+		if derivedKeyEntry, err = bav._checkUnstakeTxnSpendingLimitAndUpdateDerivedKey(
+			derivedKeyEntry, txnMeta); err != nil {
+			return utxoOpsForTxn, err
+		}
+	case TxnTypeUnlockStake:
+		txnMeta := txn.TxnMeta.(*UnlockStakeMetadata)
+		if derivedKeyEntry, err = bav._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 			derivedKeyEntry, txnMeta); err != nil {
 			return utxoOpsForTxn, err
 		}
@@ -2869,6 +3294,340 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 		newGlobalParamsEntry.MaxNonceExpirationBlockHeightOffset = newMaxNonceExpirationBlockHeightOffset
 	}
 
+	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight {
+		var bytesRead int
+		if len(extraData[StakeLockupEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.StakeLockupEpochDuration, bytesRead = Uvarint(extraData[StakeLockupEpochDurationKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakeLockupEpochDuration as uint64")
+			}
+		}
+		if len(extraData[ValidatorJailEpochDurationKey]) > 0 {
+			newGlobalParamsEntry.ValidatorJailEpochDuration, bytesRead = Uvarint(extraData[ValidatorJailEpochDurationKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorJailEpochDuration as uint64")
+			}
+		}
+		if len(extraData[LeaderScheduleMaxNumValidatorsKey]) > 0 {
+			newGlobalParamsEntry.LeaderScheduleMaxNumValidators, bytesRead = Uvarint(extraData[LeaderScheduleMaxNumValidatorsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode LeaderScheduleMaxNumValidators as uint64")
+			}
+		}
+		if len(extraData[ValidatorSetMaxNumValidatorsKey]) > 0 {
+			newGlobalParamsEntry.ValidatorSetMaxNumValidators, bytesRead = Uvarint(extraData[ValidatorSetMaxNumValidatorsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode ValidatorSetMaxNumValidators as uint64")
+			}
+		}
+
+		// Cross-validate the new LeaderScheduleMaxNumValidators and ValidatorSetMaxNumValidators values. The size of the
+		// leader schedule must be less than or equal to the size of the validator set.
+		// We must merge the defaults in the event that ValidatorSetMaxNumValidators is not set.
+		mergedGlobalParamsEntry := MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params)
+		if mergedGlobalParamsEntry.ValidatorSetMaxNumValidators <
+			mergedGlobalParamsEntry.LeaderScheduleMaxNumValidators {
+			return 0, 0, nil, RuleErrorLeaderScheduleExceedsValidatorSetMaxNumValidators
+		}
+
+		if len(extraData[StakingRewardsMaxNumStakesKey]) > 0 {
+			newGlobalParamsEntry.StakingRewardsMaxNumStakes, bytesRead = Uvarint(extraData[StakingRewardsMaxNumStakesKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakingRewardsMaxNumStakes as uint64")
+			}
+		}
+		if len(extraData[StakingRewardsAPYBasisPointsKey]) > 0 {
+			newGlobalParamsEntry.StakingRewardsAPYBasisPoints, bytesRead = Uvarint(extraData[StakingRewardsAPYBasisPointsKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode StakingRewardsAPYBasisPoints as uint64")
+			}
+		}
+		if len(extraData[EpochDurationNumBlocksKey]) > 0 {
+			newGlobalParamsEntry.EpochDurationNumBlocks, bytesRead = Uvarint(extraData[EpochDurationNumBlocksKey])
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf("_connectUpdateGlobalParams: unable to decode EpochDurationNumBlocks as uint64")
+			}
+		}
+		if len(extraData[JailInactiveValidatorGracePeriodEpochsKey]) > 0 {
+			newGlobalParamsEntry.JailInactiveValidatorGracePeriodEpochs, bytesRead = Uvarint(
+				extraData[JailInactiveValidatorGracePeriodEpochsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode JailInactiveValidatorGracePeriodEpochs as uint64",
+				)
+			}
+		}
+		if len(extraData[MaximumVestedIntersectionsPerLockupTransactionKey]) > 0 {
+			maximumVestedIntersectionsPerLockupTransaction, bytesRead := Varint(
+				extraData[MaximumVestedIntersectionsPerLockupTransactionKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: " +
+						"unable to decode MaximumVestedIntersectionsPerLockupTransaction as uint64")
+			}
+			if maximumVestedIntersectionsPerLockupTransaction > math.MaxInt {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MaximumVestedIntersectionsPerLockupTransaction must be <= %d",
+					math.MaxInt,
+				)
+			}
+			newGlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction =
+				int(maximumVestedIntersectionsPerLockupTransaction)
+		}
+		if len(extraData[FeeBucketGrowthRateBasisPointsKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[FeeBucketGrowthRateBasisPointsKey],
+			)
+			if val > MaxBasisPoints {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: FeeBucketGrowthRateBasisPoints must be <= %d",
+					MaxBasisPoints,
+				)
+			}
+			newGlobalParamsEntry.FeeBucketGrowthRateBasisPoints = val
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode FeeBucketGrowthRateBasisPoints as uint64",
+				)
+			}
+		}
+
+		// Validate that the minimum fee bucket size is greater than the minimum allowed.
+		mergedGlobalParams := MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params)
+		minFeeRateNanosPerKB, feeBucketMultiplier := mergedGlobalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+		nextFeeBucketMin := computeFeeTimeBucketMinFromExponent(1, minFeeRateNanosPerKB, feeBucketMultiplier)
+		if nextFeeBucketMin < mergedGlobalParams.MinimumNetworkFeeNanosPerKB+MinFeeBucketSize {
+			return 0, 0, nil, RuleErrorFeeBucketSizeTooSmall
+		}
+
+		if len(extraData[BlockTimestampDriftNanoSecsKey]) > 0 {
+			val, bytesRead := Varint(
+				extraData[BlockTimestampDriftNanoSecsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode BlockTimestampDriftNanoSecs as int64",
+				)
+			}
+			if val < 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: BlockTimestampDriftNanoSecs must be >= 0",
+				)
+			}
+			newGlobalParamsEntry.BlockTimestampDriftNanoSecs = val
+		}
+		if len(extraData[MempoolMaxSizeBytesKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolMaxSizeBytesKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolMaxSizeBytes as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolMaxSizeBytes must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolMaxSizeBytes = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumMempoolBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumMempoolBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumMempoolBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumMempoolBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks = val
+		}
+		if len(extraData[MempoolFeeEstimatorNumPastBlocksKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolFeeEstimatorNumPastBlocksKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolFeeEstimatorNumPastBlocks as uint64",
+				)
+			}
+			if val <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolFeeEstimatorNumPastBlocks must be > 0",
+				)
+			}
+			newGlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks = val
+		}
+		if len(extraData[MempoolCongestionFactorBasisPointsKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolCongestionFactorBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolCongestionFactorBasisPoints as uint64",
+				)
+			}
+			if val > MaxBasisPoints {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolCongestionFactorBasisPoints must be <= %d",
+					MaxBasisPoints,
+				)
+			}
+			newGlobalParamsEntry.MempoolCongestionFactorBasisPoints = val
+		}
+		if len(extraData[MempoolPastBlocksCongestionFactorBasisPointsKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolPastBlocksCongestionFactorBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksCongestionFactorBasisPoints as uint64",
+				)
+			}
+			if val > MaxBasisPoints {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolPastBlocksCongestionFactorBasisPoints must be <= %d",
+					MaxBasisPoints,
+				)
+			}
+			newGlobalParamsEntry.MempoolPastBlocksCongestionFactorBasisPoints = val
+		}
+		if len(extraData[MempoolPriorityPercentileBasisPointsKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolPriorityPercentileBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolPriorityPercentileBasisPoints as uint64",
+				)
+			}
+			if val > MaxBasisPoints {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolPriorityPercentileBasisPoints must be <= %d",
+					MaxBasisPoints,
+				)
+			}
+			newGlobalParamsEntry.MempoolPriorityPercentileBasisPoints = val
+		}
+		if len(extraData[MempoolPastBlocksPriorityPercentileBasisPointsKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MempoolPastBlocksPriorityPercentileBasisPointsKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MempoolPastBlocksPriorityPercentileBasisPoints as uint64",
+				)
+			}
+			if val > MaxBasisPoints {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: MempoolPastBlocksPriorityPercentileBasisPoints must be <= %d",
+					MaxBasisPoints,
+				)
+			}
+			newGlobalParamsEntry.MempoolPastBlocksPriorityPercentileBasisPoints = val
+		}
+		if len(extraData[MaxBlockSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MaxBlockSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MaxBlockSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooLow
+			}
+			if val > MaxMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorMaxBlockSizeBytesTooHigh
+			}
+			newGlobalParamsEntry.MaxBlockSizeBytesPoS = val
+		}
+		if len(extraData[SoftMaxBlockSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[SoftMaxBlockSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode SoftMaxBlockSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinSoftMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesTooLow
+			}
+			if val > MaxSoftMaxBlockSizeBytes {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesTooHigh
+			}
+			if MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params).MaxBlockSizeBytesPoS < val {
+				return 0, 0, nil, RuleErrorSoftMaxBlockSizeBytesExceedsMaxBlockSizeBytes
+			}
+			newGlobalParamsEntry.SoftMaxBlockSizeBytesPoS = val
+		}
+		if len(extraData[MaxTxnSizeBytesPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[MaxTxnSizeBytesPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode MaxTxnSizeBytesPoS as uint64",
+				)
+			}
+			if val < MinMaxTxnSizeBytes {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesTooLow
+			}
+			if val > MaxMaxTxnSizeBytes {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesTooHigh
+			}
+			if MergeGlobalParamEntryDefaults(&newGlobalParamsEntry, bav.Params).MaxBlockSizeBytesPoS < val {
+				return 0, 0, nil, RuleErrorMaxTxnSizeBytesExceedsMaxBlockSizeBytes
+			}
+			newGlobalParamsEntry.MaxTxnSizeBytesPoS = val
+		}
+		if len(extraData[BlockProductionIntervalPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[BlockProductionIntervalPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode BlockProductionIntervalPoS as uint64",
+				)
+			}
+			if val < MinBlockProductionIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorBlockProductionIntervalPoSTooLow
+			}
+			if val > MaxBlockProductionIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorBlockProductionIntervalPoSTooHigh
+			}
+			newGlobalParamsEntry.BlockProductionIntervalMillisecondsPoS = val
+		}
+
+		if len(extraData[TimeoutIntervalPoSKey]) > 0 {
+			val, bytesRead := Uvarint(
+				extraData[TimeoutIntervalPoSKey],
+			)
+			if bytesRead <= 0 {
+				return 0, 0, nil, fmt.Errorf(
+					"_connectUpdateGlobalParams: unable to decode TimeoutIntervalPoS as uint64",
+				)
+			}
+			if val < MinTimeoutIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorTimeoutIntervalPoSTooLow
+			}
+			if val > MaxTimeoutIntervalMillisecondsPoS {
+				return 0, 0, nil, RuleErrorTimeoutIntervalPoSTooHigh
+			}
+			newGlobalParamsEntry.TimeoutIntervalMillisecondsPoS = val
+		}
+	}
+
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var forbiddenPubKey []byte
@@ -2976,18 +3735,89 @@ func (bav *UtxoView) ValidateDiamondsAndGetNumDeSoNanos(
 	return desoToTransferNanos, netNewDiamonds, nil
 }
 
-func (bav *UtxoView) ConnectTransaction(txn *MsgDeSoTxn, txHash *BlockHash,
-	txnSizeBytes int64,
-	blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (
-	_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64,
-	_fees uint64, _err error) {
-
-	return bav._connectTransaction(txn, txHash, txnSizeBytes, blockHeight, verifySignatures, ignoreUtxos)
-
+func (bav *UtxoView) ConnectTransaction(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
+	return bav._connectTransaction(
+		txn,
+		txHash,
+		blockHeight,
+		blockTimestampNanoSecs,
+		verifySignatures,
+		ignoreUtxos,
+	)
 }
 
-func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txnSizeBytes int64, blockHeight uint32, verifySignatures bool, ignoreUtxos bool) (_utxoOps []*UtxoOperation, _totalInput uint64, _totalOutput uint64, _fees uint64, _err error) {
+func (bav *UtxoView) _connectTransaction(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
+	// If the transaction is actually a series of atomic transactions, we process the transaction via
+	// _connectAtomicTransactionsWrapper which will recursively call each inner transaction as
+	// well as provide cumulative fee checking for the atomic transactions.
+	if txn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
+		return bav._connectAtomicTxnsWrapper(
+			txn,
+			txHash,
+			blockHeight,
+			blockTimestampNanoSecs,
+			verifySignatures,
+			ignoreUtxos,
+		)
+	}
 
+	// Check that we're not trying to connect a transaction meant to be part of a series of atomic transactions
+	// outside an atomic transactions wrapper.
+	if blockHeight >= bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight && txn.IsAtomicTxnsInnerTxn() {
+		return nil, 0, 0, 0, RuleErrorAtomicTxnsRequiresWrapper
+	}
+
+	// By here, we should know the transaction to be non-atomic.
+	return bav._connectSingleTxn(
+		txn,
+		txHash,
+		blockHeight,
+		blockTimestampNanoSecs,
+		verifySignatures,
+		ignoreUtxos,
+	)
+}
+
+func (bav *UtxoView) _connectSingleTxn(
+	txn *MsgDeSoTxn,
+	txHash *BlockHash,
+	blockHeight uint32,
+	blockTimestampNanoSecs int64,
+	verifySignatures bool,
+	ignoreUtxos bool,
+) (
+	_utxoOps []*UtxoOperation,
+	_totalInput uint64,
+	_totalOutput uint64,
+	_fees uint64,
+	_err error,
+) {
 	// Do a quick sanity check before trying to connect.
 	if err := CheckTransactionSanity(txn, blockHeight, bav.Params); err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "_connectTransaction: ")
@@ -2999,7 +3829,14 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "_connectTransaction: Problem serializing transaction: ")
 	}
-	if len(txnBytes) > int(bav.Params.MaxBlockSizeBytes/2) {
+
+	maxTxnSizeBytes := bav.Params.MaxBlockSizeBytesPoW / 2
+	if bav.Params.IsPoSBlockHeight(uint64(blockHeight)) {
+		maxTxnSizeBytes = bav.GetMaxTxnSizeBytesPoS()
+	}
+
+	txnSizeBytes := uint64(len(txnBytes))
+	if txnSizeBytes > maxTxnSizeBytes {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
 	}
 
@@ -3206,6 +4043,34 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 		totalInput, totalOutput, utxoOpsForTxn, err =
 			bav._connectNewMessage(
 				txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeRegisterAsValidator:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectRegisterAsValidator(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnregisterAsValidator:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnregisterAsValidator(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeStake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectStake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnstake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnstake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnlockStake:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnlockStake(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeUnjailValidator:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUnjailValidator(txn, txHash, blockHeight, verifySignatures)
+
+	case TxnTypeCoinLockup:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockup(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
+	case TxnTypeUpdateCoinLockupParams:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectUpdateCoinLockupParams(txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeCoinLockupTransfer:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinLockupTransfer(txn, txHash, blockHeight, verifySignatures)
+	case TxnTypeCoinUnlock:
+		totalInput, totalOutput, utxoOpsForTxn, err = bav._connectCoinUnlock(txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures)
+
 	default:
 		err = fmt.Errorf("ConnectTransaction: Unimplemented txn type %v", txn.TxnMeta.GetTxnType().String())
 	}
@@ -3244,13 +4109,13 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	// If the current minimum network fee per kb is set to 0, that indicates we should not assess a minimum fee.
 	// Similarly, BlockReward transactions do not require a fee.
 	isFeeExempt := txn.TxnMeta.GetTxnType() == TxnTypeBitcoinExchange || txn.TxnMeta.GetTxnType() == TxnTypeBlockReward
-	if !isFeeExempt && txnSizeBytes != 0 && bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB != 0 {
+	if !isFeeExempt && txnSizeBytes != 0 && bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB != 0 {
 		// Make sure there isn't overflow in the fee.
 		if fees != ((fees * 1000) / 1000) {
 			return nil, 0, 0, 0, RuleErrorOverflowDetectedInFeeRateCalculation
 		}
 		// If the fee is less than the minimum network fee per KB, return an error.
-		if (fees*1000)/uint64(txnSizeBytes) < bav.GlobalParamsEntry.MinimumNetworkFeeNanosPerKB {
+		if (fees*1000)/uint64(txnSizeBytes) < bav.GetCurrentGlobalParamsEntry().MinimumNetworkFeeNanosPerKB {
 			return nil, 0, 0, 0, RuleErrorTxnFeeBelowNetworkMinimum
 		}
 	}
@@ -3288,6 +4153,61 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 				)
 			}
 		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeUnlockStake {
+			if len(utxoOpsForTxn) == 0 {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeUnlockStake must return UtxoOpsForTxn",
+				)
+			}
+			utxoOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+			if utxoOp == nil || utxoOp.Type != OperationTypeUnlockStake {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeUnlockStake must correspond to OperationTypeUnlockStake",
+				)
+			}
+			totalLockedAmountNanos := uint256.NewInt()
+			for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
+				totalLockedAmountNanos, err = SafeUint256().Add(
+					totalLockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
+				)
+				if err != nil {
+					return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error computing TotalLockedAmountNanos: ")
+				}
+			}
+			desoLockedDelta = big.NewInt(0).Neg(totalLockedAmountNanos.ToBig())
+		}
+		if txn.TxnMeta.GetTxnType() == TxnTypeCoinUnlock {
+			if len(utxoOpsForTxn) == 0 {
+				return nil, 0, 0, 0, errors.New(
+					"ConnectTransaction: TxnTypeCoinUnlock must return UtxoOpsForTxn",
+				)
+			}
+			coinUnlockMeta := txn.TxnMeta.(*CoinUnlockMetadata)
+
+			// We only count DESO added if coin unlock was a locked DESO unlock.
+			if coinUnlockMeta.ProfilePublicKey.IsZeroPublicKey() {
+				utxoOp := utxoOpsForTxn[len(utxoOpsForTxn)-1]
+				if utxoOp == nil || utxoOp.Type != OperationTypeCoinUnlock {
+					return nil, 0, 0, 0, errors.New(
+						"ConnectTransaction: TxnTypeCoinUnlock must correspond to OperationTypeCoinUnlock",
+					)
+				}
+				totalLockedDESOAmountNanos := uint256.NewInt()
+				for _, prevLockedBalanceEntry := range utxoOp.PrevLockedBalanceEntries {
+					totalLockedDESOAmountNanos, err = SafeUint256().Add(
+						totalLockedDESOAmountNanos, &prevLockedBalanceEntry.BalanceBaseUnits)
+					if err != nil {
+						return nil, 0, 0, 0,
+							errors.Wrapf(err, "ConnectTransaction: error computing TotalLockedCoinsAmountNanos: ")
+					}
+					if !totalLockedDESOAmountNanos.IsUint64() {
+						return nil, 0, 0, 0,
+							errors.Errorf("ConnectTransaction: totalLockedDESOAmountNanos overflows uint64")
+					}
+				}
+				desoLockedDelta = big.NewInt(0).Neg(totalLockedDESOAmountNanos.ToBig())
+			}
+		}
 		if big.NewInt(0).Add(balanceDelta, desoLockedDelta).Sign() > 0 {
 			return nil, 0, 0, 0, RuleErrorBalanceChangeGreaterThanZero
 		}
@@ -3297,29 +4217,17 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight &&
 		txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
 
-		if uint64(blockHeight) > txn.TxnNonce.ExpirationBlockHeight {
-			return nil, 0, 0, 0, errors.Wrapf(RuleErrorNonceExpired,
-				"ConnectTransaction: Nonce %s has expired for public key %v",
-				txn.TxnNonce.String(), PkToStringBoth(txn.PublicKey))
+		if err := bav.ValidateTransactionNonce(txn, uint64(blockHeight)); err != nil {
+			return nil, 0, 0, 0, errors.Wrapf(err,
+				"ConnectTransaction: error validating transaction nonce")
 		}
 		pkidEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
 		if pkidEntry == nil || pkidEntry.isDeleted {
 			return nil, 0, 0, 0, fmt.Errorf(
-				"DisconnectTransaction: PKID for public key %s does not exist",
+				"ConnectTransaction: PKID for public key %s does not exist",
 				PkToString(txn.PublicKey, bav.Params))
 		}
 
-		nonce, err := bav.GetTransactorNonceEntry(txn.TxnNonce, pkidEntry.PKID)
-		if err != nil {
-			return nil, 0, 0, 0, errors.Wrapf(err,
-				"ConnectTransaction: Problem getting transaction nonce entry for nonce %s and PKID %v",
-				txn.TxnNonce.String(), pkidEntry.PKID)
-		}
-		if nonce != nil && !nonce.isDeleted {
-			return nil, 0, 0, 0, errors.Wrapf(RuleErrorReusedNonce,
-				"ConnectTransaction: Nonce %s has already been used for PKID %v",
-				txn.TxnNonce.String(), pkidEntry.PKID)
-		}
 		bav.SetTransactorNonceEntry(&TransactorNonceEntry{
 			Nonce:          txn.TxnNonce,
 			TransactorPKID: pkidEntry.PKID,
@@ -3327,6 +4235,65 @@ func (bav *UtxoView) _connectTransaction(txn *MsgDeSoTxn, txHash *BlockHash, txn
 	}
 
 	return utxoOpsForTxn, totalInput, totalOutput, fees, nil
+}
+
+func (bav *UtxoView) ValidateTransactionNonce(txn *MsgDeSoTxn, blockHeight uint64) error {
+	if txn == nil || txn.TxnNonce == nil {
+		return fmt.Errorf("ValidateTransactionNonce: Nonce or txn is nil for public key %v",
+			PkToStringBoth(txn.PublicKey))
+	}
+
+	if blockHeight > txn.TxnNonce.ExpirationBlockHeight {
+		return errors.Wrapf(RuleErrorNonceExpired,
+			"ValidateTransactionNonce: Nonce %s has expired for public key %v",
+			txn.TxnNonce.String(), PkToStringBoth(txn.PublicKey))
+	}
+	pkidEntry := bav.GetPKIDForPublicKey(txn.PublicKey)
+	if pkidEntry == nil || pkidEntry.isDeleted {
+		return fmt.Errorf(
+			"ValidateTransactionNonce: PKID for public key %s does not exist",
+			PkToString(txn.PublicKey, bav.Params))
+	}
+
+	nonce, err := bav.GetTransactorNonceEntry(txn.TxnNonce, pkidEntry.PKID)
+	if err != nil {
+		return errors.Wrapf(err,
+			"ValidateTransactionNonce: Problem getting transaction nonce entry for nonce %s and PKID %v",
+			txn.TxnNonce.String(), pkidEntry.PKID)
+	}
+	if nonce != nil && !nonce.isDeleted {
+		return errors.Wrapf(RuleErrorReusedNonce,
+			"ValidateTransactionNonce: Nonce %s has already been used for PKID %v",
+			txn.TxnNonce.String(), pkidEntry.PKID)
+	}
+	return nil
+}
+
+// computeBMF computes the burn fee and the utility fee for a given fee. The acronym stands for Burn Maximizing Fee, which
+// entails that the burn function is designed to maximize the amount of DESO burned, while providing the minimal viable
+// utility fee to the block producer. This is so that block producers have no advantage over other network participants
+// in accruing DESO. The utility fee that block producers get from transaction fees is just enough so that it's economically
+// advantageous to include as many transactions as possible in blocks. Reliably doing so for an extended period of time
+// could accumulate to some DESO from transaction fees.
+// The utility fee is computed by taking a binary logarithm of the fee, and the remainder is burned. BMF(fee) computes:
+//
+//	burnFee := fee - log_2(fee), utilityFee := log_2(fee).
+func computeBMF(fee uint64) (_burnFee uint64, _utilityFee uint64) {
+	// If no fee, burn and utility fee are both 0.
+	if fee == 0 {
+		return 0, 0
+	}
+	// Compute the utility fee as log_2(fee). We can find it by taking the bit length of fee.
+	// Alternatively: uint64(bits.Len64(fee))
+	utilityFee, _ := BigFloatLog2(NewFloat().SetUint64(fee)).Uint64()
+
+	// This should never happen but just in case make sure utilityFee is not greater than fee.
+	if utilityFee > fee {
+		utilityFee = fee
+	}
+	// Compute the burn as fee - log_2(fee).
+	burnFee := fee - utilityFee
+	return burnFee, utilityFee
 }
 
 func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
@@ -3360,11 +4327,22 @@ func (bav *UtxoView) ConnectBlock(
 
 	// Check that the block being connected references the current tip. ConnectBlock
 	// can only add a block to the current tip. We do this to keep the API simple.
-	if *desoBlock.Header.PrevBlockHash != *bav.TipHash {
+	if !desoBlock.Header.PrevBlockHash.IsEqual(bav.TipHash) {
 		errorMsg := fmt.Sprintf("ConnectBlock: Parent hash of block being connected does not match tip: %v vs %v",
 			hex.EncodeToString(desoBlock.Header.PrevBlockHash[:]), hex.EncodeToString(bav.TipHash[:]))
 		glog.V(1).Infof("ConnectBlock: Parent hash of block being connected does not match tip: %v", errorMsg)
-		return nil, fmt.Errorf(errorMsg)
+		return nil, errors.New(errorMsg)
+	}
+
+	// If the block height is past the Proof of Stake cutover, then we update the random seed hash.
+	// We do this first before connecting any transactions so that the latest seed hash is used for
+	// transactions that use on-chain randomness.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		randomSeedHash, err := HashRandomSeedSignature(desoBlock.Header.ProposerRandomSeedSignature)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: Problem hashing random seed signature")
+		}
+		bav._setCurrentRandomSeedHash(randomSeedHash)
 	}
 
 	blockHeader := desoBlock.Header
@@ -3397,9 +4375,14 @@ func (bav *UtxoView) ConnectBlock(
 	// keep track of the total fees throughout.
 	var totalFees uint64
 	utxoOps := [][]*UtxoOperation{}
+	var maxUtilityFee uint64
 	for txIndex, txn := range desoBlock.Txns {
 		txHash := txHashes[txIndex]
 
+		var utilityFee uint64
+		var utxoOpsForTxn []*UtxoOperation
+		var err error
+		var currentFees uint64
 		// ConnectTransaction validates all of the transactions in the block and
 		// is responsible for verifying signatures.
 		//
@@ -3408,9 +4391,8 @@ func (bav *UtxoView) ConnectBlock(
 		// would slow down block processing significantly. We should figure out a way to
 		// enforce this check in the future, but for now the only attack vector is one in
 		// which a miner is trying to spam the network, which should generally never happen.
-		utxoOpsForTxn, totalInput, totalOutput, currentFees, err := bav.ConnectTransaction(
-			txn, txHash, 0, uint32(blockHeader.Height), verifySignatures, false /*ignoreUtxos*/)
-		_, _ = totalInput, totalOutput // A bit surprising we don't use these
+		utxoOpsForTxn, _, _, currentFees, err = bav.ConnectTransaction(
+			txn, txHash, uint32(blockHeader.Height), blockHeader.TstampNanoSecs, verifySignatures, false)
 		if err != nil {
 			return nil, errors.Wrapf(err, "ConnectBlock: error connecting txn #%d", txIndex)
 		}
@@ -3421,7 +4403,8 @@ func (bav *UtxoView) ConnectBlock(
 		// included in blocks for free.
 		includeFeesInBlockReward := true
 		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
-			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
+			txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
 			if err != nil {
 				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
@@ -3430,13 +4413,48 @@ func (bav *UtxoView) ConnectBlock(
 		}
 
 		if includeFeesInBlockReward {
-			// Add the fees from this txn to the total fees. If any overflow occurs
-			// mark the block as invalid and return a rule error. Note that block reward
-			// txns should count as having zero fees.
-			if totalFees > (math.MaxUint64 - currentFees) {
-				return nil, RuleErrorTxnOutputWithInvalidAmount
+			if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
+				// Compute the BMF given the current fees paid in the block.
+				_, utilityFee = computeBMF(currentFees)
+
+				// Add the fees from this txn to the total fees. If any overflow occurs
+				// mark the block as invalid and return a rule error. Note that block reward
+				// txns should count as having zero fees.
+				if totalFees > (math.MaxUint64 - currentFees) {
+					return nil, RuleErrorTxnOutputWithInvalidAmount
+				}
+				totalFees += currentFees
+
+				// For PoS, the maximum block reward is based on the maximum utility fee.
+				// Add the utility fees to the max utility fees. If any overflow
+				// occurs mark the block as invalid and return a rule error.
+				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+				if err != nil {
+					return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
+						"ConnectBlock: error computing maxUtilityFee: %v", err)
+				}
+			} else {
+				txnMeta, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
+				if !ok {
+					return nil, fmt.Errorf("ConnectBlock: AtomicTxnsWrapperMetadata type assertion failed")
+				}
+				nonBlockRewardRecipientFees, err := filterOutBlockRewardRecipientFees(
+					txnMeta.Txns, blockRewardOutputPublicKey)
+				if err != nil {
+					return nil, errors.Wrapf(err, "ConnectBlock: error filtering out block reward recipient fees")
+				}
+				totalFees, err = SafeUint64().Add(totalFees, nonBlockRewardRecipientFees)
+				if err != nil {
+					return nil, errors.Wrap(
+						err, "ConnectBlock: error adding non-block-reward recipient fees from atomic transaction")
+				}
+				_, utilityFee = computeBMF(nonBlockRewardRecipientFees)
+				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+				if err != nil {
+					return nil, errors.Wrap(err,
+						"ConnectBlock: error computing maxUtilityFee: %v")
+				}
 			}
-			totalFees += currentFees
 		}
 
 		// Add the utxo operations to our list for all the txns.
@@ -3473,13 +4491,16 @@ func (bav *UtxoView) ConnectBlock(
 	}
 	// Verify that the block reward does not overflow when added to
 	// the block's fees.
-	blockReward := CalcBlockRewardNanos(uint32(blockHeader.Height))
+	blockReward := CalcBlockRewardNanos(uint32(blockHeader.Height), bav.Params)
 	if totalFees > MaxNanos ||
 		blockReward > (math.MaxUint64-totalFees) {
 
 		return nil, RuleErrorBlockRewardOverflow
 	}
 	maxBlockReward := blockReward + totalFees
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		maxBlockReward = maxUtilityFee
+	}
 	// If the outputs of the block reward txn exceed the max block reward
 	// allowed then mark the block as invalid and return an error.
 	if blockRewardOutput > maxBlockReward {
@@ -3488,16 +4509,95 @@ func (bav *UtxoView) ConnectBlock(
 		return nil, RuleErrorBlockRewardExceedsMaxAllowed
 	}
 
-	if blockHeight >= uint64(bav.Params.ForkHeights.BalanceModelBlockHeight) {
-		prevNonces := bav.GetTransactorNonceEntriesToDeleteAtBlockHeight(blockHeight)
-		utxoOps = append(utxoOps, []*UtxoOperation{{
-			Type:             OperationTypeDeleteExpiredNonces,
-			PrevNonceEntries: prevNonces,
-		}})
-		for _, prevNonceEntry := range prevNonces {
-			bav.DeleteTransactorNonceEntry(prevNonceEntry)
+	// blockLevelUtxoOps are used to track all state mutations that happen
+	// after connecting all transactions in the block. These operations
+	// are always the last utxo operation in a given block.
+	var blockLevelUtxoOps []*UtxoOperation
+
+	// TODO: To prevent the state from bloating, we should delete nonces periodically.
+	// We used to do that here but it was causing badger seeks to be slow due to a bug
+	// in badger whereby deleting keys slows down seeks. Eventually, we should go back
+	// to deleting txn nonces if we fix that badger bug or find a workaround.
+
+	// If we're past the PoS cutover, we need to track which validators were active.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		// Get the active validators for the block.
+		var signersList *bitset.Bitset
+		if !desoBlock.Header.ValidatorsVoteQC.isEmpty() {
+			signersList = desoBlock.Header.ValidatorsVoteQC.ValidatorsVoteAggregatedSignature.SignersList
+		} else {
+			signersList = desoBlock.Header.ValidatorsTimeoutAggregateQC.ValidatorsTimeoutAggregatedSignature.SignersList
+		}
+		allSnapshotValidators, err := bav.GetAllSnapshotValidatorSetEntriesByStake()
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error getting all snapshot validator set entries by stake")
+		}
+		currentEpochNumber, err := bav.GetCurrentEpochNumber()
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error getting current epoch number")
+		}
+		for ii, validator := range allSnapshotValidators {
+			// Skip validators who didn't sign
+			if !signersList.Get(ii) {
+				continue
+			}
+			// Get the current validator entry
+			validatorEntry, err := bav.GetValidatorByPKID(validator.ValidatorPKID)
+			if err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error getting validator by PKID")
+			}
+			// It's possible for the validator to have unregistered since two epochs ago, but is continuing
+			// to vote. If the validatorEntry is nil or IsDeleted, we skip it here.
+			if validatorEntry == nil || validatorEntry.IsDeleted() {
+				continue
+			}
+			// It's possible for the validator to be in the snapshot validator set, but to have been jailed
+			// in the previous epoch due to inactivity. In the edge case where the validator now comes back
+			// online, we maintain its jailed status until it unjails itself explicitly again.
+			if validatorEntry.Status() == ValidatorStatusJailed {
+				continue
+			}
+			if validatorEntry.LastActiveAtEpochNumber != currentEpochNumber {
+				blockLevelUtxoOps = append(blockLevelUtxoOps, &UtxoOperation{
+					Type:               OperationTypeSetValidatorLastActiveAtEpoch,
+					PrevValidatorEntry: validatorEntry.Copy(),
+				})
+				// Set the last active at epoch number to the current epoch number
+				// and set the validator entry on the view.
+				validatorEntry.LastActiveAtEpochNumber = currentEpochNumber
+				bav._setValidatorEntryMappings(validatorEntry)
+			}
 		}
 	}
+
+	// If we're past the PoS Setup Fork Height, check if we should run the end of epoch hook.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		isLastBlockInEpoch, err := bav.IsLastBlockInCurrentEpoch(blockHeight)
+		if err != nil {
+			return nil, errors.Wrapf(err, "ConnectBlock: error checking if block is last in epoch")
+		}
+		if isLastBlockInEpoch {
+			// By default, assume that the previous block has a consecutive view with the current
+			// block. This will always be true for PoW block.
+			previousBlockViewNumber := blockHeader.GetView() - 1
+
+			// If the current block is PoS block, then we can extract the previous block's view
+			// from the QC.
+			if bav.Params.IsPoSBlockHeight(blockHeight) {
+				previousBlockViewNumber = blockHeader.GetQC().GetView()
+			}
+
+			var utxoOperations []*UtxoOperation
+			utxoOperations, err = bav.RunEpochCompleteHook(blockHeight, blockHeader.GetView(), previousBlockViewNumber, blockHeader.TstampNanoSecs)
+			if err != nil {
+				return nil, errors.Wrapf(err, "ConnectBlock: error running epoch complete hook")
+			}
+			blockLevelUtxoOps = append(blockLevelUtxoOps, utxoOperations...)
+		}
+	}
+
+	// Append all block level utxo operations to the utxo operations for the block.
+	utxoOps = append(utxoOps, blockLevelUtxoOps)
 
 	// If we made it to the end and this block is valid, advance the tip
 	// of the view to reflect that.
@@ -3775,7 +4875,7 @@ func (bav *UtxoView) GetTransactorNonceEntry(nonce *DeSoNonce, pkid *PKID) (*Tra
 		return nonceEntry, nil
 	}
 	var err error
-	nonceEntry, err = DbGetTransactorNonceEntry(bav.Handle, nonce, pkid)
+	nonceEntry, err = DbGetTransactorNonceEntry(bav.Handle, bav.Snapshot, nonce, pkid)
 	if err != nil {
 		return nil, err
 	}
@@ -3852,8 +4952,8 @@ func (bav *UtxoView) ConstructNonceForPublicKey(publicKey []byte, blockHeight ui
 func (bav *UtxoView) ConstructNonceForPKID(pkid *PKID, blockHeight uint64) (*DeSoNonce, error) {
 	// construct nonce
 	expirationBuffer := uint64(DefaultMaxNonceExpirationBlockHeightOffset)
-	if bav.GlobalParamsEntry != nil && bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset != 0 {
-		expirationBuffer = bav.GlobalParamsEntry.MaxNonceExpirationBlockHeightOffset
+	if bav.GetCurrentGlobalParamsEntry() != nil && bav.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset != 0 {
+		expirationBuffer = bav.GetCurrentGlobalParamsEntry().MaxNonceExpirationBlockHeightOffset
 	}
 	// Some tests use a very low expiration buffer to test
 	// that expired nonces get deleted. We don't want to
@@ -3944,6 +5044,15 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 // but should be fixed soon.
 func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
+	// After the cut-over to Proof Of Stake, we no longer check for immature block rewards.
+	// All block rewards are immediately mature.
+	if tipHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
+		balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
+		if err != nil {
+			return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
+		}
+		return balanceNanos, nil
+	}
 	// In order to get the spendable balance, we need to account for any immature block rewards.
 	// We get these by starting at the chain tip and iterating backwards until we have collected
 	// all the immature block rewards for this public key.
@@ -4025,6 +5134,16 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	return spendableBalanceNanos, nil
 }
 
+func copyExtraData(extraData map[string][]byte) map[string][]byte {
+	extraDataCopy := make(map[string][]byte)
+	for key, value := range extraData {
+		valueCopy := make([]byte, len(value))
+		copy(valueCopy, value)
+		extraDataCopy[key] = valueCopy
+	}
+	return extraDataCopy
+}
+
 func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[string][]byte {
 	// Always create the map from scratch, since modifying the map on
 	// newMap could modify the map on the oldMap otherwise.
@@ -4032,13 +5151,29 @@ func mergeExtraData(oldMap map[string][]byte, newMap map[string][]byte) map[stri
 
 	// Add the values from the oldMap
 	for kk, vv := range oldMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 	// Add the values from the newMap. Allow the newMap values to overwrite the
 	// oldMap values during the merge.
 	for kk, vv := range newMap {
-		retMap[kk] = vv
+		vvCopy := make([]byte, len(vv))
+		copy(vvCopy, vv)
+		retMap[kk] = vvCopy
 	}
 
 	return retMap
+}
+
+func (bav *UtxoView) GetMaxBlockSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().MaxBlockSizeBytesPoS
+}
+
+func (bav *UtxoView) GetSoftMaxBlockSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().SoftMaxBlockSizeBytesPoS
+}
+
+func (bav *UtxoView) GetMaxTxnSizeBytesPoS() uint64 {
+	return bav.GetCurrentGlobalParamsEntry().MaxTxnSizeBytesPoS
 }

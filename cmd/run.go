@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/deso-protocol/core/lib"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
@@ -62,10 +64,10 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"Max sync block height")
 	// Hyper Sync
 	cmd.PersistentFlags().Bool("hypersync", true, "Use hyper sync protocol for faster block syncing")
-	cmd.PersistentFlags().Bool("force-checksum", true, "When true, the node will panic if the "+
+	cmd.PersistentFlags().Bool("force-checksum", false, "When true, the node will panic if the "+
 		"local state checksum differs from the network checksum reported by its peers.")
 	// Snapshot
-	cmd.PersistentFlags().Uint64("snapshot-block-height-period", 1000, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
+	cmd.PersistentFlags().Uint64("snapshot-block-height-period", lib.DefaultSnapshotEpochPeriodPoS, "Set the snapshot epoch period. Snapshots are taken at block heights divisible by the period.")
 	// Archival mode
 	cmd.PersistentFlags().Bool("archival-mode", true, "Download all historical blocks after finishing hypersync.")
 	// Disable encoder migrations
@@ -81,6 +83,21 @@ func SetupRunFlags(cmd *cobra.Command) {
 		  is true.
 		- hypersync: Will sync by downloading historical state, and will NOT
 		  download historical blocks. Can only be set if HyperSync is true.`)
+
+	// PoS Validator
+	cmd.PersistentFlags().String("pos-validator-seed", "", "A BIP39 seed phrase or seed hex used to generate the "+
+		"private key of the Proof of Stake validator. Setting this flag automatically makes the node run as a Proof "+
+		"of Stake Validator.")
+
+	// Mempool
+	cmd.PersistentFlags().Uint64("mempool-backup-time-millis", 30000,
+		"The frequency in milliseconds with which the mempool will persist its state to disk. "+
+			"The default value is 30 seconds, or 30,000 milliseconds.")
+	cmd.PersistentFlags().Uint64("mempool-max-validation-view-connects", 10000,
+		"The maximum number of connects that the PoS mempool transaction validation routine will perform.")
+	cmd.PersistentFlags().Uint64("transaction-validation-refresh-interval-millis", 10,
+		"The frequency in milliseconds with which the transaction validation routine is run in mempool. "+
+			"The default value is 10 milliseconds.")
 
 	// Peers
 	cmd.PersistentFlags().StringSlice("connect-ips", []string{},
@@ -116,6 +133,11 @@ func SetupRunFlags(cmd *cobra.Command) {
 			"our connections and potentially make onerous requests as well. Useful to "+
 			"disable this flag when testing locally to allow multiple inbound connections "+
 			"from test servers")
+
+	cmd.PersistentFlags().Uint64("peer-connection-refresh-interval-millis", 10000,
+		"The frequency in milliseconds with which the node will refresh its peer connections. This applies to"+
+			"both outbound validators and outbound persistent non-validators",
+	)
 
 	// Listeners
 	cmd.PersistentFlags().Uint64("protocol-port", 0,
@@ -198,6 +220,14 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("time-events", false, "Enable simple event timer, helpful in hands-on performance testing")
 	cmd.PersistentFlags().String("state-change-dir", "", "The directory for state change logs. WARNING: Changing this "+
 		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
+	cmd.PersistentFlags().Uint("state-syncer-mempool-txn-sync-limit", 10000, "The maximum number of transactions to "+
+		"process in the mempool tx state syncer at a time.")
+
+	// PoS Checkpoint Syncing
+	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, fmt.Sprintf("A comma-separated list of URLs that "+
+		"supports the committed tip block info endpoint to be used for checkpoint syncing. "+
+		"If unset, the field will default to %v on mainnet and %v on testnet",
+		lib.DefaultMainnetCheckpointProvider, lib.DefaultTestnetCheckpointProvider))
 	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		viper.BindPFlag(flag.Name, flag)
 	})

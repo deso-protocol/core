@@ -3,12 +3,14 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
-	"github.com/brianvoe/gofakeit"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/brianvoe/gofakeit"
+	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // Initialize empty DeSoEncoders and check if they are encoded properly.
@@ -349,8 +351,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 	// in the middle.
 	utxoOpsList := [][]*UtxoOperation{}
 	{
-		utxoView, err := NewUtxoView(db, paramsCopy, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, paramsCopy, nil, chain.snapshot, nil)
 
 		// Add a placeholder where the rate update is going to be
 		fff := append([]*MsgDeSoTxn{}, bitcoinExchangeTxns[:rateUpdateIndex]...)
@@ -371,11 +372,9 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 
 				bitcoinExchangeTxns[ii] = rateUpdateTxn
 				burnTxn := bitcoinExchangeTxns[ii]
-				burnTxnSize := getTxnSize(*burnTxn)
 				blockHeight := chain.blockTip().Height + 1
 				utxoOps, totalInput, totalOutput, fees, err :=
-					utxoView.ConnectTransaction(
-						burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+					utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 				_, _, _ = totalInput, totalOutput, fees
 				require.NoError(err)
 				utxoOpsList = append(utxoOpsList, utxoOps)
@@ -383,11 +382,9 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 			}
 
 			burnTxn := bitcoinExchangeTxns[ii]
-			burnTxnSize := getTxnSize(*burnTxn)
 			blockHeight := chain.blockTip().Height + 1
 			utxoOps, totalInput, totalOutput, fees, err :=
-				utxoView.ConnectTransaction(
-					burnTxn, burnTxn.Hash(), burnTxnSize, blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+				utxoView.ConnectTransaction(burnTxn, burnTxn.Hash(), blockHeight, 0, true, false)
 			require.NoError(err)
 
 			require.Equal(2, len(utxoOps))
@@ -398,6 +395,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 			utxoOpsList = append(utxoOpsList, utxoOps)
 		}
 		utxoEntries, err := chain.GetSpendableUtxosForPublicKey(pkBytes1, nil, utxoView)
+		require.NoError(err)
 		for _, entry := range utxoEntries {
 			entryBytes := EncodeToBytes(0, entry)
 			newEntry := &UtxoEntry{}
@@ -414,4 +412,61 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 			newMP.Stop()
 		}
 	})
+}
+
+func TestEncodingUint256s(t *testing.T) {
+	// Create three uint256.Ints.
+	num1 := uint256.NewInt()
+	num2 := uint256.NewInt().SetUint64(598128756)
+	num3 := MaxUint256
+
+	// Encode them to bytes using VariableEncodeUint256.
+	encoded1 := VariableEncodeUint256(num1)
+	encoded2 := VariableEncodeUint256(num2)
+	encoded3 := VariableEncodeUint256(num3)
+
+	// Decode them from bytes using VariableDecodeUint256. Verify values.
+	rr := bytes.NewReader(encoded1)
+	decoded1, err := VariableDecodeUint256(rr)
+	require.NoError(t, err)
+	require.True(t, num1.Eq(decoded1))
+
+	rr = bytes.NewReader(encoded2)
+	decoded2, err := VariableDecodeUint256(rr)
+	require.NoError(t, err)
+	require.True(t, num2.Eq(decoded2))
+
+	rr = bytes.NewReader(encoded3)
+	decoded3, err := VariableDecodeUint256(rr)
+	require.NoError(t, err)
+	require.True(t, num3.Eq(decoded3))
+
+	// Test that VariableEncodeUint256 does not provide a fixed-width byte encoding.
+	require.NotEqual(t, len(encoded1), len(encoded2))
+	require.NotEqual(t, len(encoded1), len(encoded3))
+
+	// Encode them to bytes using FixedWidthEncodeUint256.
+	encoded1 = FixedWidthEncodeUint256(num1)
+	encoded2 = FixedWidthEncodeUint256(num2)
+	encoded3 = FixedWidthEncodeUint256(num3)
+
+	// Decode them from bytes using FixedWidthDecodeUint256. Verify values.
+	rr = bytes.NewReader(encoded1)
+	decoded1, err = FixedWidthDecodeUint256(rr)
+	require.NoError(t, err)
+	require.True(t, num1.Eq(decoded1))
+
+	rr = bytes.NewReader(encoded2)
+	decoded2, err = FixedWidthDecodeUint256(rr)
+	require.NoError(t, err)
+	require.True(t, num2.Eq(decoded2))
+
+	rr = bytes.NewReader(encoded3)
+	decoded3, err = FixedWidthDecodeUint256(rr)
+	require.NoError(t, err)
+	require.True(t, num3.Eq(decoded3))
+
+	// Test that FixedWidthEncodeUint256 provides a fixed-width byte encoding.
+	require.Equal(t, len(encoded1), len(encoded2))
+	require.Equal(t, len(encoded1), len(encoded3))
 }

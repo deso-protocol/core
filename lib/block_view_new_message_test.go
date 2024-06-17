@@ -657,8 +657,7 @@ func TestNewMessage(t *testing.T) {
 	tvv4 = append(tvv4, groupChatEnumerationTestVectors...)
 
 	tvb4ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads31M0)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads31M1)
 		_verifyDmMessageEntries(t, utxoView, dmThreadEnumeration, dmEnumerationMessages)
@@ -718,8 +717,7 @@ func TestNewMessage(t *testing.T) {
 	tvv5 = append(tvv5, groupChatEnumerationUpdateTestVectors...)
 
 	tvb5ConnectCallback := func(tvb *transactionTestVectorBlock, tm *transactionTestMeta) {
-		utxoView, err := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(tm.db, tm.params, tm.pg, tm.chain.snapshot, nil)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m0PublicKey, dmThreads31M0)
 		_verifyDmThreadKeysWithUtxoView(t, utxoView, *m1PublicKey, dmThreads31M1)
 		_verifyDmMessageEntries(t, utxoView, dmThreadEnumeration, dmEnumerationUpdateMessages)

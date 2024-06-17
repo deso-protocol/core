@@ -27,12 +27,13 @@ import (
 )
 
 type Node struct {
-	Server   *lib.Server
-	ChainDB  *badger.DB
-	TXIndex  *lib.TXIndex
-	Params   *lib.DeSoParams
-	Config   *Config
-	Postgres *lib.Postgres
+	Server    *lib.Server
+	ChainDB   *badger.DB
+	TXIndex   *lib.TXIndex
+	Params    *lib.DeSoParams
+	Config    *Config
+	Postgres  *lib.Postgres
+	Listeners []net.Listener
 
 	// IsRunning is false when a NewNode is created, set to true on Start(), set to false
 	// after Stop() is called. Mainly used in testing.
@@ -117,8 +118,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
-	listeningAddrs, listeners := GetAddrsToListenOn(node.Config.ProtocolPort)
-	_ = listeningAddrs
+	_, node.Listeners = GetAddrsToListenOn(node.Config.ProtocolPort)
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
@@ -141,60 +141,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// Setup chain database
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
-	var opts badger.Options
-
-	// If we're in hypersync mode, we use the default badger options. Otherwise, we use performance options.
-	// This is because hypersync mode is very I/O intensive, so we want to use the default options to reduce
-	// the amount of memory consumed by the database.
-	// Blocksync requires performance options because certain indexes tracked by blocksync have extremely large
-	// records (e.g. PrefixBlockHashToUtxoOperations). These large records will overflow the default badger mem table
-	// size.
-	//
-	// FIXME: We should rewrite the code so that PrefixBlockHashToUtxoOperations is either removed or written
-	// to badger in such a way as to not require the use of PerformanceBadgerOptions. See the comment on
-	// dirtyHackUpdateDbOpts.
-
-	// Check to see if this node has already been initialized with performance or default options.
-	// If so, we should continue to use those options.
-	// If not and the db directory exists, we will use PerformanceOptions as the default. This is because
-	// prior to the use of default options for hypersync, all nodes were initialized with performance options.
-	// So all nodes that are upgrading will want to continue using performance options. Only nodes that are
-	// hypersyncing from scratch can use default options.
-	// If not, this means we have a clean data directory and it should be based on the sync type.
-	// The reason we do this check is because once a badger database is initialized with performance options,
-	// re-opening it with non-performance options results in a memory error panic. In order to prevent this transition
-	// from default -> performance -> default settings, we save the db options to a file. This takes the form of a
-	// boolean which indicates whether the db was initialized with performance options or not. Upon restart, if the
-	// file exists, we use the same options. If the file does not exist, we use the options based on the sync type.
-	performanceOptions, err := lib.DbInitializedWithPerformanceOptions(node.Config.DataDirectory)
-
-	// We hardcode performanceOptions to true if we're not using a hypersync sync-type. This helps
-	// nodes recover that were running an older version that wrote the incorrect boolean to the file.
-	if node.Config.SyncType != lib.NodeSyncTypeHyperSync &&
-		node.Config.SyncType != lib.NodeSyncTypeHyperSyncArchival {
-		performanceOptions = true
-	}
-	// If the db options haven't yet been saved, we should base the options on the existence of the
-	// data directory and the sync type.
-	if os.IsNotExist(err) {
-		// Check if the db directory exists.
-		_, err = os.Stat(dbDir)
-		isHypersync := node.Config.SyncType == lib.NodeSyncTypeHyperSync ||
-			node.Config.SyncType == lib.NodeSyncTypeHyperSyncArchival
-		performanceOptions = !os.IsNotExist(err) || !isHypersync
-		// Save the db options for future runs.
-		lib.SaveBoolToFile(lib.GetDbPerformanceOptionsFilePath(node.Config.DataDirectory), performanceOptions)
-	} else if err != nil {
-		// If we get an error other than "file does not exist", we should panic.
-		panic(err)
-	}
-
-	if performanceOptions {
-		opts = lib.PerformanceBadgerOptions(dbDir)
-	} else {
-		opts = lib.DefaultBadgerOptions(dbDir)
-	}
-
+	opts := lib.PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
 	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
@@ -239,13 +186,22 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// Setup eventManager
 	eventManager := lib.NewEventManager()
 
+	var blsKeystore *lib.BLSKeystore
+	if node.Config.PosValidatorSeed != "" {
+		blsKeystore, err = lib.NewBLSKeystore(node.Config.PosValidatorSeed)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
 	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
 	// performs regular health checks to detect whenever this occurs.
 	shouldRestart := false
 	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,
-		listeners,
+		node.Config.Regtest,
+		node.Listeners,
 		desoAddrMgr,
 		node.Config.ConnectIPs,
 		node.ChainDB,
@@ -255,6 +211,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MinerPublicKeys,
 		node.Config.NumMiningThreads,
 		node.Config.OneInboundPerIp,
+		node.Config.PeerConnectionRefreshIntervalMillis,
 		node.Config.HyperSync,
 		node.Config.SyncType,
 		node.Config.MaxSyncBlockHeight,
@@ -280,7 +237,14 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
 		node.Config.StateChangeDir,
-		node.Config.HypersyncMaxQueueSize)
+		node.Config.HypersyncMaxQueueSize,
+		blsKeystore,
+		node.Config.MempoolBackupIntervalMillis,
+		node.Config.MempoolMaxValidationViewConnects,
+		node.Config.TransactionValidationRefreshIntervalMillis,
+		node.Config.StateSyncerMempoolTxnSyncLimit,
+		node.Config.CheckpointSyncingProviders,
+	)
 	if err != nil {
 		// shouldRestart can be true if, on the previous run, we did not finish flushing all ancestral
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
@@ -363,7 +327,6 @@ func (node *Node) Stop() {
 	if snap != nil {
 		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
 		snap.Stop()
-		node.closeDb(snap.SnapshotDb, "snapshot")
 		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
 	}
 
@@ -378,6 +341,7 @@ func (node *Node) Stop() {
 	// Databases
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closing all databases..."))
 	node.closeDb(node.ChainDB, "chain")
+	node.closeDb(node.Server.GetBlockchain().DB(), "blockchain DB")
 	node.stopWaitGroup.Wait()
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
 

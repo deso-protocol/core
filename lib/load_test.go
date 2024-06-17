@@ -129,12 +129,11 @@ func TestComputeMaxTPS(t *testing.T) {
 		require.NoError(err)
 		pprof.StartCPUProfile(ff)
 
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		timeStart := time.Now()
 		for _, tx := range txns {
-			_, _, _, _, err := utxoView.ConnectTransaction(tx, tx.Hash(), 0, 1, false /*verifySignature*/, false /*ignoreUtxos*/)
+			_, _, _, _, err := utxoView.ConnectTransaction(tx, tx.Hash(), 1, 0, false, false)
 			require.NoError(err)
 		}
 		//require.NoError(utxoView.FlushToDb())
@@ -190,7 +189,7 @@ func TestComputeMaxTPS(t *testing.T) {
 		_, _ = newParams, newDB
 		timeStart := time.Now()
 		for _, blockToConnect := range blocksMined {
-			_, _, err := newChain.ProcessBlock(blockToConnect, true /*verifySignatures*/)
+			_, _, _, err := newChain.ProcessBlock(blockToConnect, true /*verifySignatures*/)
 			require.NoError(err)
 		}
 		elapsedSecs := (time.Since(timeStart)).Seconds()
@@ -237,7 +236,7 @@ func TestConnectBlocksLoadTest(t *testing.T) {
 		pprof.StartCPUProfile(ff)
 		timeStart := time.Now()
 		for _, blockToConnect := range blocksMined {
-			_, _, err := newChain.ProcessBlock(blockToConnect, false /*verifySignatures*/)
+			_, _, _, err := newChain.ProcessBlock(blockToConnect, false /*verifySignatures*/)
 			require.NoError(err)
 		}
 		elapsedSecs := (time.Since(timeStart)).Seconds()

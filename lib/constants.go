@@ -49,6 +49,30 @@ const (
 	NodeErase
 )
 
+// Time constants
+const (
+	NanoSecondsPerSecond = int64(1000000000)
+)
+
+func SecondsToNanoSeconds(secs int64) int64 {
+	return secs * NanoSecondsPerSecond
+}
+
+func NanoSecondsToSeconds(nanos int64) int64 {
+	return nanos / NanoSecondsPerSecond
+}
+
+func NanoSecondsToUint64MicroSeconds(nanos int64) uint64 {
+	if nanos < 0 {
+		return 0
+	}
+	return uint64(nanos / 1000)
+}
+
+func NanoSecondsToTime(nanos int64) time.Time {
+	return time.Unix(0, nanos)
+}
+
 // Snapshot constants
 const (
 	// GetSnapshotTimeout is used in Peer when we fetch a snapshot chunk, and we need to retry.
@@ -84,9 +108,11 @@ const (
 	NetworkType_TESTNET NetworkType = 2
 )
 
+type MsgDeSoHeaderVersion = uint32
+
 const (
 	// This is the header version that the blockchain started with.
-	HeaderVersion0 = uint32(0)
+	HeaderVersion0 = MsgDeSoHeaderVersion(0)
 	// This version made several changes to the previous header encoding format:
 	// - The Nonce field was expanded to 64 bits
 	// - Another ExtraNonce field was added to provide *another* 64 bits of entropy,
@@ -100,8 +126,45 @@ const (
 	//
 	// At the time of this writing, the intent is to deploy it in a backwards-compatible
 	// fashion, with the eventual goal of phasing out blocks with the previous version.
-	HeaderVersion1       = uint32(1)
+	HeaderVersion1 = MsgDeSoHeaderVersion(1)
+	// This version introduces the transition from Proof of Work to Proof of Stake blocks.
+	// It includes several changes to the header format:
+	// - Nonce field is deprecated
+	// - ExtraNonce field is deprecated
+	// - ProposerPublicKey field is added
+	// - ProposerVotingPublicKey field is added
+	// - ProposedInView field is added
+	// - ValidatorsVoteQC field is added
+	// - ValidatorsTimeoutAggregateQC field is added
+	// - ProposerVotePartialSignature field is added
+	//
+	// This format change is a breaking change that is not backwards-compatible with
+	// versions 0 and 1.
+	HeaderVersion2 = MsgDeSoHeaderVersion(2)
+	// TODO: rename this "CurrentHeaderVersion" to "LatestProofOfWorkHeaderVersion". Note,
+	// doing so will be a breaking change for 3rd party applications that import core and
+	// use this constant.
+	//
+	// This CurrentHeaderVersion is an implicit version type that represents the latest
+	// backwards compatible Proof of Work header format. This value is now locked to
+	// HeaderVersion1 since versions 2 and onwards will be used for Proof of Stake formats.
 	CurrentHeaderVersion = HeaderVersion1
+)
+
+// Versioning for the MsgValidatorVote message type. This type alias is equivalent
+// to a uint8, and supports the same byte encoders/decoders.
+type MsgValidatorVoteVersion = byte
+
+const (
+	MsgValidatorVoteVersion0 MsgValidatorVoteVersion = 0
+)
+
+// Versioning for the MsgValidatorTimeout message type. This type alias is equivalent
+// to a uint8, and supports the same byte encoders/decoders.
+type MsgValidatorTimeoutVersion = byte
+
+const (
+	MsgValidatorTimeoutVersion0 MsgValidatorTimeoutVersion = 0
 )
 
 var (
@@ -275,6 +338,28 @@ type ForkHeights struct {
 	// that are in the block.
 	BlockRewardPatchBlockHeight uint32
 
+	// ProofOfStake1StateSetupBlockHeight defines the height at which we introduced all
+	// changes to set up the prerequisite state for cutting over to PoS consensus. These
+	// changes include, for example, introducing the new PoS txn types, consensus params,
+	// leader schedule generation, and snapshotting.
+	//
+	// The ProofOfStake1StateSetupBlockHeight needs to be set before the
+	// ProofOfStake2ConsensusCutoverBlockHeight so that we allow time for validators to
+	// register, stake to be assigned, and the validator set, consensus params, and
+	// leader schedule snapshots to be generated in advance.
+	ProofOfStake1StateSetupBlockHeight uint32
+
+	// LockupsBlockHeight defines the height at which we begin accepting lockup
+	// related transactions. These can include things like CoinLockup, UpdateCoinLockupParams,
+	// CoinLockupTransfer, and CoinUnlock.
+	//
+	// We specify this separately to enable independent testing when compared with other features.
+	LockupsBlockHeight uint32
+
+	// ProofOfStake2ConsensusCutoverBlockHeight defines the height at which we cut over
+	// from PoW consensus to PoS consensus.
+	ProofOfStake2ConsensusCutoverBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -339,6 +424,7 @@ const (
 	UnlimitedDerivedKeysMigration        MigrationName = "UnlimitedDerivedKeysMigration"
 	AssociationsAndAccessGroupsMigration MigrationName = "AssociationsAndAccessGroupsMigration"
 	BalanceModelMigration                MigrationName = "BalanceModelMigration"
+	ProofOfStake1StateSetupMigration     MigrationName = "ProofOfStake1StateSetupMigration"
 )
 
 type EncoderMigrationHeights struct {
@@ -352,6 +438,9 @@ type EncoderMigrationHeights struct {
 
 	// This coincides with the BalanceModel block
 	BalanceModel MigrationHeight
+
+	// This coincides with the ProofOfStake1StateSetupBlockHeight
+	ProofOfStake1StateSetupMigration MigrationHeight
 }
 
 func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeights {
@@ -376,8 +465,14 @@ func GetEncoderMigrationHeights(forkHeights *ForkHeights) *EncoderMigrationHeigh
 			Height:  uint64(forkHeights.BalanceModelBlockHeight),
 			Name:    BalanceModelMigration,
 		},
+		ProofOfStake1StateSetupMigration: MigrationHeight{
+			Version: 4,
+			Height:  uint64(forkHeights.ProofOfStake1StateSetupBlockHeight),
+			Name:    ProofOfStake1StateSetupMigration,
+		},
 	}
 }
+
 func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	_migrationHeightsList []*MigrationHeight) {
 
@@ -400,6 +495,34 @@ func GetEncoderMigrationHeightsList(forkHeights *ForkHeights) (
 	return migrationHeightsList
 }
 
+type ProtocolVersionType uint64
+
+const (
+	// ProtocolVersion0 is the first version of the DeSo protocol, running Proof of Work.
+	ProtocolVersion0 ProtocolVersionType = 0
+	// ProtocolVersion1 nodes run Proof of Work, and new node services such as rosetta, hypersync.
+	// The version indicates that the node supports P2P features related to these new services.
+	ProtocolVersion1 ProtocolVersionType = 1
+	// ProtocolVersion2 is the latest version of the DeSo protocol, running Proof of Stake.
+	ProtocolVersion2 ProtocolVersionType = 2
+)
+
+func NewProtocolVersionType(version uint64) ProtocolVersionType {
+	return ProtocolVersionType(version)
+}
+
+func (pvt ProtocolVersionType) ToUint64() uint64 {
+	return uint64(pvt)
+}
+
+func (pvt ProtocolVersionType) Before(version ProtocolVersionType) bool {
+	return pvt.ToUint64() < version.ToUint64()
+}
+
+func (pvt ProtocolVersionType) After(version ProtocolVersionType) bool {
+	return pvt.ToUint64() > version.ToUint64()
+}
+
 // DeSoParams defines the full list of possible parameters for the
 // DeSo network.
 type DeSoParams struct {
@@ -408,7 +531,7 @@ type DeSoParams struct {
 	// Set to true when we're running in regtest mode. This is useful for testing.
 	ExtraRegtestParamUpdaterKeys map[PkMapKey]bool
 	// The current protocol version we're running.
-	ProtocolVersion uint64
+	ProtocolVersion ProtocolVersionType
 	// The minimum protocol version we'll allow a peer we connect to
 	// to have.
 	MinProtocolVersion uint64
@@ -453,6 +576,9 @@ type DeSoParams struct {
 	// network before checking for double-spends.
 	BitcoinDoubleSpendWaitSeconds float64
 
+	// ServerMessageChannelSize sets the minimum size of the server's incomingMessage channel, which handles peer messages.
+	ServerMessageChannelSize uint32
+
 	// This field allows us to set the amount purchased at genesis to a non-zero
 	// value.
 	DeSoNanosPurchasedAtGenesis uint64
@@ -466,6 +592,11 @@ type DeSoParams struct {
 	DialTimeout time.Duration
 	// The amount of time we wait to receive a version message from a peer.
 	VersionNegotiationTimeout time.Duration
+	// The amount of time we wait to receive a verack message from a peer.
+	VerackNegotiationTimeout time.Duration
+
+	// The maximum number of addresses to broadcast to peers.
+	MaxAddressesToBroadcast uint32
 
 	// The genesis block to use as the base of our chain.
 	GenesisBlock *MsgDeSoBlock
@@ -487,9 +618,15 @@ type DeSoParams struct {
 	// disk-fill attacks, among other things.
 	MinChainWorkHex string
 
-	// This is used for determining whether we are still in initial block download.
+	// This is used for determining whether we are still in initial block download
+	// when the chain is running PoW.
 	// If our tip is older than this, we continue with IBD.
-	MaxTipAge time.Duration
+	MaxTipAgePoW time.Duration
+
+	// This is used for determining whether we are still in initial block download
+	// when the chain is running PoS.
+	// If our tip is older than this, we continue with initial block download.
+	MaxTipAgePoS time.Duration
 
 	// Do not allow the difficulty to change by more than a factor of this
 	// variable during each adjustment period.
@@ -507,7 +644,7 @@ type DeSoParams struct {
 
 	// The maximum number of bytes that can be allocated to transactions in
 	// a block.
-	MaxBlockSizeBytes uint64
+	MaxBlockSizeBytesPoW uint64
 
 	// It's useful to set the miner maximum block size to a little lower than the
 	// maximum block size in certain cases. For example, on initial launch, setting
@@ -526,6 +663,13 @@ type DeSoParams struct {
 	MaxFetchBlocks uint32
 
 	MiningIterationsPerCycle uint64
+
+	// Snapshot
+	// For PoW, we use a snapshot block height period of 1000 blocks. We record this value in the constants
+	// as it'll be used during the PoW -> PoS transition. Notably, this value is used to allow PoS nodes
+	// to hypersync from PoW nodes. In hypersync, knowing the snapshot block height period of the sync peer
+	// is necessary to determine the block height of the snapshot we're going to receive.
+	DefaultPoWSnapshotBlockHeightPeriod uint64
 
 	// deso
 	MaxUsernameLengthBytes        uint64
@@ -588,6 +732,106 @@ type DeSoParams struct {
 	// attack the bancor curve to any meaningful measure.
 	CreatorCoinAutoSellThresholdNanos uint64
 
+	// DefaultStakeLockupEpochDuration is the default number of epochs
+	// that a user must wait before unlocking their unstaked stake.
+	DefaultStakeLockupEpochDuration uint64
+
+	// DefaultValidatorJailEpochDuration is the default number of epochs
+	// that a validator must wait after being jailed before submitting
+	// an UnjailValidator txn.
+	DefaultValidatorJailEpochDuration uint64
+
+	// DefaultLeaderScheduleMaxNumValidators is the default maximum number of validators
+	// that are included when generating a new Proof-of-Stake leader schedule.
+	DefaultLeaderScheduleMaxNumValidators uint64
+
+	// DefaultValidatorSetMaxNumValidators is the default maximum number of validators
+	// that are included in the validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators uint64
+
+	// DefaultStakingRewardsMaxNumStakes is the default number of stake entries
+	// that are included in the staking reward distribution in each epoch.
+	DefaultStakingRewardsMaxNumStakes uint64
+
+	// DefaultStakingRewardsAPYBasisPoints is the default scaled interest rate
+	// that is applied to all stake entries in the staking reward distribution in each epoch.
+	DefaultStakingRewardsAPYBasisPoints uint64
+
+	// DefaultEpochDurationNumBlocks is the default number of blocks included in one epoch.
+	DefaultEpochDurationNumBlocks uint64
+
+	// DefaultJailInactiveValidatorGracePeriodEpochs is the default number of epochs
+	// we allow a validator to be inactive for (neither voting nor proposing blocks)
+	// before they are jailed.
+	DefaultJailInactiveValidatorGracePeriodEpochs uint64
+
+	// DefaultBlockTimestampDriftNanoSecs is the default number of nanoseconds
+	// from the current timestamp that we will allow a PoS block to be submitted.
+	DefaultBlockTimestampDriftNanoSecs int64
+
+	// DefaultFeeBucketGrowthRateBasisPoints is the rate of growth of the fee bucket ranges. The multiplier is given
+	// as basis points. For example a value of 1000 means that the fee bucket ranges will grow by 10% each time.
+	DefaultFeeBucketGrowthRateBasisPoints uint64
+
+	// DefaultMaximumVestedIntersectionsPerLockupTransaction is the default value for
+	// GlobalParamsEntry.MaximumVestedIntersectionsPerLockupTransaction. See the comment
+	// in GlobalParamsEntry for a detailed description of its usage.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction int
+
+	// DefaultMempoolMaxSizeBytes is the default value for GlobalParamsEntry.MempoolMaxSizeBytes.
+	// See the comment in GlobalParamsEntry for a description of its usage.
+	DefaultMempoolMaxSizeBytes uint64
+
+	// DefaultMempoolFeeEstimatorNumMempoolBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumMempoolBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage. Also see the comment on the setting in DeSoMainnetParams
+	DefaultMempoolFeeEstimatorNumMempoolBlocks uint64
+
+	// DefaultMempoolFeeEstimatorNumPastBlocks is the default value for
+	// GlobalParamsEntry.MempoolFeeEstimatorNumPastBlocks. See the comment in GlobalParamsEntry
+	// for a description of its usage. Also see the comment on the DeSoMainnetParams value of
+	// this setting.
+	DefaultMempoolFeeEstimatorNumPastBlocks uint64
+
+	// DefaultMempoolCongestionFactorBasisPoints and DefaultMempoolPastBlocksCongestionFactorBasisPoints are the default values
+	// for GlobalParams.MempoolCongestionFactorBasisPoints and GlobalParams.DefaultMempoolPastBlocksCongestionFactorBasisPoints.
+	// See comments in DeSoMainnetParams for a description of their usage.
+	DefaultMempoolCongestionFactorBasisPoints           uint64
+	DefaultMempoolPastBlocksCongestionFactorBasisPoints uint64
+
+	// DefaultMempoolPriorityPercentileBasisPoints and DefaultMempoolPastBlocksPriorityPercentileBasisPoints are the default values
+	// for GlobalParams.DefaultMempoolPriorityPercentileBasisPoints and GlobalParams.DefaultMempoolPastBlocksPriorityPercentileBasisPoints.
+	// See comments in DeSoMainnetParams for a description of their usage.
+	DefaultMempoolPriorityPercentileBasisPoints           uint64
+	DefaultMempoolPastBlocksPriorityPercentileBasisPoints uint64
+
+	// DefaultMaxBlockSizeBytesPoS is the default value for GlobalParamsEntry.MaxBlockSizeBytesPoS.
+	// This is the initial value for the maximum block size in bytes that we allow for PoS blocks.
+	DefaultMaxBlockSizeBytesPoS uint64
+
+	// DefaultSoftMaxBlockSizeBytesPoS is the default value for GlobalParamsEntry.SoftMaxBlockSizeBytesPoS
+	// This is the initial value for the ideal block size in bytes we aim for in block production and fee
+	// estimation.
+	DefaultSoftMaxBlockSizeBytesPoS uint64
+
+	// DefaultMaxTxnSizeBytesPoS is the default value for GlobalParamsEntry.MaxTxnSizeBytesPoS.
+	// This is the initial value for the maximum txn size in bytes that we allow for txns in PoS blocks.
+	DefaultMaxTxnSizeBytesPoS uint64
+
+	// DefaultBlockProductionIntervalMillisecondsPoS is the default value for GlobalParamsEntry.BlockProductionIntervalMillisecondsPoS.
+	// This is the initial value for the interval between producing blocks.
+	DefaultBlockProductionIntervalMillisecondsPoS uint64
+
+	// DefaultTimeoutIntervalMillisecondsPoS is the default value for GlobalParamsEntry.TimeoutIntervalMillisecondsPoS.
+	// This is the initial value for the interval between timing out a view.
+	DefaultTimeoutIntervalMillisecondsPoS uint64
+
+	// HandshakeTimeoutMicroSeconds is the timeout for the peer handshake certificate. The default value is 15 minutes.
+	HandshakeTimeoutMicroSeconds uint64
+
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines bool
+
 	ForkHeights ForkHeights
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
@@ -620,7 +864,17 @@ var RegtestForkHeights = ForkHeights{
 	AssociationsDerivedKeySpendingLimitBlockHeight:       uint32(0),
 	// For convenience, we set the block height to 1 since the
 	// genesis block was created using the utxo model.
-	BalanceModelBlockHeight: uint32(1),
+	BalanceModelBlockHeight:            uint32(1),
+	ProofOfStake1StateSetupBlockHeight: uint32(1),
+
+	// For convenience, we set the PoS cutover block height to 300 so that
+	// enough DESO is minted to allow for testing. The 300 number is tuned
+	// to allow for 144 blocks/epoch * 2 epochs = 288 blocks to be mined
+	// before the chain transitions to PoS. Two epoch transitions must take
+	// place for the chain to set up the validator set to run PoS.
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(300),
+
+	LockupsBlockHeight: uint32(1),
 
 	BlockRewardPatchBlockHeight: uint32(0),
 
@@ -649,16 +903,47 @@ func (params *DeSoParams) EnableRegtest() {
 	params.TimeBetweenBlocks = 2 * time.Second
 	params.TimeBetweenDifficultyRetargets = 6 * time.Second
 	// Make sure we don't care about blockchain tip age.
-	params.MaxTipAge = 1000000 * time.Hour
+	params.MaxTipAgePoW = 1000000 * time.Hour
 
 	// Allow block rewards to be spent instantly
 	params.BlockRewardMaturity = 0
+
+	// Set the PoS default jail inactive validator grace period epochs to 3.
+	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
 
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
 	params.ForkHeights = RegtestForkHeights
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
+	params.DefaultStakingRewardsAPYBasisPoints = 100000 * 100 // 100000% for regtest
+}
+
+func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {
+	return !params.IsPoSBlockHeight(blockHeight)
+}
+
+func (params *DeSoParams) IsPoSBlockHeight(blockHeight uint64) bool {
+	return blockHeight >= params.GetFirstPoSBlockHeight()
+}
+
+func (params *DeSoParams) IsFinalPoWBlockHeight(blockHeight uint64) bool {
+	return blockHeight == params.GetFinalPoWBlockHeight()
+}
+
+func (params *DeSoParams) GetFinalPoWBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight - 1)
+}
+
+func (params *DeSoParams) GetFirstPoSBlockHeight() uint64 {
+	return uint64(params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight)
+}
+
+func (params *DeSoParams) GetSnapshotBlockHeightPeriod(blockHeight uint64, currentSnapshotBlockHeightPeriod uint64) uint64 {
+	if blockHeight < uint64(params.ForkHeights.ProofOfStake1StateSetupBlockHeight) {
+		return params.DefaultPoWSnapshotBlockHeightPeriod
+	}
+	return currentSnapshotBlockHeightPeriod
 }
 
 // GenesisBlock defines the genesis block used for the DeSo mainnet and testnet
@@ -672,7 +957,7 @@ var (
 			Version:               0,
 			PrevBlockHash:         &BlockHash{},
 			TransactionMerkleRoot: mustDecodeHexBlockHash("4b71d103dd6fff1bd6110bc8ed0a2f3118bbe29a67e45c6c7d97546ad126906f"),
-			TstampSecs:            uint64(1610948544),
+			TstampNanoSecs:        SecondsToNanoSeconds(1610948544),
 			Height:                uint64(0),
 			Nonce:                 uint64(0),
 		},
@@ -778,6 +1063,15 @@ var MainnetForkHeights = ForkHeights{
 	// Tues May 23 2023 @ 9am PST
 	BlockRewardPatchBlockHeight: uint32(235134),
 
+	// Tues July 2 2024 @ 12pm PST
+	ProofOfStake1StateSetupBlockHeight: uint32(349167),
+
+	// Tues July 9 2024 @ 12pm PST
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(351153),
+
+	// Tues July 2 2024 @ 12pm PST
+	LockupsBlockHeight: uint32(349167),
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -785,7 +1079,7 @@ var MainnetForkHeights = ForkHeights{
 // DeSoMainnetParams defines the DeSo parameters for the mainnet.
 var DeSoMainnetParams = DeSoParams{
 	NetworkType:        NetworkType_MAINNET,
-	ProtocolVersion:    1,
+	ProtocolVersion:    ProtocolVersion2,
 	MinProtocolVersion: 1,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
@@ -815,7 +1109,8 @@ var DeSoMainnetParams = DeSoParams{
 	// Run with --v=2 and look for "cum work" output from miner.go
 	MinChainWorkHex: "000000000000000000000000000000000000000000000000006314f9a85a949b",
 
-	MaxTipAge: 24 * time.Hour,
+	MaxTipAgePoW: 24 * time.Hour,
+	MaxTipAgePoS: time.Hour,
 
 	// ===================================================================================
 	// Mainnet Bitcoin config
@@ -853,20 +1148,24 @@ var DeSoMainnetParams = DeSoParams{
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: 1602950620,
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(1602950620),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	),
 
 	BitcoinExchangeFeeBasisPoints: 10,
 	BitcoinDoubleSpendWaitSeconds: 5.0,
+	ServerMessageChannelSize:      uint32(100),
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 	DefaultSocketPort:             uint16(17000),
 	DefaultJSONPort:               uint16(17001),
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+	VerackNegotiationTimeout:  30 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	BlockRewardMaturity: time.Hour * 3,
 
@@ -901,7 +1200,7 @@ var DeSoMainnetParams = DeSoParams{
 	// have to have a lot of space. This seems fine, however,
 	// because space is cheap and it's easy to spin up a cloud machine with
 	// tens of terabytes of space.
-	MaxBlockSizeBytes: 16000000,
+	MaxBlockSizeBytesPoW: 16000000,
 
 	// We set this to be lower initially to avoid winding up with really big
 	// spam blocks in the event someone tries to abuse the initially low min
@@ -911,6 +1210,8 @@ var DeSoMainnetParams = DeSoParams{
 	// This takes about ten seconds on a reasonable CPU, which makes sense given
 	// a 10 minute block time.
 	MiningIterationsPerCycle: 95000,
+
+	DefaultPoWSnapshotBlockHeightPeriod: 1000,
 
 	MaxUsernameLengthBytes: MaxUsernameLengthBytes,
 
@@ -960,6 +1261,124 @@ var DeSoMainnetParams = DeSoParams{
 	// It's just high enough where you avoid drifting creating coin
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
+
+	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
+	DefaultStakeLockupEpochDuration: uint64(3),
+
+	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
+	DefaultValidatorJailEpochDuration: uint64(3),
+
+	// The max number of validators included in a leader schedule.
+	DefaultLeaderScheduleMaxNumValidators: uint64(100),
+
+	// The max number of validators included in a validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators: uint64(1000),
+
+	// The max number of stakes included in a staking rewards distribution every epoch.
+	DefaultStakingRewardsMaxNumStakes: uint64(10000),
+
+	// Staking reward APY is defaulted to 0% to be safe.
+	DefaultStakingRewardsAPYBasisPoints: uint64(0),
+
+	// The number of blocks in one epoch. This number is tuned to result in roughly 10 epochs
+	// per day given a 10-minute block time on mainnet when running PoW. The number is tuned
+	// for PoW because epoch transitions begin on PoW before the chain transitions to PoS.
+	DefaultEpochDurationNumBlocks: uint64(144),
+
+	// The number of epochs before an inactive validator is jailed
+	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
+
+	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
+	DefaultBlockTimestampDriftNanoSecs: (time.Minute * 10).Nanoseconds(),
+
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
+
+	// The maximum number of vested lockup intersections in a lockup transaction.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
+
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee. Setting this
+	// value to 1 means we will start to increase fees if the mempool has 1 block's worth of
+	// txns in it, and decrease them if it has less. Note that a setting of 1 is somewhat
+	// aggresive, but it's good because it ensures that the typical fee estimate we give will
+	// be highly likely to get one's transaction included in the next block.
+	//
+	// Note that if you are *blasting* txns at the mempool, then having this value set to 1 may
+	// cause the fee estimator to report a higher and higher fee as you're constructing and
+	// submitting txns (assuming you are sending txns faster than they are going into blocks).
+	// This can cause txns that you submit later to have higher fees, which will cause them to
+	// sort to the *front* of the mempool, potentially causing dependency issues for you. If you
+	// absolutely need txns to run in a specific order, you have several options:
+	//
+	// 1. Query the fee estimator for the fee you should use for your txns *before* you construct
+	//    them, and then construct your txns by explicitly specifying that fee. As long as you use
+	//    the same fee for all of your txns, and as long as you submit them directly to the current leader,
+	//    you should be guaranteed to have them go into the next blocks in order. This is because the
+	//    mempool uses a smart fee bucketing approach, whereby txns that pay similar fees are ordered
+	//    by time (within a fee bucket). Alternatively, you can just set a fee above the minimum
+	//    manually, which will get your txn included in the blocks eventually. At the time of this
+	//    writing, a fee of 1,000 nanos per kb was well above what was needed to get into the next
+	//    block but still quite cheap (1/10,000th of a cent).
+	//
+	// 2. Use an atomic txn to submit all of your txns at once. This will ensure that they either
+	//    all go through or all fail together.
+	//
+	// 3. Slow down your txn submission to ensure that txns are going into blocks before
+	//    their dependencies are submitted.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee. This is
+	// means that we will increase or decrease fees based on the past minute's worth of
+	// blocks dynamically.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
+	// The maximum size of blocks for PoS.
+	DefaultMaxBlockSizeBytesPoS: 32000,
+
+	// The soft maximum size of blocks for PoS.
+	DefaultSoftMaxBlockSizeBytesPoS: 16000,
+
+	// The maximum size for a single txn in PoS.
+	DefaultMaxTxnSizeBytesPoS: 25000,
+
+	// The interval between producing blocks.
+	DefaultBlockProductionIntervalMillisecondsPoS: 1500,
+
+	// The interval between timing out a view.
+	DefaultTimeoutIntervalMillisecondsPoS: 30000,
+
+	// The peer handshake certificate timeout.
+	HandshakeTimeoutMicroSeconds: uint64(900000000),
+
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines: false,
+
+	// The congestion factor determines when we will start to increase or decrease fees.
+	// We set the congestion factor to 90% for past blocks and mempool. This makes it so that we will
+	// start to increase fees when the past N blocks (DefaultMempoolFeeEstimatorNumPastBlocks) are
+	// 90% full on average or the mempool has 90% of 1 block's worth of txns in it (actually 90% of
+	// DefaultMempoolFeeEstimatorNumMempoolBlocks). This is good because it ensures that the typical
+	// fee estimate we give will be highly likely to get one's transaction included in the next block
+	// or, at worst, a block within about a minute (for N=50).
+	//
+	// Using the 90th percentile allows the fee market to be aggressive, but it's better than using
+	// 100% because that can have some rounding issues. For example, if you use 100% and blocks are
+	// 99% full, the fee market won't adapt. So it's better to have a little slack.
+	DefaultMempoolCongestionFactorBasisPoints:           uint64(9000),
+	DefaultMempoolPastBlocksCongestionFactorBasisPoints: uint64(9000),
+	// The priority percentile determines what benchmark we use to increase the fee we're paying. For
+	// past blocks, we set a percentile of 90%, which means we'll take the fee paid by the 90th percentile
+	// txn in the past N blocks and increase it by one fee bucket. This works nicely with N=50 blocks
+	// because the 90th percentile will be within 5 blocks if you sorted all txns by their fees. For the
+	// mempool, we set a percentile of 10%, which means we use the fee paid by the 10th percentile txn in
+	// the highest 1 block's worth of txns in the mempool. We use a lower percentile here because the mempool
+	// has a much tighter window of a single block, and so by outbidding *anybody* in that block, you're
+	// already highly likely to get in.
+	DefaultMempoolPriorityPercentileBasisPoints:           uint64(1000),
+	DefaultMempoolPastBlocksPriorityPercentileBasisPoints: uint64(9000),
 
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
@@ -1044,6 +1463,15 @@ var TestnetForkHeights = ForkHeights{
 	// Tues May 23 2023 @ 9am PT
 	BlockRewardPatchBlockHeight: uint32(729753),
 
+	// Wed May 1 2024 @ 12pm PT
+	ProofOfStake1StateSetupBlockHeight: uint32(1113866),
+
+	// Mon May 6 2024 @ 12pm PT
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(1119482),
+
+	// Wed May 1 2024 @ 12pm PT
+	LockupsBlockHeight: uint32(1113866),
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -1051,7 +1479,7 @@ var TestnetForkHeights = ForkHeights{
 // DeSoTestnetParams defines the DeSo parameters for the testnet.
 var DeSoTestnetParams = DeSoParams{
 	NetworkType:        NetworkType_TESTNET,
-	ProtocolVersion:    0,
+	ProtocolVersion:    ProtocolVersion2,
 	MinProtocolVersion: 0,
 	UserAgent:          "Architect",
 	DNSSeeds: []string{
@@ -1066,6 +1494,7 @@ var DeSoTestnetParams = DeSoParams{
 	BitcoinBurnAddress:            "mhziDsPWSMwUqvZkVdKY92CjesziGP3wHL",
 	BitcoinExchangeFeeBasisPoints: 10,
 	BitcoinDoubleSpendWaitSeconds: 5.0,
+	ServerMessageChannelSize:      uint32(100),
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 
 	// See comment in mainnet config.
@@ -1080,8 +1509,8 @@ var DeSoTestnetParams = DeSoParams{
 		big.NewInt(0),
 		// We are bastardizing the DeSo header to store Bitcoin information here.
 		&MsgDeSoHeader{
-			TstampSecs: 1607659152,
-			Height:     0,
+			TstampNanoSecs: SecondsToNanoSeconds(1607659152),
+			Height:         0,
 		},
 		StatusBitcoinHeaderValidated,
 	),
@@ -1094,6 +1523,9 @@ var DeSoTestnetParams = DeSoParams{
 
 	DialTimeout:               30 * time.Second,
 	VersionNegotiationTimeout: 30 * time.Second,
+	VerackNegotiationTimeout:  30 * time.Second,
+
+	MaxAddressesToBroadcast: 10,
 
 	GenesisBlock:        &GenesisBlock,
 	GenesisBlockHashHex: GenesisBlockHashHex,
@@ -1111,7 +1543,8 @@ var DeSoTestnetParams = DeSoParams{
 
 	// TODO: Set to one day when we launch the testnet. In the meantime this value
 	// is more useful for local testing.
-	MaxTipAge: time.Hour * 24,
+	MaxTipAgePoW: time.Hour * 24,
+	MaxTipAgePoS: time.Hour,
 
 	// Difficulty can't decrease to below 50% of its previous value or increase
 	// to above 200% of its previous value.
@@ -1126,7 +1559,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	// We use a max block size of 1MB. This seems to work well for BTC and
 	// most of our data doesn't need to be stored on the blockchain anyway.
-	MaxBlockSizeBytes: 1000000,
+	MaxBlockSizeBytesPoW: 1000000,
 
 	// We set this to be lower initially to avoid winding up with really big
 	// spam blocks in the event someone tries to abuse the initially low min
@@ -1138,6 +1571,7 @@ var DeSoTestnetParams = DeSoParams{
 
 	MiningIterationsPerCycle: 9500,
 
+	DefaultPoWSnapshotBlockHeightPeriod: 1000,
 	// deso
 	MaxUsernameLengthBytes: MaxUsernameLengthBytes,
 
@@ -1189,6 +1623,77 @@ var DeSoTestnetParams = DeSoParams{
 	// reserve ratios.
 	CreatorCoinAutoSellThresholdNanos: uint64(10),
 
+	// Unstaked stake can be unlocked after a minimum of N elapsed epochs.
+	DefaultStakeLockupEpochDuration: uint64(3),
+
+	// Jailed validators can be unjailed after a minimum of N elapsed epochs.
+	DefaultValidatorJailEpochDuration: uint64(3),
+
+	// The max number of validators included in a leader schedule.
+	DefaultLeaderScheduleMaxNumValidators: uint64(100),
+
+	// The max number of validators included in a validator set for any given epoch.
+	DefaultValidatorSetMaxNumValidators: uint64(1000),
+
+	// The max number of stakes included in a staking rewards distribution every epoch.
+	DefaultStakingRewardsMaxNumStakes: uint64(10000),
+
+	// Staking reward APY is defaulted to 0% to be safe.
+	DefaultStakingRewardsAPYBasisPoints: uint64(0),
+
+	// The number of blocks in one epoch. This number is tuned to result in roughly 10 epochs
+	// per day given a 10-minute block time on testnet when running PoW. The number is tuned
+	// for PoW because epoch transitions begin on PoW before the chain transitions to PoS.
+	DefaultEpochDurationNumBlocks: uint64(144),
+
+	// The number of epochs before an inactive validator is jailed
+	DefaultJailInactiveValidatorGracePeriodEpochs: uint64(48),
+
+	// The number of nanoseconds from the current timestamp that we will allow a PoS block to be submitted.
+	DefaultBlockTimestampDriftNanoSecs: (time.Minute * 10).Nanoseconds(),
+
+	// The rate of growth of the fee bucket ranges.
+	DefaultFeeBucketGrowthRateBasisPoints: uint64(1000),
+
+	// The maximum number of vested lockup intersections in a lockup transaction.
+	DefaultMaximumVestedIntersectionsPerLockupTransaction: 1000,
+
+	// The maximum size of the mempool in bytes.
+	DefaultMempoolMaxSizeBytes: 3 * 1024 * 1024 * 1024, // 3GB
+
+	// The number of future blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumMempoolBlocks: 1,
+
+	// The number of past blocks to consider when estimating the mempool fee.
+	DefaultMempoolFeeEstimatorNumPastBlocks: 50,
+
+	// The maximum size of blocks for PoS.
+	DefaultMaxBlockSizeBytesPoS: 32000, // 32KB TODO: verify this is a sane value.
+
+	// The soft maximum size of blocks for PoS.
+	DefaultSoftMaxBlockSizeBytesPoS: 16000, // 16KB TODO: verify this is a sane value.
+
+	// The maximum size for a single txn in PoS.
+	DefaultMaxTxnSizeBytesPoS: 25000, // 25KB TODO: verify this is a sane value.
+
+	// The interval between producing blocks.
+	DefaultBlockProductionIntervalMillisecondsPoS: 1500, // 1.5s TODO: verify this is a sane value.
+
+	// The interval between timing out a view.
+	DefaultTimeoutIntervalMillisecondsPoS: 30000, // 30s TODO: verify this is a sane value.
+
+	// The peer handshake certificate timeout.
+	HandshakeTimeoutMicroSeconds: uint64(900000000),
+
+	// DisableNetworkManagerRoutines is a testing flag that disables the network manager routines.
+	DisableNetworkManagerRoutines: false,
+
+	// See comment on DeSoMainnetParams
+	DefaultMempoolCongestionFactorBasisPoints:             uint64(9000),
+	DefaultMempoolPastBlocksCongestionFactorBasisPoints:   uint64(9000),
+	DefaultMempoolPriorityPercentileBasisPoints:           uint64(1000),
+	DefaultMempoolPastBlocksPriorityPercentileBasisPoints: uint64(9000),
+
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
@@ -1226,16 +1731,44 @@ const (
 	IsFrozenKey = "IsFrozen"
 
 	// Keys for a GlobalParamUpdate transaction's extra data map.
-	USDCentsPerBitcoinKey                  = "USDCentsPerBitcoin"
-	MinNetworkFeeNanosPerKBKey             = "MinNetworkFeeNanosPerKB"
-	CreateProfileFeeNanosKey               = "CreateProfileFeeNanos"
-	CreateNFTFeeNanosKey                   = "CreateNFTFeeNanos"
-	MaxCopiesPerNFTKey                     = "MaxCopiesPerNFT"
-	MaxNonceExpirationBlockHeightOffsetKey = "MaxNonceExpirationBlockHeightOffset"
-	ForbiddenBlockSignaturePubKeyKey       = "ForbiddenBlockSignaturePubKey"
+	USDCentsPerBitcoinKey                             = "USDCentsPerBitcoin"
+	MinNetworkFeeNanosPerKBKey                        = "MinNetworkFeeNanosPerKB"
+	CreateProfileFeeNanosKey                          = "CreateProfileFeeNanos"
+	CreateNFTFeeNanosKey                              = "CreateNFTFeeNanos"
+	MaxCopiesPerNFTKey                                = "MaxCopiesPerNFT"
+	MaxNonceExpirationBlockHeightOffsetKey            = "MaxNonceExpirationBlockHeightOffset"
+	ForbiddenBlockSignaturePubKeyKey                  = "ForbiddenBlockSignaturePubKey"
+	StakeLockupEpochDurationKey                       = "StakeLockupEpochDuration"
+	ValidatorJailEpochDurationKey                     = "ValidatorJailEpochDuration"
+	LeaderScheduleMaxNumValidatorsKey                 = "LeaderScheduleMaxNumValidators"
+	ValidatorSetMaxNumValidatorsKey                   = "ValidatorSetMaxNumValidators"
+	StakingRewardsMaxNumStakesKey                     = "StakingRewardsMaxNumStakes"
+	StakingRewardsAPYBasisPointsKey                   = "StakingRewardsAPYBasisPoints"
+	EpochDurationNumBlocksKey                         = "EpochDurationNumBlocks"
+	JailInactiveValidatorGracePeriodEpochsKey         = "JailInactiveValidatorGracePeriodEpochs"
+	MaximumVestedIntersectionsPerLockupTransactionKey = "MaximumVestedIntersectionsPerLockupTransaction"
+	FeeBucketGrowthRateBasisPointsKey                 = "FeeBucketGrowthRateBasisPointsKey"
+	BlockTimestampDriftNanoSecsKey                    = "BlockTimestampDriftNanoSecs"
+	MempoolMaxSizeBytesKey                            = "MempoolMaxSizeBytes"
+	MempoolFeeEstimatorNumMempoolBlocksKey            = "MempoolFeeEstimatorNumMempoolBlocks"
+	MempoolFeeEstimatorNumPastBlocksKey               = "MempoolFeeEstimatorNumPastBlocks"
+	MempoolCongestionFactorBasisPointsKey             = "MempoolCongestionFactorBasisPoints"
+	MempoolPastBlocksCongestionFactorBasisPointsKey   = "MempoolPastBlocksCongestionFactorBasisPoints"
+	MempoolPriorityPercentileBasisPointsKey           = "MempoolPriorityPercentileBasisPoints"
+	MempoolPastBlocksPriorityPercentileBasisPointsKey = "MempoolPastBlocksPriorityPercentileBasisPoints"
+	MaxBlockSizeBytesPoSKey                           = "MaxBlockSizeBytesPoS"
+	SoftMaxBlockSizeBytesPoSKey                       = "SoftMaxBlockSizeBytesPoS"
+	MaxTxnSizeBytesPoSKey                             = "MaxTxnSizeBytesPoS"
+	BlockProductionIntervalPoSKey                     = "BlockProductionIntervalPoS"
+	TimeoutIntervalPoSKey                             = "TimeoutIntervalPoS"
 
 	DiamondLevelKey    = "DiamondLevel"
 	DiamondPostHashKey = "DiamondPostHash"
+
+	// Atomic Transaction Keys
+	AtomicTxnsChainLength    = "AtmcChnLen"
+	NextAtomicTxnPreHash     = "NxtAtmcHsh"
+	PreviousAtomicTxnPreHash = "PrvAtmcHsh"
 
 	// Key in transaction's extra data map containing the derived key used in signing the txn.
 	DerivedPublicKey = "DerivedPublicKey"
@@ -1306,6 +1839,8 @@ var (
 		// We initialize the CreateNFTFeeNanos to 0 so we do not assess a fee to create an NFT until specified by ParamUpdater.
 		CreateNFTFeeNanos: 0,
 		MaxCopiesPerNFT:   0,
+		// We initialize the FeeBucketGrowthRateBasisPoints to 1000, or equivalently, a multiplier of 1.1x.
+		FeeBucketGrowthRateBasisPoints: 1000,
 	}
 )
 
@@ -1331,6 +1866,25 @@ const (
 	// Access group key constants
 	MinAccessGroupKeyNameCharacters = 1
 	MaxAccessGroupKeyNameCharacters = 32
+	// Min/MaxMaxBlockSizeBytes - Min/max value to which the max block size can be set.
+	MinMaxBlockSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
+	MaxMaxBlockSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
+	// Min/MaxSoftMaxBlockSizeBytes - Min/max value to which the soft max block size can be set.
+	MinSoftMaxBlockSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
+	MaxSoftMaxBlockSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
+	// Min/MaxMaxTxnSizeBytes - Min/max value to which the max txn size can be set.
+	MinMaxTxnSizeBytes = 1000     // 1kb TODO: Verify this is a sane value.
+	MaxMaxTxnSizeBytes = 16000000 // 16MB TODO: Verify this is a sane value.
+	// MinFeeBucketSize is the minimum size of a fee bucket that we'll allow global params to
+	// be configured to compute. This is a safety measure to prevent the fee bucket from being
+	// too small and causing issues with the mempool.
+	MinFeeBucketSize = 10
+	// Min/MaxBlockProductionIntervalMillisecondsPoS - Min/max value to which the block production interval can be set.
+	MinBlockProductionIntervalMillisecondsPoS = 1000  // 1s TODO: Verify this is a sane value.
+	MaxBlockProductionIntervalMillisecondsPoS = 10000 // 10s TODO: Verify this is a sane value.
+	// Min/MaxTimeoutIntervalMillisecondsPoS - Min/max value to which the timeout interval can be set.
+	MinTimeoutIntervalMillisecondsPoS = 1000  // 1s TODO: Verify this is a sane value.
+	MaxTimeoutIntervalMillisecondsPoS = 60000 // 60s TODO: Verify this is a sane value.
 
 	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
 	// is set to before specified by ParamUpdater.
@@ -1352,3 +1906,14 @@ const AssociationNullTerminator = byte(0)
 
 // The name of the txt file that contains whether the current Badger DB is using performance or default options.
 const PerformanceDbOptsFileName = "performance_db_opts.txt"
+
+// Constants used for staking rewards.
+const MaxBasisPoints = uint64(10000)                     // 1e4
+const NanoSecsPerYear = uint64(365) * 24 * 60 * 60 * 1e9 // 365 days * 24 hours * 60 minutes * 60 seconds * 1e9 nanoseconds
+
+const BytesPerKB = 1000
+
+const DefaultMainnetCheckpointProvider = "https://node.deso.org"
+const DefaultTestnetCheckpointProvider = "https://test.deso.org"
+
+const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"

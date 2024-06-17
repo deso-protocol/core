@@ -5,12 +5,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
 
 	"github.com/decred/dcrd/lru"
 
@@ -18,7 +21,6 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
@@ -53,13 +55,21 @@ type ServerReply struct {
 type Server struct {
 	cmgr          *ConnectionManager
 	blockchain    *Blockchain
+	datadir       string
 	snapshot      *Snapshot
 	forceChecksum bool
 	mempool       *DeSoMempool
+	posMempool    *PosMempool
 	miner         *DeSoMiner
 	blockProducer *DeSoBlockProducer
 	eventManager  *EventManager
 	TxIndex       *TXIndex
+	params        *DeSoParams
+
+	networkManager *NetworkManager
+
+	fastHotStuffConsensus                    *FastHotStuffConsensus
+	fastHotStuffConsensusTransitionCheckTime time.Time
 
 	// All messages received from peers get sent from the ConnectionManager to the
 	// Server through this channel.
@@ -97,6 +107,9 @@ type Server struct {
 	// point we can make the optimization.
 	SyncPeer *Peer
 
+	// When --connect-ips is set, we don't connect to anything from the addrmgr.
+	connectIps []string
+
 	// If we're syncing state using hypersync, we'll keep track of the progress using HyperSyncProgress.
 	// It stores information about all the prefixes that we're fetching. The way that HyperSyncProgress
 	// is organized allows for multi-peer state synchronization. In such case, we would assign prefixes
@@ -123,7 +136,9 @@ type Server struct {
 	// It is organized in this way so that we can limit the number of addresses we
 	// are distributing for a single peer to avoid a DOS attack.
 	addrsToBroadcastLock deadlock.RWMutex
-	addrsToBroadcastt    map[string][]*SingleAddr
+	addrsToBroadcast     map[string][]*SingleAddr
+
+	AddrMgr *addrmgr.AddrManager
 
 	// When set to true, we disable the ConnectionManager
 	DisableNetworking bool
@@ -171,6 +186,10 @@ func (srv *Server) ResetRequestQueues() {
 	srv.requestedTransactionsMap = make(map[BlockHash]*GetDataRequestInfo)
 }
 
+func (srv *Server) GetNetworkManager() *NetworkManager {
+	return srv.networkManager
+}
+
 // dataLock must be acquired for writing before calling this function.
 func (srv *Server) _removeRequest(hash *BlockHash) {
 	// Just be lazy and remove the hash from everything indiscriminately to
@@ -215,7 +234,13 @@ func (srv *Server) GetBlockchain() *Blockchain {
 }
 
 // TODO: The hallmark of a messy non-law-of-demeter-following interface...
-func (srv *Server) GetMempool() *DeSoMempool {
+func (srv *Server) GetMempool() Mempool {
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
+
+	if srv.params.IsPoSBlockHeight(uint64(srv.blockchain.BlockTip().Height)) {
+		return srv.posMempool
+	}
 	return srv.mempool
 }
 
@@ -224,7 +249,6 @@ func (srv *Server) GetBlockProducer() *DeSoBlockProducer {
 	return srv.blockProducer
 }
 
-// TODO: The hallmark of a messy non-law-of-demeter-following interface...
 func (srv *Server) GetConnectionManager() *ConnectionManager {
 	return srv.cmgr
 }
@@ -234,7 +258,11 @@ func (srv *Server) GetMiner() *DeSoMiner {
 	return srv.miner
 }
 
-func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
+	txnHash := txn.Hash()
+	if txnHash == nil {
+		return nil, fmt.Errorf("BroadcastTransaction: Txn hash is nil")
+	}
 	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
@@ -246,25 +274,19 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MempoolTx, error) {
 
 	// At this point, we know the transaction has been run through the mempool.
 	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
-	srv.mempool.BlockUntilReadOnlyViewRegenerated()
+	validationErr := srv.GetMempool().WaitForTxnValidation(txnHash)
+	if validationErr != nil {
+		return nil, fmt.Errorf("BroadcastTransaction: Transaction %v "+
+			"was not validated due to error: %v", txnHash, validationErr)
+	}
 
 	return mempoolTxs, nil
 }
 
 func (srv *Server) VerifyAndBroadcastTransaction(txn *MsgDeSoTxn) error {
-	// Grab the block tip and use it as the height for validation.
-	blockHeight := srv.blockchain.BlockTip().Height
-	err := srv.blockchain.ValidateTransaction(
-		txn,
-		// blockHeight is set to the next block since that's where this
-		// transaction will be mined at the earliest.
-		blockHeight+1,
-		true,
-		srv.mempool)
-	if err != nil {
-		return fmt.Errorf("VerifyAndBroadcastTransaction: Problem validating txn: %v", err)
-	}
-
+	// The BroadcastTransaction call validates the transaction internally according to the
+	// mempool txn addition rules. If the transaction is valid, it will broadcast the txn to
+	// peers. Otherwise, it returns an error.
 	if _, err := srv.BroadcastTransaction(txn); err != nil {
 		return fmt.Errorf("VerifyAndBroadcastTransaction: Problem broadcasting txn: %v", err)
 	}
@@ -339,6 +361,7 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 // TODO: Refactor all these arguments into a config object or something.
 func NewServer(
 	_params *DeSoParams,
+	_isRegtest bool,
 	_listeners []net.Listener,
 	_desoAddrMgr *addrmgr.AddrManager,
 	_connectIps []string,
@@ -349,6 +372,7 @@ func NewServer(
 	_minerPublicKeys []string,
 	_numMiningThreads uint64,
 	_limitOneInboundConnectionPerIP bool,
+	_peerConnectionRefreshIntervalMillis uint64,
 	_hyperSync bool,
 	_syncType NodeSyncType,
 	_maxSyncBlockHeight uint32,
@@ -374,8 +398,18 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
-	_hypersyncMaxQueueSize uint32) (
-	_srv *Server, _err error, _shouldRestart bool) {
+	_hypersyncMaxQueueSize uint32,
+	_blsKeystore *BLSKeystore,
+	_mempoolBackupIntervalMillis uint64,
+	_mempoolMaxValidationViewConnects uint64,
+	_transactionValidationRefreshIntervalMillis uint64,
+	_stateSyncerMempoolTxnSyncLimit uint64,
+	_checkpointSyncingProviders []string,
+) (
+	_srv *Server,
+	_err error,
+	_shouldRestart bool,
+) {
 
 	var err error
 
@@ -384,7 +418,7 @@ func NewServer(
 	if _stateChangeDir != "" {
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
-		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType)
+		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType, _stateSyncerMempoolTxnSyncLimit)
 		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
 	}
@@ -394,8 +428,8 @@ func NewServer(
 	shouldRestart := false
 	archivalMode := false
 	if _hyperSync {
-		_snapshot, err, shouldRestart = NewSnapshot(_db, _dataDir, _snapshotBlockHeightPeriod,
-			false, false, _params, _disableEncoderMigrations, _hypersyncMaxQueueSize, eventManager)
+		_snapshot, err, shouldRestart = NewSnapshot(_db, _snapshotBlockHeightPeriod, false, false, _params,
+			_disableEncoderMigrations, _hypersyncMaxQueueSize, eventManager)
 		if err != nil {
 			panic(err)
 		}
@@ -415,6 +449,10 @@ func NewServer(
 		snapshot:                     _snapshot,
 		nodeMessageChannel:           _nodeMessageChan,
 		forceChecksum:                _forceChecksum,
+		AddrMgr:                      _desoAddrMgr,
+		params:                       _params,
+		connectIps:                   _connectIps,
+		datadir:                      _dataDir,
 	}
 
 	if stateChangeSyncer != nil {
@@ -425,14 +463,15 @@ func NewServer(
 	// manager. It just takes and keeps track of the median time among our peers so
 	// we can keep a consistent clock.
 	timesource := chainlib.NewMedianTime()
+	// We need to add an initial time sample or else it will return the zero time, which
+	// messes things up during initialization.
+	timesource.AddTimeSample("my-time", time.Now())
 
 	// Create a new connection manager but note that it won't be initialized until Start().
-	_incomingMessages := make(chan *ServerMessage, (_targetOutboundPeers+_maxInboundPeers)*3)
+	_incomingMessages := make(chan *ServerMessage, _params.ServerMessageChannelSize+(_targetOutboundPeers+_maxInboundPeers)*3)
 	_cmgr := NewConnectionManager(
-		_params, _desoAddrMgr, _listeners, _connectIps, timesource,
-		_targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
-		_hyperSync, _syncType, _stallTimeoutSeconds, _minFeeRateNanosPerKB,
-		_incomingMessages, srv)
+		_params, _listeners, _hyperSync, _syncType, _stallTimeoutSeconds,
+		_minFeeRateNanosPerKB, _incomingMessages, srv)
 
 	// Set up the blockchain data structure. This is responsible for accepting new
 	// blocks, keeping track of the best chain, and keeping all of that state up
@@ -452,18 +491,42 @@ func NewServer(
 
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
-		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode)
+		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode, _checkpointSyncingProviders)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}
 
+	headerCumWorkStr := "<nil>"
+	headerCumWork := BigintToHash(_chain.headerTip().CumWork)
+	if headerCumWork != nil {
+		headerCumWorkStr = hex.EncodeToString(headerCumWork[:])
+	}
+	blockCumWorkStr := "<nil>"
+	blockCumWork := BigintToHash(_chain.blockTip().CumWork)
+	if blockCumWork != nil {
+		blockCumWorkStr = hex.EncodeToString(blockCumWork[:])
+	}
 	glog.V(1).Infof("Initialized chain: Best Header Height: %d, Header Hash: %s, Header CumWork: %s, Best Block Height: %d, Block Hash: %s, Block CumWork: %s",
 		_chain.headerTip().Height,
 		hex.EncodeToString(_chain.headerTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.headerTip().CumWork)[:]),
+		headerCumWorkStr,
 		_chain.blockTip().Height,
 		hex.EncodeToString(_chain.blockTip().Hash[:]),
-		hex.EncodeToString(BigintToHash(_chain.blockTip().CumWork)[:]))
+		blockCumWorkStr)
+
+	nodeServices := SFFullNodeDeprecated
+	if _hyperSync {
+		nodeServices |= SFHyperSync
+	}
+	if archivalMode {
+		nodeServices |= SFArchivalNode
+	}
+	if _blsKeystore != nil {
+		nodeServices |= SFPosValidator
+	}
+	srv.networkManager = NewNetworkManager(_params, srv, _chain, _cmgr, _blsKeystore, _desoAddrMgr,
+		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
+		_peerConnectionRefreshIntervalMillis, _minFeeRateNanosPerKB, nodeServices)
 
 	if srv.stateChangeSyncer != nil {
 		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
@@ -475,9 +538,33 @@ func NewServer(
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
 		_mempoolDumpDir, false)
 
-	// Initialize state syncer mempool job, if needed.
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
+	// known state of the chain. This will all be overwritten as we process blocks later on.
+	currentUtxoView, err := _chain.GetUncommittedTipView()
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing latest UtxoView"), true
+	}
+	currentGlobalParamsEntry := currentUtxoView.GetCurrentGlobalParamsEntry()
+	latestBlockHash := _chain.blockTip().Hash
+	latestBlock := _chain.GetBlock(latestBlockHash)
+	if latestBlock == nil {
+		return nil, errors.New("NewServer: Problem getting latest block from chain"), true
+	}
+	_posMempool := NewPosMempool()
+	err = _posMempool.Init(
+		_params,
+		currentGlobalParamsEntry,
+		currentUtxoView,
+		uint64(_chain.blockTip().Height),
+		_mempoolDumpDir,
+		_mempoolDumpDir == "", // If no mempool dump dir is set, then the mempool will be in memory only
+		_mempoolBackupIntervalMillis,
+		[]*MsgDeSoBlock{latestBlock},
+		_mempoolMaxValidationViewConnects,
+		_transactionValidationRefreshIntervalMillis,
+	)
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem initializing PoS mempool"), true
 	}
 
 	// Useful for debugging. Every second, it outputs the contents of the mempool
@@ -536,10 +623,28 @@ func NewServer(
 		_miner = nil
 	}
 
+	// Only initialize the FastHotStuffConsensus if the node is a validator with a BLS keystore
+	if _blsKeystore != nil {
+		srv.fastHotStuffConsensus = NewFastHotStuffConsensus(
+			_params,
+			srv.networkManager,
+			_chain,
+			_posMempool,
+			_blsKeystore.GetSigner(),
+		)
+		// On testnet, if the node is configured to be a PoW block producer, and it is configured
+		// to be also a PoS validator, then we attach block mined listeners to the miner to kick
+		// off the PoS consensus once the miner is done.
+		if _isRegtest && _params.NetworkType == NetworkType_TESTNET && _miner != nil && _blockProducer != nil {
+			_miner.AddBlockMinedListener(srv.submitRegtestValidatorRegistrationTxns)
+		}
+	}
+
 	// Set all the fields on the Server object.
 	srv.cmgr = _cmgr
 	srv.blockchain = _chain
 	srv.mempool = _mempool
+	srv.posMempool = _posMempool
 	srv.miner = _miner
 	srv.blockProducer = _blockProducer
 	srv.incomingMessages = _incomingMessages
@@ -559,7 +664,7 @@ func NewServer(
 	}
 
 	// Initialize the addrs to broadcast map.
-	srv.addrsToBroadcastt = make(map[string][]*SingleAddr)
+	srv.addrsToBroadcast = make(map[string][]*SingleAddr)
 
 	// This will initialize the request queues.
 	srv.ResetRequestQueues()
@@ -578,9 +683,7 @@ func NewServer(
 		}
 		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 			"properly last time"))
-		if err := _snapshot.ForceResetToLastSnapshot(_chain); err != nil {
-			return nil, errors.Wrapf(err, "NewServer: Problem in ForceResetToLastSnapshot"), true
-		}
+		return nil, errors.Wrapf(err, "NewServer: Restart required"), true
 	}
 
 	return srv, nil, shouldRestart
@@ -589,14 +692,6 @@ func NewServer(
 func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	glog.V(1).Infof("Server._handleGetHeadersMessage: called with locator: (%v), "+
 		"stopHash: (%v) from Peer %v", msg.BlockLocator, msg.StopHash, pp)
-
-	// Ignore GetHeaders requests we're still syncing.
-	if srv.blockchain.isSyncing() {
-		chainState := srv.blockchain.chainState()
-		glog.V(1).Infof("Server._handleGetHeadersMessage: Ignoring GetHeaders from Peer %v"+
-			"because node is syncing with ChainState (%v)", pp, chainState)
-		return
-	}
 
 	// Find the most recent known block in the best block chain based
 	// on the block locator and fetch all of the headers after it until either
@@ -610,7 +705,11 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	// Use the block after the genesis block if no other blocks in the
 	// provided locator are known. This does mean the client will start
 	// over with the genesis block if unknown block locators are provided.
-	headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash)
+	maxHeadersPerMsg := MaxHeadersPerMsg
+	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 {
+		maxHeadersPerMsg = MaxHeadersPerMsgPos
+	}
+	headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
 
 	// Send found headers to the requesting peer.
 	blockTip := srv.blockchain.blockTip()
@@ -694,16 +793,17 @@ func (srv *Server) GetSnapshot(pp *Peer) {
 			return
 		}
 	}
-	// If operationQueueSemaphore is full, we are already storing too many chunks in memory. Block the thread while
-	// we wait for the queue to clear up.
-	srv.snapshot.operationQueueSemaphore <- struct{}{}
-	// Now send a message to the peer to fetch the snapshot chunk.
-	pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
-		SnapshotStartKey: lastReceivedKey,
-	}, false)
-
-	glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
-		"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
+	// As a pace-setting mechanism, we enqueue to the operationQueueSemaphore in a go routine. The request will be blocked
+	// if there are too many requests in memory.
+	go func() {
+		srv.snapshot.operationQueueSemaphore <- struct{}{}
+		// Now send a message to the peer to fetch the snapshot chunk.
+		glog.V(2).Infof("Server.GetSnapshot: Sending a GetSnapshot message to peer (%v) "+
+			"with Prefix (%v) and SnapshotStartEntry (%v)", pp, prefix, lastReceivedKey)
+		pp.AddDeSoMessage(&MsgDeSoGetSnapshot{
+			SnapshotStartKey: lastReceivedKey,
+		}, false)
+	}()
 }
 
 // GetBlocksToStore is part of the archival mode, which makes the node download all historical blocks after completing
@@ -721,7 +821,14 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 	for _, blockNode := range srv.blockchain.bestChain {
 		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
-			numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
+			maxBlocksInFlight := MaxBlocksInFlight
+			if pp.NegotiatedProtocolVersion >= ProtocolVersion2 &&
+				(srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) ||
+					srv.params.NetworkType == NetworkType_TESTNET) {
+
+				maxBlocksInFlight = MaxBlocksInFlightPoS
+			}
+			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
 			currentHeight := int(blockNode.Height)
 			blockNodesToFetch := []*BlockNode{}
 			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
@@ -771,11 +878,11 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 // GetBlocks computes what blocks we need to fetch and asks for them from the
 // corresponding peer. It is typically called after we have exited
 // SyncStateSyncingHeaders.
-func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
-	// Fetch as many blocks as we can from this peer.
-	numBlocksToFetch := MaxBlocksInFlight - len(pp.requestedBlocks)
+func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
+	numBlocksToFetch := srv.getMaxBlocksInFlight(pp) - len(pp.requestedBlocks)
 	blockNodesToFetch := srv.blockchain.GetBlockNodesToFetch(
-		numBlocksToFetch, maxHeight, pp.requestedBlocks)
+		numBlocksToFetch, maxHeight, pp.requestedBlocks,
+	)
 	if len(blockNodesToFetch) == 0 {
 		// This can happen if, for example, we're already requesting the maximum
 		// number of blocks we can. Just return in this case.
@@ -786,35 +893,145 @@ func (srv *Server) GetBlocks(pp *Peer, maxHeight int) {
 	hashList := []*BlockHash{}
 	for _, node := range blockNodesToFetch {
 		hashList = append(hashList, node.Hash)
-
 		pp.requestedBlocks[*node.Hash] = true
 	}
-	pp.AddDeSoMessage(&MsgDeSoGetBlocks{
-		HashList: hashList,
-	}, false)
+
+	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: hashList}, false)
 
 	glog.V(1).Infof("GetBlocks: Downloading %d blocks from header %v to header %v from peer %v",
 		len(blockNodesToFetch),
 		blockNodesToFetch[0].Header,
 		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
-		pp)
+		pp,
+	)
+}
+
+// RequestBlocksByHash requests the exact blocks specified by the block hashes from the peer.
+func (srv *Server) RequestBlocksByHash(pp *Peer, blockHashes []*BlockHash) {
+	numBlocksToFetch := srv.getMaxBlocksInFlight(pp) - len(pp.requestedBlocks)
+	if numBlocksToFetch <= 0 {
+		return
+	}
+
+	// We will only request the blocks that we haven't already requested.
+	blocksToRequest := []*BlockHash{}
+	for _, blockHash := range blockHashes {
+		if pp.requestedBlocks[*blockHash] {
+			continue
+		}
+		blocksToRequest = append(blocksToRequest, blockHash)
+		pp.requestedBlocks[*blockHash] = true
+	}
+
+	if len(blocksToRequest) == 0 {
+		return
+	}
+
+	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: blocksToRequest}, false)
+
+	glog.V(1).Infof("GetBlockByHash: Downloading %d blocks from peer %v", len(blocksToRequest), pp)
+}
+
+func (srv *Server) getMaxBlocksInFlight(pp *Peer) int {
+	// Fetch as many blocks as we can from this peer. If our peer is on PoS
+	// then we can safely request a lot more blocks from them in each flight.
+	maxBlocksInFlight := MaxBlocksInFlight
+	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 &&
+		(srv.params.IsPoSBlockHeight(uint64(srv.blockchain.blockTip().Height)) ||
+			srv.params.NetworkType == NetworkType_TESTNET) {
+		maxBlocksInFlight = MaxBlocksInFlightPoS
+	}
+	return maxBlocksInFlight
+}
+
+// shouldVerifySignatures determines if we should verify signatures for headers or not.
+// For PoW headers, this always returns true because there are no signatures to verify and there is
+// no impact on syncing.
+// For PoW blocks, we verify signatures if we're not syncing.
+// For PoS headers and blocks, we check if we've seen the checkpoint block.
+// If the checkpoint block info is nil, we return true so that we verify signatures.
+// If we haven't seen the checkpoint block yet, we skip signature verification.
+// If the header height does not match the checkpoint block height, we should disconnect the peer.
+// Otherwise, return true.
+func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain bool) (_verifySignatures bool, _shouldDisconnect bool) {
+	// For PoW headers, there is no signature to verify in the header, so we return true
+	// just to be safe, but it has no impact on the syncing.
+	// For PoW blocks, we verify signatures if we're not syncing.
+	if srv.params.IsPoWBlockHeight(header.Height) {
+		if !isHeaderChain {
+			return !srv.blockchain.isSyncing(), false
+		}
+		return true, false
+	}
+	// For PoS blocks, we check if we've seen the checkpoint block.
+	// If we don't have a check point block info, we return true so that we verify signatures.
+	checkpointBlockInfo := srv.blockchain.GetCheckpointBlockInfo()
+	if checkpointBlockInfo == nil {
+		return true, false
+	}
+	var hasSeenCheckpointBlockHash bool
+	var checkpointBlockNode *BlockNode
+	if isHeaderChain {
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
+	} else {
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+	}
+	// If we haven't seen the checkpoint block hash yet, we skip signature verification.
+	if !hasSeenCheckpointBlockHash {
+		// If we're past the checkpoint height and we haven't seen the checkpoint block, we should
+		// disconnect from the peer.
+		if header.Height > checkpointBlockInfo.Height {
+			return true, true
+		}
+		return false, false
+	}
+	// If the current header has a height below the checkpoint block height, we should skip signature verification
+	// even if we've seen the checkpoint block hash.
+	if header.Height < checkpointBlockInfo.Height {
+		return false, false
+	}
+	// Make sure that the header in the best chain map has the correct height, otherwise we need to disconnect this peer.
+	if uint64(checkpointBlockNode.Height) != checkpointBlockInfo.Height {
+		return true, true
+	}
+	return true, false
+}
+
+func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
+	checkpointBlockInfo := srv.blockchain.GetCheckpointBlockInfo()
+	if checkpointBlockInfo == nil {
+		return "<No checkpoint block info>"
+	}
+	hasSeenCheckPointBlockHash := false
+	if isHeaders {
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
+	} else {
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+	}
+	if !hasSeenCheckPointBlockHash {
+		return fmt.Sprintf("<Checkpoint block %v not seen yet>", checkpointBlockInfo.String())
+	}
+	return fmt.Sprintf("<Checkpoint block %v seen>", checkpointBlockInfo.String())
 }
 
 func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	printHeight := pp.StartingBlockHeight()
-	if srv.blockchain.headerTip().Height > printHeight {
-		printHeight = srv.blockchain.headerTip().Height
+	if uint64(srv.blockchain.headerTip().Height) > printHeight {
+		printHeight = uint64(srv.blockchain.headerTip().Height)
 	}
 	glog.Infof(CLog(Yellow, fmt.Sprintf("Received header bundle with %v headers "+
-		"in state %s from peer %v. Downloaded ( %v / %v ) total headers",
+		"in state %s from peer %v. Downloaded ( %v / %v ) total headers. Checkpoint syncing status: %v",
 		len(msg.Headers), srv.blockchain.chainState(), pp,
-		srv.blockchain.headerTip().Header.Height, printHeight)))
+		srv.blockchain.headerTip().Header.Height, printHeight, srv.getCheckpointSyncingStatus(true))))
 
-	// Start by processing all of the headers given to us. They should start
+	// If we get here, it means that the node is not currently running a Fast-HotStuff
+	// validator or that the node is syncing. In either case, we sync headers according
+	// to the blocksync rules.
+
+	// Start by processing all the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
-	numNewHeaders := 0
-	for _, headerReceived := range msg.Headers {
+	for ii, headerReceived := range msg.Headers {
 		// If we've set a maximum height for node sync and we've reached it,
 		// then we will not process any more headers.
 		if srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
@@ -851,11 +1068,28 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		}
 
 		// If we get here then we have a header we haven't seen before.
-		// TODO: Delete? This is redundant.
-		numNewHeaders++
+		// check if we need to verify signatures
+		verifySignatures, shouldDisconnect := srv.shouldVerifySignatures(headerReceived, true)
+		if shouldDisconnect {
+			glog.Errorf("Server._handleHeaderBundle: Disconnecting peer %v in state %s because a mismatch was "+
+				"found between the received header height %v does not match the checkpoint block info %v",
+				pp, srv.blockchain.chainState(), headerReceived.Height,
+				srv.blockchain.GetCheckpointBlockInfo().String())
+			pp.Disconnect()
+			return
+		}
 
-		// Process the header, as we haven't seen it before.
-		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash)
+		// Process the header, as we haven't seen it before, set verifySignatures to false
+		// if we're in the process of syncing.
+		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, verifySignatures)
+
+		numLogHeaders := 2000
+		if ii%numLogHeaders == 0 {
+			glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleHeaderBundle: Processed header ( %v / %v ) from Peer %v",
+				headerReceived.Height,
+				msg.Headers[len(msg.Headers)-1].Height,
+				pp)))
+		}
 
 		// If this header is an orphan or we encountered an error for any reason,
 		// disconnect from the peer. Because every header is sent in response to
@@ -878,7 +1112,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// its initial state is fully current we'll always bootstrap our mempools with a
 	// mempool request. The alternative is that our state is not fully current
 	// when we boot up, and we cover this second case in the _handleBlock function.
-	srv._maybeRequestSync(pp)
+	srv._tryRequestMempoolFromPeer(pp)
 
 	// At this point we should have processed all the headers. Now we will
 	// make a decision on whether to request more headers from this peer based
@@ -889,28 +1123,24 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// On the other hand, if the request contains MaxHeadersPerMsg, it is highly
 	// likely we have not hit the tip of our peer's chain, and so requesting more
 	// headers from the peer would likely be useful.
-	if uint32(len(msg.Headers)) < MaxHeadersPerMsg || srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
-		// If we have exhausted the peer's headers but our header chain still isn't
-		// current it means the peer we chose isn't current either. So disconnect
-		// from her and try to sync with someone else.
-		if srv.blockchain.chainState() == SyncStateSyncingHeaders {
-			glog.V(1).Infof("Server._handleHeaderBundle: Disconnecting from peer %v because "+
-				"we have exhausted their headers but our tip is still only "+
-				"at time=%v height=%d", pp,
-				time.Unix(int64(srv.blockchain.headerTip().Header.TstampSecs), 0),
-				srv.blockchain.headerTip().Header.Height)
-			pp.Disconnect()
-			return
-		}
-
+	maxHeadersPerMsg := MaxHeadersPerMsg
+	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 {
+		maxHeadersPerMsg = MaxHeadersPerMsgPos
+	}
+	if uint32(len(msg.Headers)) < maxHeadersPerMsg || srv.blockchain.isTipMaxed(srv.blockchain.headerTip()) {
 		// If we get here it means that we've just finished syncing headers and we will proceed to
 		// syncing state either through hyper sync or block sync. First let's check if the peer
 		// supports hypersync and if our block tip is old enough so that it makes sense to sync state.
+
 		if NodeCanHypersyncState(srv.cmgr.SyncType) && srv.blockchain.isHyperSyncCondition() {
 			// If hypersync conditions are satisfied, we will be syncing state. This assignment results
 			// in srv.blockchain.chainState() to be equal to SyncStateSyncingSnapshot
 			srv.blockchain.syncingState = true
 		}
+
+		// Fetch the header tip height once before we do anything in case we need it to compute the expected
+		// snapshot height.
+		currentHeaderTipHeight := uint64(srv.blockchain.headerTip().Height)
 
 		if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
@@ -918,8 +1148,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 			// If node is a hyper sync node and we haven't finished syncing state yet, we will kick off state sync.
 			if srv.cmgr.HyperSync {
-				bestHeaderHeight := uint64(srv.blockchain.headerTip().Height)
-				expectedSnapshotHeight := bestHeaderHeight - (bestHeaderHeight % srv.snapshot.SnapshotBlockHeightPeriod)
+				expectedSnapshotHeight := srv.computeExpectedSnapshotHeight(currentHeaderTipHeight)
 				srv.blockchain.snapshot.Migrations.CleanupMigrations(expectedSnapshotHeight)
 
 				if len(srv.HyperSyncProgress.PrefixProgress) != 0 {
@@ -969,12 +1198,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// Initialize the snapshot checksum so that it's reset. It got modified during chain initialization
 				// when processing seed transaction from the genesis block. So we need to clear it.
 				srv.snapshot.Checksum.ResetChecksum()
-				if err := srv.snapshot.Checksum.SaveChecksum(); err != nil {
+				if err = srv.snapshot.Checksum.SaveChecksum(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving snapshot to database, error (%v)", err)
 				}
 				// Reset the migrations along with the main checksum.
 				srv.snapshot.Migrations.ResetChecksums()
-				if err := srv.snapshot.Migrations.SaveMigrations(); err != nil {
+				if err = srv.snapshot.Migrations.SaveMigrations(); err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem saving migration checksums to database, error (%v)", err)
 				}
 
@@ -1003,6 +1232,15 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// If we have exhausted the peer's headers but our blocks aren't current,
 		// send a GetBlocks message to the peer for as many blocks as we can get.
 		if srv.blockchain.chainState() == SyncStateSyncingBlocks {
+			// Regardless of whether we're hypersyncing, we need to ensure that the/ FirstSnapshotBlockHeight
+			// is set correctly. This ensures that we won't do unnecessary hypersync computations until we
+			// absolutely have to. We
+			hasSnapshotMetadata := srv.snapshot != nil && srv.snapshot.CurrentEpochSnapshotMetadata != nil
+			if hasSnapshotMetadata && srv.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight == 0 {
+				expectedSnapshotHeight := srv.computeExpectedSnapshotHeight(currentHeaderTipHeight)
+				srv.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight = expectedSnapshotHeight
+			}
+
 			// A maxHeight of -1 tells GetBlocks to fetch as many blocks as we can
 			// from this peer without worrying about how many blocks the peer actually
 			// has. We can do that in this case since this usually happens during sync
@@ -1012,7 +1250,8 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				"height %d out of %d from peer %v",
 				blockTip.Header.Height+1, msg.TipHeight, pp)
 			maxHeight := -1
-			srv.GetBlocks(pp, maxHeight)
+			srv.blockchain.updateCheckpointBlockInfo()
+			srv.RequestBlocksUpToHeight(pp, maxHeight)
 			return
 		}
 
@@ -1043,7 +1282,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Downloading* blocks starting at "+
 				"block tip %v out of %d from peer %v",
 				blockTip.Header, msg.TipHeight, pp)
-			srv.GetBlocks(pp, int(msg.TipHeight))
+			srv.RequestBlocksUpToHeight(pp, int(msg.TipHeight))
 			return
 		}
 
@@ -1102,11 +1341,31 @@ func (srv *Server) _handleGetSnapshot(pp *Peer, msg *MsgDeSoGetSnapshot) {
 	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
+// computeExpectedSnapshotHeight computes the highest expected Hypersync snapshot height based on the
+// a header tips height. The returned value is a block height < headerTipHeight that represents the
+// highest block height that we expect the network to have produced a snapshot for.
+func (srv *Server) computeExpectedSnapshotHeight(headerTipHeight uint64) uint64 {
+	// The peer's snapshot block height period before the first PoS fork height is expected to be the
+	// PoW default value. After the fork height, it's expected to be the value defined in the params.
+	snapshotBlockHeightPeriod := srv.params.GetSnapshotBlockHeightPeriod(
+		headerTipHeight,
+		srv.snapshot.GetSnapshotBlockHeightPeriod(),
+	)
+	expectedSnapshotHeight := headerTipHeight - (headerTipHeight % snapshotBlockHeightPeriod)
+	posSetupForkHeight := uint64(srv.params.ForkHeights.ProofOfStake1StateSetupBlockHeight)
+	if headerTipHeight > posSetupForkHeight && expectedSnapshotHeight < posSetupForkHeight {
+		expectedSnapshotHeight = posSetupForkHeight - (posSetupForkHeight % srv.params.DefaultPoWSnapshotBlockHeightPeriod)
+	}
+
+	return expectedSnapshotHeight
+}
+
 // _handleSnapshot gets called when we receive a SnapshotData message from a peer. The message contains
 // a snapshot chunk, which is a sorted list of <key, value> pairs representing a section of the database
 // at current snapshot epoch. We will set these entries in our node's database as well as update the checksum.
 func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.timer.End("Get Snapshot")
+
 	srv.timer.Start("Server._handleSnapshot Main")
 	// If there are no db entries in the msg, we should also disconnect the peer. There should always be
 	// at least one entry sent, which is either the empty entry or the last key we've requested.
@@ -1137,6 +1396,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
+	// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
+	srv.snapshot.FreeOperationQueueSemaphore()
 
 	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
@@ -1366,41 +1627,45 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		}
 	}
 
-	// Reset the badger DB options to the performance options. This is done by closing the current DB instance
-	// and re-opening it with the new options.
-	// This is necessary because the blocksync process syncs indexes with records that are too large for the default
-	// badger options. The large records overflow the default setting value log size and cause the DB to crash.
-	dbDir := GetBadgerDbPath(srv.snapshot.mainDbDirectory)
-	opts := PerformanceBadgerOptions(dbDir)
-	opts.ValueDir = dbDir
-	srv.dirtyHackUpdateDbOpts(opts)
-
 	// After syncing state from a snapshot, we will sync remaining blocks. To do so, we will
 	// start downloading blocks from the snapshot height up to the blockchain tip. Since we
 	// already synced all the state corresponding to the sub-blockchain ending at the snapshot
 	// height, we will now mark all these blocks as processed. To do so, we will iterate through
 	// the blockNodes in the header chain and set them in the blockchain data structures.
-	err = srv.blockchain.db.Update(func(txn *badger.Txn) error {
-		for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-			curretNode := srv.blockchain.bestHeaderChain[ii]
-			// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
-			curretNode.Status |= StatusBlockProcessed
-			curretNode.Status |= StatusBlockValidated
-			srv.blockchain.blockIndex[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChainMap[*curretNode.Hash] = curretNode
-			srv.blockchain.bestChain = append(srv.blockchain.bestChain, curretNode)
-			err := PutHeightHashToNodeInfoWithTxn(txn, srv.snapshot, curretNode, false /*bitcoinNodes*/, srv.eventManager)
-			if err != nil {
-				return err
-			}
+	//
+	// We split the db update into batches of 10,000 block nodes to avoid a single transaction
+	// being too large and possibly causing an error in badger.
+	var blockNodeBatch []*BlockNode
+	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
+		currentNode := srv.blockchain.bestHeaderChain[ii]
+		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
+		currentNode.Status |= StatusBlockProcessed
+		currentNode.Status |= StatusBlockValidated
+		currentNode.Status |= StatusBlockCommitted
+		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
+		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
+		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+		blockNodeBatch = append(blockNodeBatch, currentNode)
+		if len(blockNodeBatch) < 10000 {
+			continue
 		}
-		// We will also set the hash of the block at snapshot height as the best chain hash.
-		err := PutBestHashWithTxn(txn, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
-		return err
-	})
+		err = PutHeightHashToNodeInfoBatch(srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
+			break
+		}
+		blockNodeBatch = []*BlockNode{}
+	}
+	if len(blockNodeBatch) > 0 {
+		err = PutHeightHashToNodeInfoBatch(srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
+		}
+	}
 
+	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 	if err != nil {
-		glog.Errorf("Server._handleSnapshot: Problem updating snapshot blocknodes, error: (%v)", err)
+		glog.Errorf("Server._handleSnapshot: Problem updating best hash, error: (%v)", err)
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
@@ -1413,8 +1678,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// Update the snapshot epoch metadata in the snapshot DB.
 	for ii := 0; ii < MetadataRetryCount; ii++ {
 		srv.snapshot.SnapshotDbMutex.Lock()
-		err = srv.snapshot.SnapshotDb.Update(func(txn *badger.Txn) error {
-			return txn.Set(_prefixLastEpochMetadata, srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
+		err = srv.snapshot.mainDb.Update(func(txn *badger.Txn) error {
+			return txn.Set(getMainDbPrefix(_prefixLastEpochMetadata), srv.snapshot.CurrentEpochSnapshotMetadata.ToBytes())
 		})
 		srv.snapshot.SnapshotDbMutex.Unlock()
 		if err != nil {
@@ -1444,52 +1709,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 
 	headerTip := srv.blockchain.headerTip()
-	srv.GetBlocks(pp, int(headerTip.Height))
-}
-
-// dirtyHackUpdateDbOpts closes the current badger DB instance and re-opens it with the provided options.
-//
-// FIXME: This is a dirty hack that we did in order to decrease memory usage. The reason why we needed it is
-// as follows:
-//   - When we run a node with --hypersync or --hypersync-archival, using PerformanceOptions the whole way
-//     through causes it to use too much memory.
-//   - The problem is that if we use DefaultOptions, then the block sync after HyperSync is complete will fail
-//     because it writes really big entries in a single transaction to the PrefixBlockHashToUtxoOperations
-//     index.
-//   - So, in order to keep memory usage reasonable, we need to use DefaultOptions during the HyperSync portion
-//     and then *switch over* to PerformanceOptions once the HyperSync is complete. That is what this function
-//     is used for.
-//   - Running a node with --blocksync requires that we use PerformanceOptions the whole way through, but we
-//     are moving away from syncing nodes that way, so we don't need to worry too much about that case right now.
-//
-// The long-term solution is to break the writing of the PrefixBlockHashToUtxoOperations index into chunks,
-// or to remove it entirely. We don't want to do that work right now, but we want to reduce the memory usage
-// for the "common" case, which is why we're doing this dirty hack for now.
-func (srv *Server) dirtyHackUpdateDbOpts(opts badger.Options) {
-	// Make sure that a mempool process doesn't try to access the DB while we're closing and re-opening it.
-	srv.mempool.mtx.Lock()
-	defer srv.mempool.mtx.Unlock()
-	// Make sure that a server process doesn't try to access the DB while we're closing and re-opening it.
-	srv.DbMutex.Lock()
-	defer srv.DbMutex.Unlock()
-	srv.blockchain.db.Close()
-	db, err := badger.Open(opts)
-	if err != nil {
-		// If we can't open the DB with the new options, we need to exit the process.
-		glog.Fatalf("Server._handleSnapshot: Problem switching badger db to performance opts, error: (%v)", err)
-	}
-	srv.blockchain.db = db
-	srv.snapshot.mainDb = srv.blockchain.db
-	srv.mempool.bc.db = srv.blockchain.db
-	srv.mempool.backupUniversalUtxoView.Handle = srv.blockchain.db
-	srv.mempool.universalUtxoView.Handle = srv.blockchain.db
-
-	// Save the new options to the DB so that we know what to use if the node restarts.
-	isPerformanceOptions := DbOptsArePerformance(&opts)
-	err = SaveBoolToFile(GetDbPerformanceOptionsFilePath(filepath.Dir(opts.ValueDir)), isPerformanceOptions)
-	if err != nil {
-		glog.Errorf("Server._handleSnapshot: Problem saving performance options to file, error: (%v)", err)
-	}
+	srv.RequestBlocksUpToHeight(pp, int(headerTip.Height))
 }
 
 func (srv *Server) _startSync() {
@@ -1508,6 +1728,13 @@ func (srv *Server) _startSync() {
 	// Find a peer with StartingHeight bigger than our best header tip.
 	var bestPeer *Peer
 	for _, peer := range srv.cmgr.GetAllPeers() {
+		// If connectIps is set, only sync from persistent peers.
+		if len(srv.connectIps) > 0 && !peer.IsPersistent() {
+			glog.Infof("Server._startSync: Connect-ips is set, so non-persistent peer is not a "+
+				"sync candidate %v", peer)
+			continue
+		}
+
 		if !peer.IsSyncCandidate() {
 			glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", peer, peer.isOutbound)
 			continue
@@ -1515,7 +1742,7 @@ func (srv *Server) _startSync() {
 
 		// Choose the peer with the best height out of everyone who's a
 		// valid sync candidate.
-		if peer.StartingBlockHeight() < bestHeight {
+		if peer.StartingBlockHeight() < uint64(bestHeight) {
 			continue
 		}
 
@@ -1559,22 +1786,48 @@ func (srv *Server) _startSync() {
 	srv.SyncPeer = bestPeer
 }
 
-func (srv *Server) _handleNewPeer(pp *Peer) {
+func (srv *Server) HandleAcceptedPeer(rn *RemoteNode) {
+	if rn == nil || rn.GetPeer() == nil {
+		return
+	}
+
+	pp := rn.GetPeer()
+	pp.SetServiceFlag(rn.GetServiceFlag())
+	pp.SetLatestBlockHeight(rn.GetLatestBlockHeight())
+
 	isSyncCandidate := pp.IsSyncCandidate()
 	isSyncing := srv.blockchain.isSyncing()
 	chainState := srv.blockchain.chainState()
-	glog.V(1).Infof("Server._handleNewPeer: Processing NewPeer: (%v); IsSyncCandidate(%v), syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
+	glog.V(1).Infof("Server.HandleAcceptedPeer: Processing NewPeer: (%v); IsSyncCandidate(%v), "+
+		"syncPeerIsNil=(%v), IsSyncing=(%v), ChainState=(%v)",
 		pp, isSyncCandidate, (srv.SyncPeer == nil), isSyncing, chainState)
 
-	// Request a sync if we're ready
-	srv._maybeRequestSync(pp)
+	// Request a mempool sync if we're ready
+	srv._tryRequestMempoolFromPeer(pp)
 
 	// Start syncing by choosing the best candidate.
 	if isSyncCandidate && srv.SyncPeer == nil {
 		srv._startSync()
 	}
+
 	if !isSyncCandidate {
 		glog.Infof("Peer is not sync candidate: %v (isOutbound: %v)", pp, pp.isOutbound)
+	}
+}
+
+func (srv *Server) maybeRequestAddresses(remoteNode *RemoteNode) {
+	if remoteNode == nil {
+		return
+	}
+	// If the address manager needs more addresses, then send a GetAddr message
+	// to the peer. This is best-effort.
+	if !srv.AddrMgr.NeedMoreAddresses() {
+		return
+	}
+
+	if err := remoteNode.SendMessage(&MsgDeSoGetAddr{}); err != nil {
+		glog.Errorf("Server.maybeRequestAddresses: Problem sending GetAddr message to "+
+			"remoteNode (id= %v); err: %v", remoteNode, err)
 	}
 }
 
@@ -1642,39 +1895,52 @@ func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 	}, false)
 }
 
-func (srv *Server) _handleDonePeer(pp *Peer) {
-	glog.V(1).Infof("Server._handleDonePeer: Processing DonePeer: %v", pp)
+func (srv *Server) _handleDisconnectedPeerMessage(pp *Peer) {
+	glog.V(1).Infof("Server._handleDisconnectedPeerMessage: Processing DonePeer: %v", pp)
 
 	srv._cleanupDonePeerState(pp)
 
-	// Attempt to find a new peer to sync from if the quitting peer is the
-	// sync peer and if our blockchain isn't current.
-	if srv.SyncPeer == pp && srv.blockchain.isSyncing() {
-
+	// Attempt to find a new peer to sync from if the quitting peer is the sync peer.
+	// We need to refresh the sync peer regardless of whether we're syncing or not.
+	// In the event that we fall behind, this allows us to switch to a peer allows us
+	// to continue syncing.
+	if srv.SyncPeer != nil && srv.SyncPeer.ID == pp.ID {
 		srv.SyncPeer = nil
 		srv._startSync()
 	}
 }
 
 func (srv *Server) _relayTransactions() {
-	glog.V(1).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
-	srv.mempool.BlockUntilReadOnlyViewRegenerated()
-	glog.V(1).Infof("Server._relayTransactions: Mempool view has regenerated")
-
 	// For each peer, compute the transactions they're missing from the mempool and
 	// send them an inv.
 	allPeers := srv.cmgr.GetAllPeers()
-	txnList := srv.mempool.readOnlyUniversalTransactionList
+
+	// Get the current mempool. This can be the PoW or PoS mempool depending on the
+	// current block height.
+	mempool := srv.GetMempool()
+
+	glog.V(3).Infof("Server._relayTransactions: Waiting for mempool readOnlyView to regenerate")
+	mempool.BlockUntilReadOnlyViewRegenerated()
+	glog.V(3).Infof("Server._relayTransactions: Mempool view has regenerated")
+
+	// We pull the transactions from either the PoW mempool or the PoS mempool depending
+	// on the current block height.
+	txnList := mempool.GetTransactions()
+
 	for _, pp := range allPeers {
-		if !pp.canReceiveInvMessagess {
+		if !pp.canReceiveInvMessages {
 			glog.V(1).Infof("Skipping invs for peer %v because not ready "+
-				"yet: %v", pp, pp.canReceiveInvMessagess)
+				"yet: %v", pp, pp.canReceiveInvMessages)
 			continue
 		}
 		// For each peer construct an inventory message that excludes transactions
 		// for which the minimum fee is below what the Peer will allow.
 		invMsg := &MsgDeSoInv{}
 		for _, newTxn := range txnList {
+			if !newTxn.IsValidated() {
+				continue
+			}
+
 			invVect := &InvVect{
 				Type: InvTypeTx,
 				Hash: *newTxn.Hash,
@@ -1685,6 +1951,10 @@ func (srv *Server) _relayTransactions() {
 				continue
 			}
 
+			// Add the transaction to the peer's known inventory. We do
+			// it here when we enqueue the message to the peers outgoing
+			// message queue so that we don't have remember to do it later.
+			pp.knownInventory.Add(*invVect)
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
@@ -1692,11 +1962,11 @@ func (srv *Server) _relayTransactions() {
 		}
 	}
 
-	glog.V(1).Infof("Server._relayTransactions: Relay to all peers is complete!")
+	glog.V(3).Infof("Server._relayTransactions: Relay to all peers is complete!")
 }
 
 func (srv *Server) _addNewTxn(
-	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MempoolTx, error) {
+	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MsgDeSoTxn, error) {
 
 	if srv.ReadOnlyMode {
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
@@ -1705,12 +1975,22 @@ func (srv *Server) _addNewTxn(
 		return nil, err
 	}
 
-	if srv.blockchain.chainState() != SyncStateFullyCurrent {
+	srv.blockchain.ChainLock.RLock()
+	tipHeight := uint64(srv.blockchain.BlockTip().Height)
+	chainState := srv.blockchain.chainState()
+	srv.blockchain.ChainLock.RUnlock()
 
-		err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
-			"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
-		glog.Error(err)
-		return nil, err
+	if chainState != SyncStateFullyCurrent {
+		// We allow txn relay if chain is in a need blocks state and is running PoS.
+		// We will error in two cases:
+		// - the chainState is not need blocks state
+		// - the chainState is need blocks state but the chain is not on PoS.
+		if chainState != SyncStateNeedBlocksss || !srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
+			err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
+				"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
+			glog.Error(err)
+			return nil, err
+		}
 	}
 
 	glog.V(1).Infof("Server._addNewTxnAndRelay: txn: %v, peer: %v", txn, pp)
@@ -1721,17 +2001,37 @@ func (srv *Server) _addNewTxn(
 		peerID = pp.ID
 	}
 
+	// Refresh TipHeight.
 	srv.blockchain.ChainLock.RLock()
-	newlyAcceptedTxns, err := srv.mempool.ProcessTransaction(
-		txn, true /*allowUnconnectedTxn*/, rateLimit, peerID, verifySignatures)
+	tipHeight = uint64(srv.blockchain.BlockTip().Height)
 	srv.blockchain.ChainLock.RUnlock()
-	if err != nil {
-		return nil, errors.Wrapf(err, "Server._handleTransaction: Problem adding transaction to mempool: ")
+
+	// Only attempt to add the transaction to the PoW mempool if we're on the
+	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
+	// txn validity checks to signal whether the txn has been added or not.
+	if uint64(tipHeight) < srv.params.GetFinalPoWBlockHeight() {
+		_, err := srv.mempool.ProcessTransaction(txn, true, rateLimit, peerID, verifySignatures)
+		if err != nil {
+			return nil, errors.Wrapf(err, "Server._addNewTxn: Problem adding transaction to mempool: ")
+		}
+
+		glog.V(1).Infof("Server._addNewTxn: newly accepted txn: %v, Peer: %v", txn, pp)
 	}
 
-	glog.V(1).Infof("Server._addNewTxnAndRelay: newlyAcceptedTxns: %v, Peer: %v", newlyAcceptedTxns, pp)
+	// Always add the txn to the PoS mempool. This will usually succeed if the txn
+	// addition into the PoW mempool succeeded above. However, we only return an error
+	// here if the block height is at or above the final PoW block height. In the event
+	// of an edge case where txns in the mempool are reordered, it is possible for the
+	// txn addition into the PoW mempool to succeed, while the addition into the PoS
+	// mempool fails. This error handling catches that and gives the user the correct
+	// feedback on the txn addition's success.
+	if err := srv.posMempool.AddTransaction(txn, time.Now()); err != nil {
+		if uint64(tipHeight) >= srv.params.GetFinalPoWBlockHeight() {
+			return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
+		}
+	}
 
-	return newlyAcceptedTxns, nil
+	return []*MsgDeSoTxn{txn}, nil
 }
 
 // It's assumed that the caller will hold the ChainLock for reading so
@@ -1755,6 +2055,11 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterConnectBlock(blk)
+	srv.posMempool.OnBlockConnected(blk)
+
+	if err := srv._updatePosMempoolAfterTipChange(); err != nil {
+		glog.Errorf("Server._handleBlockMainChainDisconnected: Problem updating pos mempool after tip change: %v", err)
+	}
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainConnected: Block %s height %d connected to "+
@@ -1778,26 +2083,71 @@ func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
 	// we connected the blocks and this wouldn't be guaranteed if we kicked
 	// off a goroutine for each update.
 	srv.mempool.UpdateAfterDisconnectBlock(blk)
+	srv.posMempool.OnBlockDisconnected(blk)
+
+	if err := srv._updatePosMempoolAfterTipChange(); err != nil {
+		glog.Errorf("Server._handleBlockMainChainDisconnected: Problem updating pos mempool after tip change: %v", err)
+	}
 
 	blockHash, _ := blk.Header.Hash()
 	glog.V(1).Infof("_handleBlockMainChainDisconnect: Block %s height %d disconnected from "+
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
 }
 
-func (srv *Server) _maybeRequestSync(pp *Peer) {
-	// Send the mempool message if DeSo and Bitcoin are fully current
-	if srv.blockchain.chainState() == SyncStateFullyCurrent {
-		// If peer is not nil and we haven't set a max sync blockheight, we will
-		if pp != nil && srv.blockchain.MaxSyncBlockHeight == 0 {
-			glog.V(1).Infof("Server._maybeRequestSync: Sending mempool message: %v", pp)
-			pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
-		} else {
-			glog.V(1).Infof("Server._maybeRequestSync: NOT sending mempool message because peer is nil: %v", pp)
-		}
+// _updatePosMempoolAfterTipChange updates the PoS mempool's latest UtxoView, block height, and
+// global params.
+func (srv *Server) _updatePosMempoolAfterTipChange() error {
+	// Update the PoS mempool's global params
+	currentBlockHeight := srv.blockchain.BlockTip().Height
+	currentUtxoView, err := srv.blockchain.GetUncommittedTipView()
+	if err != nil {
+		return err
+	}
+
+	currentGlobalParams := currentUtxoView.GetCurrentGlobalParamsEntry()
+	srv.posMempool.UpdateLatestBlock(currentUtxoView, uint64(currentBlockHeight))
+	srv.posMempool.UpdateGlobalParams(currentGlobalParams)
+
+	return nil
+}
+
+// _tryRequestMempoolFromPeer checks if the blockchain is current or in the steady state. If so,
+// it sends a MsgDeSoMempool to request the peer's mempool. After this point, the peer will send
+// us inv messages for transactions that we don't have in our mempool.
+func (srv *Server) _tryRequestMempoolFromPeer(pp *Peer) {
+	// If the peer is nil, then there's nothing to do.
+	if pp == nil {
+		glog.V(1).Infof("Server._tryRequestMempoolFromPeer: NOT sending mempool message because peer is nil: %v", pp)
+		return
+	}
+
+	// If we have already requested the mempool from the peer, then there's nothing to do.
+	if pp.hasReceivedMempoolMessage {
+		glog.V(2).Infof(
+			"Server._tryRequestMempoolFromPeer: NOT sending mempool message because we have already sent one: %v", pp,
+		)
+		return
+	}
+
+	// If the node was only configured to sync to a certain block height, then there's nothing to do.
+	if srv.blockchain.MaxSyncBlockHeight != 0 {
+		return
+	}
+
+	// We are OK to request the peer's mempool as long as the chain is current or we are running the
+	// FastHotStuffConsensus in the steady state.
+	isChainCurrent := srv.blockchain.chainState() == SyncStateFullyCurrent
+	isRunningFastHotStuffConsensus := srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning()
+
+	if isChainCurrent || isRunningFastHotStuffConsensus {
+		glog.V(1).Infof("Server._tryRequestMempoolFromPeer: Sending mempool message: %v", pp)
+		pp.AddDeSoMessage(&MsgDeSoMempool{}, false)
 	} else {
-		glog.V(1).Infof("Server._maybeRequestSync: NOT sending mempool message because not current: %v, %v",
+		glog.V(1).Infof(
+			"Server._tryRequestMempoolFromPeer: NOT sending mempool message. The node is still syncing: %v, %v",
 			srv.blockchain.chainState(),
-			pp)
+			pp,
+		)
 	}
 }
 
@@ -1816,13 +2166,13 @@ func (srv *Server) _handleBlockAccepted(event *BlockEvent) {
 		Hash: *blockHash,
 	}
 
-	// Iterate through all the peers and relay the InvVect to them. This will only
-	// actually be relayed if it's not already in the peer's knownInventory.
-	allPeers := srv.cmgr.GetAllPeers()
-	for _, pp := range allPeers {
-		pp.AddDeSoMessage(&MsgDeSoInv{
+	// Iterate through all non-validator peers and relay the InvVect to them.
+	// This will only actually be relayed if it's not already in the peer's knownInventory.
+	allNonValidators := srv.networkManager.GetAllNonValidators()
+	for _, remoteNode := range allNonValidators {
+		remoteNode.sendMessage(&MsgDeSoInv{
 			InvList: []*InvVect{invVect},
-		}, false)
+		})
 	}
 }
 
@@ -1839,11 +2189,16 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 	pp.Disconnect()
 }
 
-func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
-	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Received block ( %v / %v ) from Peer %v",
-		blk.Header.Height, srv.blockchain.headerTip().Height, pp)))
-
+// This function handles a single block that we receive from our peer. Originally, we would receive blocks
+// one by one from our peer. However, now we receive a batch of blocks all at once via _handleBlockBundle,
+// which then calls this function to process them one by one on our side.
+//
+// isLastBlock indicates that this is the last block in the list of blocks we received back
+// via a MsgDeSoBlockBundle message. When we receive a single block, isLastBlock will automatically
+// be true, which will give it its old single-block behavior.
+func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	srv.timer.Start("Server._handleBlock: General")
+
 	// Pull out the header for easy access.
 	blockHeader := blk.Header
 	if blockHeader == nil {
@@ -1854,32 +2209,30 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 
 	// If we've set a maximum sync height and we've reached that height, then we will
 	// stop accepting new blocks.
-	if srv.blockchain.isTipMaxed(srv.blockchain.blockTip()) &&
-		blockHeader.Height > uint64(srv.blockchain.blockTip().Height) {
-
+	blockTip := srv.blockchain.blockTip()
+	if srv.blockchain.isTipMaxed(blockTip) && blockHeader.Height > uint64(blockTip.Height) {
 		glog.Infof("Server._handleBlock: Exiting because block tip is maxed out")
 		return
 	}
 
-	// Compute the hash of the block.
+	// Compute the hash of the block. If the hash computation fails, then we log an error and
+	// disconnect from the peer. The block is obviously bad.
 	blockHash, err := blk.Header.Hash()
 	if err != nil {
-		// This should never happen if we got this far but log the error, clear the
-		// requestedBlocks, disconnect from the peer and return just in case.
-		srv._logAndDisconnectPeer(
-			pp, blk, "Problem computing block hash")
+		srv._logAndDisconnectPeer(pp, blk, "Problem computing block hash")
 		return
 	}
 
-	if pp != nil {
-		if _, exists := pp.requestedBlocks[*blockHash]; !exists {
-			glog.Errorf("_handleBlock: Getting a block that we haven't requested before, "+
-				"block hash (%v)", *blockHash)
-		}
-		delete(pp.requestedBlocks, *blockHash)
-	} else {
-		glog.Errorf("_handleBlock: Called with nil peer, this should never happen.")
+	// Unless we're running a PoS validator, we should not expect to see a block that we did not request. If
+	// we see such a block, then we log an error and disconnect from the peer.
+	_, isRequestedBlock := pp.requestedBlocks[*blockHash]
+	if srv.fastHotStuffConsensus == nil && !isRequestedBlock {
+		srv._logAndDisconnectPeer(pp, blk, "Getting a block that we haven't requested before")
+		return
 	}
+
+	// Delete the block from the requested blocks map. We do this whether the block was requested or not.
+	delete(pp.requestedBlocks, *blockHash)
 
 	// Check that the mempool has not received a transaction that would forbid this block's signature pubkey.
 	// This is a minimal check, a more thorough check is made in the ProcessBlock function. This check is
@@ -1899,22 +2252,48 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	srv.timer.End("Server._handleBlock: General")
 	srv.timer.Start("Server._handleBlock: Process Block")
 
-	// Only verify signatures for recent blocks.
-	var isOrphan bool
-	if srv.blockchain.isSyncing() {
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITHOUT "+
-			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, false)
+	// check if we should verify signatures or not.
+	verifySignatures, shouldDisconnect := srv.shouldVerifySignatures(blk.Header, false)
+	if shouldDisconnect {
+		glog.Errorf("Server._handleHeaderBundle: Disconnecting peer %v in state %s because a mismatch was "+
+			"found between the received header height %v does not match the checkpoint block info %v",
+			pp, srv.blockchain.chainState(), blk.Header.Height,
+			srv.blockchain.GetCheckpointBlockInfo().Hash.String())
+		pp.Disconnect()
+		return
+	}
 
+	var isOrphan bool
+	var blockHashesToRequest []*BlockHash
+
+	// Process the block using the FastHotStuffConsensus or through the blockchain directly. If we're in the
+	// PoS steady state, we pass the block to the FastHotStuffConsensus to handle the block. If we're still
+	// syncing, then we pass the block to the blockchain to handle the block with signature verification on or off.
+	if srv.fastHotStuffConsensus != nil && srv.fastHotStuffConsensus.IsRunning() {
+		// If the FastHotStuffConsensus has been initialized, then we pass the block to the new consensus
+		// which will validate the block, try to apply it, and handle the orphan case by requesting missing
+		// parents.
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Processing block %v with FastHotStuffConsensus with SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
+		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+		isOrphan = len(blockHashesToRequest) > 0
+	} else if !verifySignatures {
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Processing block %v WITHOUT signature checking because SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
+		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, false)
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
 		// ChainLock, which is what Bitcoin Core does.
-		glog.V(1).Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlock: Processing block %v WITH "+
-			"signature checking because SyncState=%v for peer %v",
-			blk, srv.blockchain.chainState(), pp)))
-		_, isOrphan, err = srv.blockchain.ProcessBlock(blk, true)
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Processing block %v WITH signature checking because SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
+		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, true)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never
@@ -1926,30 +2305,74 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 			// headers comment above but in the future we should probably try and figure
 			// out a way to be more strict about things.
 			glog.Warningf("Got duplicate block %v from peer %v", blk, pp)
+		} else if strings.Contains(err.Error(), RuleErrorFailedSpamPreventionsCheck.Error()) {
+			// If the block fails the spam prevention check, then it must be signed by the
+			// bad block proposer signature or it has a bad QC. In either case, we should
+			// disconnect the peer.
+			srv._logAndDisconnectPeer(pp, blk, errors.Wrapf(err, "Error while processing block at height %v: ", blk.Header.Height).Error())
+			return
 		} else {
-			srv._logAndDisconnectPeer(
-				pp, blk,
-				errors.Wrapf(err, "Error while processing block: ").Error())
+			// For any other error, we log the error and continue.
+			glog.Errorf("Server._handleBlock: Error while processing block at height %v: %v", blk.Header.Height, err)
 			return
 		}
 	}
-	if isOrphan {
-		// We should generally never receive orphan blocks. It indicates something
-		// went wrong in our headers syncing.
-		glog.Errorf("ERROR: Received orphan block with hash %v height %v. "+
-			"This should never happen", blockHash, blk.Header.Height)
-		return
-	}
+
 	srv.timer.End("Server._handleBlock: Process Block")
 
 	srv.timer.Print("Server._handleBlock: General")
 	srv.timer.Print("Server._handleBlock: Process Block")
 
-	// We shouldn't be receiving blocks while syncing headers.
+	// If we're not at the last block yet, then we're done. The rest of this code is only
+	// relevant after we've connected the last block, and it generally involves fetching
+	// more data from our peer.
+	if !isLastBlock {
+		return
+	}
+
+	if isOrphan {
+		// It's possible to receive an orphan block from the peer for a variety of reasons. If we
+		// see an orphan block, we do one of two things:
+		// 1. With the PoS protocol where it is possible to receive an orphan from the block producer
+		//    for any number of reasons, the ProcessBlockPoS returns a non-empty blockHashesToRequest list
+		//    for us to request from the peer.
+		// 2. With the PoW protocol where we do not expect to ever receive an orphan block due to how
+		//    we request header first before requesting blocks, we disconnect from the peer.
+
+		glog.Warningf("ERROR: Received orphan block with hash %v height %v.", blockHash, blk.Header.Height)
+
+		// Request the missing blocks from the peer if needed.
+		if len(blockHashesToRequest) > 0 {
+			glog.Warningf(
+				"Server._handleBlock: Orphan block %v at height %d. Requesting missing ancestors from peer: %v",
+				blockHash,
+				blk.Header.Height,
+				pp,
+			)
+			srv.RequestBlocksByHash(pp, blockHashesToRequest)
+		} else {
+			// If we don't have any blocks to request, then we disconnect from the peer.
+			srv._logAndDisconnectPeer(pp, blk, "Received orphan block")
+		}
+
+		return
+	}
+
+	// We shouldn't be receiving blocks while syncing headers, but we can end up here
+	// if it took longer than MaxTipAge to sync blocks to this point. We'll revert to
+	// syncing headers and then resume syncing blocks once we're current again.
 	if srv.blockchain.chainState() == SyncStateSyncingHeaders {
-		srv._logAndDisconnectPeer(
-			pp, blk,
-			"We should never get blocks when we're syncing headers")
+		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
+		glog.Infof("Requesting headers: %v", pp)
+
+		locator := srv.blockchain.LatestHeaderLocator()
+		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
+			StopHash:     &BlockHash{},
+			BlockLocator: locator,
+		}, false)
+		glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
+			"header tip %v from peer %v",
+			srv.blockchain.HeaderTip(), pp)
 		return
 	}
 
@@ -1969,7 +2392,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		// peer, which is OK because we can assume the peer has all of them when
 		// we're syncing.
 		maxHeight := -1
-		srv.GetBlocks(pp, maxHeight)
+		srv.RequestBlocksUpToHeight(pp, maxHeight)
 		return
 	}
 
@@ -1994,9 +2417,69 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 		return
 	}
 
-	// If we get here, it means we're in SyncStateFullySynced, which is great.
+	// If we get here, it means we're in SyncStateFullyCurrent, which is great.
 	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
-	srv._maybeRequestSync(pp)
+	srv._tryRequestMempoolFromPeer(pp)
+
+	// Exit early if the chain isn't SyncStateFullyCurrent.
+	if srv.blockchain.chainState() != SyncStateFullyCurrent {
+		return
+	}
+
+	// If the chain is current, then try to transition to the FastHotStuff consensus.
+	srv.tryTransitionToFastHotStuffConsensus()
+}
+
+func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
+	if len(bundle.Blocks) == 0 {
+		glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received EMPTY block bundle "+
+			"at header height ( %v ) from Peer %v. Disconnecting peer since this should never happen.",
+			srv.blockchain.headerTip().Height, pp)))
+		pp.Disconnect()
+		return
+	}
+	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received blocks ( %v->%v / %v ) from Peer %v. "+
+		"Checkpoint syncing status: %v",
+		bundle.Blocks[0].Header.Height, bundle.Blocks[len(bundle.Blocks)-1].Header.Height,
+		srv.blockchain.headerTip().Height, pp, srv.getCheckpointSyncingStatus(false))))
+
+	srv.timer.Start("Server._handleBlockBundle: General")
+
+	// TODO: We should fetch the next batch of blocks while we process this batch.
+	// This requires us to modify GetBlocks to take a start hash and a count
+	// of the number of blocks we want. Or we could make the existing GetBlocks
+	// take a start hash and the other node can just return as many blcoks as it
+	// can.
+
+	// Process each block in the bundle. Record our blocks per second.
+	blockProcessingStartTime := time.Now()
+	for ii, blk := range bundle.Blocks {
+		// TODO: We should make it so that we break out if one of the blocks errors. It's just that
+		// _handleBlock is a legacy function that doesn't support erroring out. It's not a big deal
+		// though as we'll just connect all the blocks after the failed one and those blocks will also
+		// gracefully fail.
+		srv._handleBlock(pp, blk, ii == len(bundle.Blocks)-1 /*isLastBlock*/)
+		numLogBlocks := 100
+		if srv.params.IsPoSBlockHeight(blk.Header.Height) ||
+			srv.params.NetworkType == NetworkType_TESTNET {
+			numLogBlocks = 1000
+		}
+
+		if ii%numLogBlocks == 0 {
+			glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Processed block ( %v / %v ) = ( %v / %v ) from Peer %v",
+				bundle.Blocks[ii].Header.Height,
+				srv.blockchain.headerTip().Height,
+				ii+1, len(bundle.Blocks),
+				pp)))
+
+			elapsed := time.Since(blockProcessingStartTime)
+			// Reset the blockProcessingStartTime so that each 1k blocks is timed individually
+			blockProcessingStartTime = time.Now()
+			if ii != 0 {
+				fmt.Printf("We are processing %v blocks per second\n", float64(numLogBlocks)/(float64(elapsed)/1e9))
+			}
+		}
+	}
 }
 
 func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
@@ -2020,25 +2503,58 @@ func (srv *Server) _handleGetTransactions(pp *Peer, msg *MsgDeSoGetTransactions)
 	pp.AddDeSoMessage(msg, true /*inbound*/)
 }
 
-func (srv *Server) ProcessSingleTxnWithChainLock(
-	pp *Peer, txn *MsgDeSoTxn) ([]*MempoolTx, error) {
+func (srv *Server) ProcessSingleTxnWithChainLock(pp *Peer, txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
 	// Lock the chain for reading so that transactions don't shift under our feet
 	// when processing this bundle. Not doing this could cause us to miss transactions
 	// erroneously.
 	//
 	// TODO(performance): We should probably do this less frequently.
 	srv.blockchain.ChainLock.RLock()
-	defer func() {
-		srv.blockchain.ChainLock.RUnlock()
-	}()
+	defer srv.blockchain.ChainLock.RUnlock()
+
 	// Note we set rateLimit=false because we have a global minimum txn fee that should
 	// prevent spam on its own.
-	return srv.mempool.ProcessTransaction(
-		txn, true /*allowUnconnectedTxn*/, false, /*rateLimit*/
-		pp.ID, true /*verifySignatures*/)
+
+	// Only attempt to add the transaction to the PoW mempool if we're on the
+	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's
+	// txn validity checks to signal whether the txn has been added or not. The PoW
+	// mempool has stricter txn validity checks than the PoS mempool, so this works
+	// out conveniently, as it allows us to always add a txn to the PoS mempool.
+	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	if uint64(tipHeight) < srv.params.GetFinalPoWBlockHeight() {
+		_, err := srv.mempool.ProcessTransaction(
+			txn,
+			true,  /*allowUnconnectedTxn*/
+			false, /*rateLimit*/
+			pp.ID,
+			true, /*verifySignatures*/
+		)
+
+		// If we're on the PoW chain, and the txn doesn't pass the PoW mempool's validity checks, then
+		// it's an invalid txn.
+		if err != nil {
+			return nil, errors.Wrapf(err, "Server.ProcessSingleTxnWithChainLock: Problem adding transaction to PoW mempool: ")
+		}
+	}
+
+	// Always add the txn to the PoS mempool. This will usually succeed if the txn
+	// addition into the PoW mempool succeeded above. However, we only return an error
+	// here if the block height is at or above the final PoW block height. In the event
+	// of an edge case where txns in the mempool are reordered, it is possible for the
+	// txn addition into the PoW mempool to succeed, while the addition into the PoS
+	// mempool fails. This error handling catches that and gives the user the correct
+	// feedback on the txn addition's success.
+	if err := srv.posMempool.AddTransaction(txn, time.Now()); err != nil {
+		if uint64(tipHeight) >= srv.params.GetFinalPoWBlockHeight() {
+			return nil, errors.Wrapf(err, "Server._addNewTxn: problem adding txn to pos mempool")
+		}
+	}
+
+	// Happy path, the txn was successfully added to the PoS (and optionally PoW) mempool.
+	return []*MsgDeSoTxn{txn}, nil
 }
 
-func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []*MempoolTx {
+func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []*MsgDeSoTxn {
 	// Try and add all the transactions to our mempool in the order we received
 	// them. If any fail to get added, just log an error.
 	//
@@ -2049,7 +2565,7 @@ func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []
 	// will eventually add it as opposed to just forgetting about it.
 	glog.V(1).Infof("Server._processTransactions: Processing %d transactions from "+
 		"peer %v", len(transactions), pp)
-	transactionsToRelay := []*MempoolTx{}
+	transactionsToRelay := []*MsgDeSoTxn{}
 	for ii, txn := range transactions {
 		// Take some time to allow other threads to get the ChainLock if they need it
 		//
@@ -2070,11 +2586,11 @@ func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []
 		// verifying signatures.
 		newlyAcceptedTxns, err := srv.ProcessSingleTxnWithChainLock(pp, txn)
 		if err != nil {
-			glog.Errorf(fmt.Sprintf("Server._handleTransactionBundle: Rejected "+
+			glog.V(4).Info(fmt.Sprintf("Server._handleTransactionBundle: Rejected "+
 				"transaction %v from peer %v from mempool: %v", txn, pp, err))
 			// A peer should know better than to send us a transaction that's below
 			// our min feerate, which they see when we send them a version message.
-			if err == TxErrorInsufficientFeeMinFee {
+			if errors.Is(err, TxErrorInsufficientFeeMinFee) {
 				glog.Errorf(fmt.Sprintf("Server._handleTransactionBundle: Disconnecting "+
 					"Peer %v for sending us a transaction %v with fee below the minimum fee %d",
 					pp, txn, srv.mempool.minFeeRateNanosPerKB))
@@ -2115,7 +2631,7 @@ func (srv *Server) _handleTransactionBundleV2(pp *Peer, msg *MsgDeSoTransactionB
 func (srv *Server) _handleMempool(pp *Peer, msg *MsgDeSoMempool) {
 	glog.V(1).Infof("Server._handleMempool: Received Mempool message from Peer %v", pp)
 
-	pp.canReceiveInvMessagess = true
+	pp.canReceiveInvMessages = true
 }
 
 func (srv *Server) StartStatsdReporter() {
@@ -2129,6 +2645,10 @@ func (srv *Server) StartStatsdReporter() {
 				// Report mempool size
 				mempoolTotal := len(srv.mempool.readOnlyUniversalTransactionList)
 				srv.statsdClient.Gauge("MEMPOOL.COUNT", float64(mempoolTotal), tags, 1)
+
+				// Report PoS Mempool size
+				posMempoolTotal := srv.posMempool.txnRegister.Count()
+				srv.statsdClient.Gauge("POS_MEMPOOL.COUNT", float64(posMempoolTotal), tags, 1)
 
 				// Report block + headers height
 				blocksHeight := srv.blockchain.BlockTip().Height
@@ -2144,20 +2664,33 @@ func (srv *Server) StartStatsdReporter() {
 	}()
 }
 
-func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
+func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
+	if desoMsg.GetMsgType() != MsgTypeAddr {
+		return
+	}
+
+	id := NewRemoteNodeId(pp.ID)
+	var msg *MsgDeSoAddr
+	var ok bool
+	if msg, ok = desoMsg.(*MsgDeSoAddr); !ok {
+		glog.Errorf("Server._handleAddrMessage: Problem decoding MsgDeSoAddr: %v", spew.Sdump(desoMsg))
+		srv.networkManager.DisconnectById(id)
+		return
+	}
+
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
 
-	glog.V(1).Infof("Server._handleAddrMessage: Received Addr from peer %v with addrs %v", pp, spew.Sdump(msg.AddrList))
+	glog.V(1).Infof("Server._handleAddrMessage: Received Addr from peer id=%v with addrs %v", pp.ID, spew.Sdump(msg.AddrList))
 
 	// If this addr message contains more than the maximum allowed number of addresses
 	// then disconnect this peer.
 	if len(msg.AddrList) > MaxAddrsPerAddrMsg {
 		glog.Errorf(fmt.Sprintf("Server._handleAddrMessage: Disconnecting "+
-			"Peer %v for sending us an addr message with %d transactions, which exceeds "+
+			"Peer id=%v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
-			pp, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		pp.Disconnect()
+			pp.ID, len(msg.AddrList), MaxAddrsPerAddrMsg))
+		srv.networkManager.DisconnectById(id)
 		return
 	}
 
@@ -2166,17 +2699,16 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 	for _, addr := range msg.AddrList {
 		addrAsNetAddr := wire.NewNetAddressIPPort(addr.IP, addr.Port, (wire.ServiceFlag)(addr.Services))
 		if !addrmgr.IsRoutable(addrAsNetAddr) {
-			glog.V(1).Infof("Dropping address %v from peer %v because it is not routable", addr, pp)
+			glog.V(1).Infof("Server._handleAddrMessage: Dropping address %v from peer %v because it is not routable", addr, pp)
 			continue
 		}
 
 		netAddrsReceived = append(
 			netAddrsReceived, addrAsNetAddr)
 	}
-	srv.cmgr.AddrMgr.AddAddresses(netAddrsReceived, pp.netAddr)
+	srv.AddrMgr.AddAddresses(netAddrsReceived, pp.netAddr)
 
-	// If the message had <= 10 addrs in it, then queue all the addresses for relaying
-	// on the next cycle.
+	// If the message had <= 10 addrs in it, then queue all the addresses for relaying on the next cycle.
 	if len(msg.AddrList) <= 10 {
 		glog.V(1).Infof("Server._handleAddrMessage: Queueing %d addrs for forwarding from "+
 			"peer %v", len(msg.AddrList), pp)
@@ -2186,7 +2718,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 			Port:      pp.netAddr.Port,
 			Services:  pp.serviceFlags,
 		}
-		listToAddTo, hasSeenSource := srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)]
+		listToAddTo, hasSeenSource := srv.addrsToBroadcast[sourceAddr.StringWithPort(false /*includePort*/)]
 		if !hasSeenSource {
 			listToAddTo = []*SingleAddr{}
 		}
@@ -2196,15 +2728,30 @@ func (srv *Server) _handleAddrMessage(pp *Peer, msg *MsgDeSoAddr) {
 			listToAddTo = listToAddTo[:MaxAddrsPerAddrMsg/2]
 		}
 		listToAddTo = append(listToAddTo, msg.AddrList...)
-		srv.addrsToBroadcastt[sourceAddr.StringWithPort(false /*includePort*/)] = listToAddTo
+		srv.addrsToBroadcast[sourceAddr.StringWithPort(false /*includePort*/)] = listToAddTo
 	}
 }
 
-func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
+func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
+	if desoMsg.GetMsgType() != MsgTypeGetAddr {
+		return
+	}
+
+	id := NewRemoteNodeId(pp.ID)
+	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
+		glog.Errorf("Server._handleAddrMessage: Problem decoding "+
+			"MsgDeSoAddr: %v", spew.Sdump(desoMsg))
+		srv.networkManager.DisconnectById(id)
+		return
+	}
+
 	glog.V(1).Infof("Server._handleGetAddrMessage: Received GetAddr from peer %v", pp)
 	// When we get a GetAddr message, choose MaxAddrsPerMsg from the AddrMgr
 	// and send them back to the peer.
-	netAddrsFound := srv.cmgr.AddrMgr.AddressCache()
+	netAddrsFound := srv.AddrMgr.AddressCache()
+	if len(netAddrsFound) == 0 {
+		return
+	}
 	if len(netAddrsFound) > MaxAddrsPerAddrMsg {
 		netAddrsFound = netAddrsFound[:MaxAddrsPerAddrMsg]
 	}
@@ -2220,16 +2767,22 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, msg *MsgDeSoGetAddr) {
 		}
 		res.AddrList = append(res.AddrList, singleAddr)
 	}
-	pp.AddDeSoMessage(res, false)
+	rn := srv.networkManager.GetRemoteNodeById(id)
+	if err := srv.networkManager.SendMessage(rn, res); err != nil {
+		glog.Errorf("Server._handleGetAddrMessage: Problem sending addr message to peer %v: %v", pp, err)
+		srv.networkManager.DisconnectById(id)
+		return
+	}
 }
 
 func (srv *Server) _handleControlMessages(serverMessage *ServerMessage) (_shouldQuit bool) {
 	switch serverMessage.Msg.(type) {
 	// Control messages used internally to signal to the server.
-	case *MsgDeSoNewPeer:
-		srv._handleNewPeer(serverMessage.Peer)
-	case *MsgDeSoDonePeer:
-		srv._handleDonePeer(serverMessage.Peer)
+	case *MsgDeSoDisconnectedPeer:
+		srv._handleDisconnectedPeerMessage(serverMessage.Peer)
+		srv.networkManager._handleDisconnectedPeerMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoNewConnection:
+		srv.networkManager._handleNewConnectionMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoQuit:
 		return true
 	}
@@ -2241,14 +2794,21 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 	// Handle all non-control message types from our Peers.
 	switch msg := serverMessage.Msg.(type) {
 	// Messages sent among peers.
+	case *MsgDeSoAddr:
+		srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoGetAddr:
+		srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg)
 	case *MsgDeSoGetHeaders:
 		srv._handleGetHeaders(serverMessage.Peer, msg)
 	case *MsgDeSoHeaderBundle:
 		srv._handleHeaderBundle(serverMessage.Peer, msg)
+	case *MsgDeSoBlockBundle:
+		srv._handleBlockBundle(serverMessage.Peer, msg)
 	case *MsgDeSoGetBlocks:
 		srv._handleGetBlocks(serverMessage.Peer, msg)
 	case *MsgDeSoBlock:
-		srv._handleBlock(serverMessage.Peer, msg)
+		// isLastBlock is always true when we get a legacy single-block message.
+		srv._handleBlock(serverMessage.Peer, msg, true)
 	case *MsgDeSoGetSnapshot:
 		srv._handleGetSnapshot(serverMessage.Peer, msg)
 	case *MsgDeSoSnapshotData:
@@ -2263,44 +2823,126 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 		srv._handleMempool(serverMessage.Peer, msg)
 	case *MsgDeSoInv:
 		srv._handleInv(serverMessage.Peer, msg)
+	case *MsgDeSoVersion:
+		srv.networkManager._handleVersionMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoVerack:
+		srv.networkManager._handleVerackMessage(serverMessage.Peer, serverMessage.Msg)
+	case *MsgDeSoValidatorVote:
+		srv._handleValidatorVote(serverMessage.Peer, msg)
+	case *MsgDeSoValidatorTimeout:
+		srv._handleValidatorTimeout(serverMessage.Peer, msg)
 	}
 }
 
-// Note that messageHandler is single-threaded and so all of the handle* functions
-// it calls can assume they can access the Server's variables without concurrency
-// issues.
-func (srv *Server) messageHandler() {
+func (srv *Server) _handleFastHotStuffConsensusEvent(event *consensus.FastHotStuffEvent) {
+	// This should never happen. If the consensus message handler isn't defined, then something went
+	// wrong during the node initialization. We log it and return early to avoid panicking.
+	if srv.fastHotStuffConsensus == nil {
+		glog.Errorf("Server._handleFastHotStuffConsensusEvent: Consensus controller is nil")
+		return
+	}
+
+	switch event.EventType {
+	case consensus.FastHotStuffEventTypeVote:
+		srv.fastHotStuffConsensus.HandleLocalVoteEvent(event)
+	case consensus.FastHotStuffEventTypeTimeout:
+		srv.fastHotStuffConsensus.HandleLocalTimeoutEvent(event)
+	case consensus.FastHotStuffEventTypeConstructVoteQC:
+		srv.fastHotStuffConsensus.HandleLocalBlockProposalEvent(event)
+	case consensus.FastHotStuffEventTypeConstructTimeoutQC:
+		srv.fastHotStuffConsensus.HandleLocalTimeoutBlockProposalEvent(event)
+	}
+}
+
+func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
+	// It's possible that the consensus controller hasn't been initialized. If so,
+	// we log an error and move on.
+	if srv.fastHotStuffConsensus == nil {
+		glog.Errorf("Server._handleValidatorVote: Consensus controller is nil")
+		return
+	}
+
+	if err := srv.fastHotStuffConsensus.HandleValidatorVote(pp, msg); err != nil {
+		glog.Errorf("Server._handleValidatorVote: Error handling vote message from peer: %v", err)
+	}
+}
+
+func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) {
+	// It's possible that the consensus controller hasn't been initialized. If so,
+	// we log an error and move on.
+	if srv.fastHotStuffConsensus == nil {
+		glog.Errorf("Server._handleValidatorTimeout: Consensus controller is nil")
+		return
+	}
+
+	missingBlockHashes, err := srv.fastHotStuffConsensus.HandleValidatorTimeout(pp, msg)
+	if err != nil {
+		glog.Errorf("Server._handleValidatorTimeout: Error handling timeout message from peer: %v", err)
+	}
+
+	// If we have missing blocks to request, then we send a GetBlocks message to the peer.
+	if len(missingBlockHashes) > 0 {
+		srv.RequestBlocksByHash(pp, missingBlockHashes)
+	}
+}
+
+// _startConsensusEventLoop contains the top-level event loop to run both the PoW and PoS consensus. It is
+// single-threaded to ensure that concurrent event do not conflict with each other. It's role is to guarantee
+// single threaded processing and act as an entry point for consensus events. It does minimal validation on its
+// own.
+//
+// For the PoW consensus:
+// - It listens to all peer messages from the network and handles them as they come in. This includes
+// control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool
+// requests from syncing peers
+//
+// For the PoS consensus:
+// - It listens to all peer messages from the network and handles them as they come in. This includes
+// control messages from peer, proposed blocks from peers, votes/timeouts, block requests, mempool
+// requests from syncing peers
+// - It listens to consensus events from the Fast HostStuff consensus engine. The consensus signals when
+// it's ready to vote, timeout, propose a block, or propose an empty block with a timeout QC.
+func (srv *Server) _startConsensus() {
+	// Initialize the FastHotStuffConsensus transition check time.
+	srv.resetFastHotStuffConsensusTransitionCheckTime()
+
 	for {
 		// This is used instead of the shouldQuit control message exist mechanism below. shouldQuit will be true only
 		// when all incoming messages have been processed, on the other hand this shutdown will quit immediately.
 		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
-		serverMessage := <-srv.incomingMessages
-		glog.V(2).Infof("Server.messageHandler: Handling message of type %v from Peer %v",
-			serverMessage.Msg.GetMsgType(), serverMessage.Peer)
 
-		// If the message is an addr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeAddr {
-			srv._handleAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoAddr))
-			continue
-		}
-		// If the message is a GetAddr message we handle it independent of whether or
-		// not the BitcoinManager is synced.
-		if serverMessage.Msg.GetMsgType() == MsgTypeGetAddr {
-			srv._handleGetAddrMessage(serverMessage.Peer, serverMessage.Msg.(*MsgDeSoGetAddr))
-			continue
-		}
+		select {
+		case <-srv.getFastHotStuffTransitionCheckTime():
+			{
+				glog.V(2).Info("Server._startConsensus: Checking if FastHotStuffConsensus is ready to start")
+				srv.tryTransitionToFastHotStuffConsensus()
+			}
 
-		srv._handlePeerMessages(serverMessage)
+		case consensusEvent := <-srv.getFastHotStuffConsensusEventChannel():
+			{
+				glog.V(2).Infof("Server._startConsensus: Received consensus event: %s", consensusEvent.ToString())
+				srv._handleFastHotStuffConsensusEvent(consensusEvent)
+			}
 
-		// Always check for and handle control messages regardless of whether the
-		// BitcoinManager is synced. Note that we filter control messages out in a
-		// Peer's inHandler so any control message we get at this point should be bona fide.
-		shouldQuit := srv._handleControlMessages(serverMessage)
-		if shouldQuit {
-			break
+		case serverMessage := <-srv.incomingMessages:
+			{
+				// There is an incoming network message from a peer.
+
+				glog.V(2).Infof("Server._startConsensus: Handling message of type %v from Peer %v",
+					serverMessage.Msg.GetMsgType(), serverMessage.Peer)
+				srv._handlePeerMessages(serverMessage)
+
+				// Always check for and handle control messages regardless of whether the
+				// BitcoinManager is synced. Note that we filter control messages out in a
+				// Peer's inHandler so any control message we get at this point should be bona fide.
+				shouldQuit := srv._handleControlMessages(serverMessage)
+				if shouldQuit {
+					break
+				}
+			}
+
 		}
 	}
 
@@ -2310,35 +2952,36 @@ func (srv *Server) messageHandler() {
 	glog.V(2).Info("Server.Start: Server done")
 }
 
-func (srv *Server) _getAddrsToBroadcast() []*SingleAddr {
+func (srv *Server) getAddrsToBroadcast() []*SingleAddr {
 	srv.addrsToBroadcastLock.Lock()
 	defer srv.addrsToBroadcastLock.Unlock()
 
 	// If there's nothing in the map, return.
-	if len(srv.addrsToBroadcastt) == 0 {
+	if len(srv.addrsToBroadcast) == 0 {
 		return []*SingleAddr{}
 	}
 
 	// If we get here then we have some addresses to broadcast.
 	addrsToBroadcast := []*SingleAddr{}
-	for len(addrsToBroadcast) < 10 && len(srv.addrsToBroadcastt) > 0 {
+	for uint32(len(addrsToBroadcast)) < srv.params.MaxAddressesToBroadcast &&
+		len(srv.addrsToBroadcast) > 0 {
 		// Choose a key at random. This works because map iteration is random in golang.
 		bucket := ""
-		for kk := range srv.addrsToBroadcastt {
+		for kk := range srv.addrsToBroadcast {
 			bucket = kk
 			break
 		}
 
 		// Remove the last element from the slice for the given bucket.
-		currentAddrList := srv.addrsToBroadcastt[bucket]
+		currentAddrList := srv.addrsToBroadcast[bucket]
 		if len(currentAddrList) > 0 {
 			lastIndex := len(currentAddrList) - 1
 			currentAddr := currentAddrList[lastIndex]
 			currentAddrList = currentAddrList[:lastIndex]
 			if len(currentAddrList) == 0 {
-				delete(srv.addrsToBroadcastt, bucket)
+				delete(srv.addrsToBroadcast, bucket)
 			} else {
-				srv.addrsToBroadcastt[bucket] = currentAddrList
+				srv.addrsToBroadcast[bucket] = currentAddrList
 			}
 
 			addrsToBroadcast = append(addrsToBroadcast, currentAddr)
@@ -2355,16 +2998,24 @@ func (srv *Server) _startAddressRelayer() {
 		if atomic.LoadInt32(&srv.shutdown) >= 1 {
 			break
 		}
-		// For the first ten minutes after the server starts, relay our address to all
+		// For the first ten minutes after the connection controller starts, relay our address to all
 		// peers. After the first ten minutes, do it once every 24 hours.
-		glog.V(1).Infof("Server.Start._startAddressRelayer: Relaying our own addr to peers")
+		glog.V(1).Infof("Server.startAddressRelayer: Relaying our own addr to peers")
+		remoteNodes := srv.networkManager.GetAllRemoteNodes().GetAll()
 		if numMinutesPassed < 10 || numMinutesPassed%(RebroadcastNodeAddrIntervalMinutes) == 0 {
-			for _, pp := range srv.cmgr.GetAllPeers() {
-				bestAddress := srv.cmgr.AddrMgr.GetBestLocalAddress(pp.netAddr)
+			for _, rn := range remoteNodes {
+				if !rn.IsHandshakeCompleted() {
+					continue
+				}
+				netAddr := rn.GetNetAddress()
+				if netAddr == nil {
+					continue
+				}
+				bestAddress := srv.AddrMgr.GetBestLocalAddress(netAddr)
 				if bestAddress != nil {
-					glog.V(2).Infof("Server.Start._startAddressRelayer: Relaying address %v to "+
-						"peer %v", bestAddress.IP.String(), pp)
-					pp.AddDeSoMessage(&MsgDeSoAddr{
+					glog.V(2).Infof("Server.startAddressRelayer: Relaying address %v to "+
+						"RemoteNode (id= %v)", bestAddress.IP.String(), rn.GetId())
+					addrMsg := &MsgDeSoAddr{
 						AddrList: []*SingleAddr{
 							{
 								Timestamp: time.Now(),
@@ -2373,31 +3024,120 @@ func (srv *Server) _startAddressRelayer() {
 								Services:  (ServiceFlag)(bestAddress.Services),
 							},
 						},
-					}, false)
+					}
+					if err := rn.SendMessage(addrMsg); err != nil {
+						glog.Errorf("Server.startAddressRelayer: Problem sending "+
+							"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
+					}
 				}
 			}
 		}
 
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Seeing if there are addrs to relay...")
+		glog.V(2).Infof("Server.startAddressRelayer: Seeing if there are addrs to relay...")
 		// Broadcast the addrs we have to all of our peers.
-		addrsToBroadcast := srv._getAddrsToBroadcast()
+		addrsToBroadcast := srv.getAddrsToBroadcast()
 		if len(addrsToBroadcast) == 0 {
-			glog.V(2).Infof("Server.Start._startAddressRelayer: No addrs to relay.")
+			glog.V(2).Infof("Server.startAddressRelayer: No addrs to relay.")
 			time.Sleep(AddrRelayIntervalSeconds * time.Second)
 			continue
 		}
 
-		glog.V(2).Infof("Server.Start._startAddressRelayer: Found %d addrs to "+
+		glog.V(2).Infof("Server.startAddressRelayer: Found %d addrs to "+
 			"relay: %v", len(addrsToBroadcast), spew.Sdump(addrsToBroadcast))
 		// Iterate over all our peers and broadcast the addrs to all of them.
-		for _, pp := range srv.cmgr.GetAllPeers() {
-			pp.AddDeSoMessage(&MsgDeSoAddr{
+		for _, rn := range remoteNodes {
+			if !rn.IsHandshakeCompleted() {
+				continue
+			}
+			addrMsg := &MsgDeSoAddr{
 				AddrList: addrsToBroadcast,
-			}, false)
+			}
+			if err := rn.SendMessage(addrMsg); err != nil {
+				glog.Errorf("Server.startAddressRelayer: Problem sending "+
+					"MsgDeSoAddr to RemoteNode (id= %v): %v", rn.GetId(), err)
+			}
 		}
 		time.Sleep(AddrRelayIntervalSeconds * time.Second)
 		continue
 	}
+}
+
+func (srv *Server) getFastHotStuffConsensusEventChannel() chan *consensus.FastHotStuffEvent {
+	if srv.fastHotStuffConsensus == nil {
+		return nil
+	}
+	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetEvents()
+}
+
+func (srv *Server) resetFastHotStuffConsensusTransitionCheckTime() {
+	// Check once every 60 seconds if the FastHotStuffConsensus is ready to start.
+	srv.fastHotStuffConsensusTransitionCheckTime = time.Now().Add(60 * time.Second)
+}
+
+func (srv *Server) getFastHotStuffTransitionCheckTime() <-chan time.Time {
+	// If the FastHotStuffConsensus does not exist, or is already running, then
+	// we don't need this timer. We can exit early.
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.IsRunning() {
+		return nil
+	}
+	return time.After(time.Until(srv.fastHotStuffConsensusTransitionCheckTime))
+}
+
+func (srv *Server) tryTransitionToFastHotStuffConsensus() {
+	// Reset the transition check timer when this function exits.
+	defer srv.resetFastHotStuffConsensusTransitionCheckTime()
+
+	// If the FastHotStuffConsensus does not exist, or is already running, then
+	// there is nothing left to do. We can exit early.
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.IsRunning() {
+		return
+	}
+
+	// Get the tip height, header tip height, and sync state of the blockchain. We'll use them
+	// in a heuristic here to determine if we are ready to transition to the FastHotStuffConsensus,
+	// or should continue to try to sync.
+	srv.blockchain.ChainLock.RLock()
+	tipHeight := uint64(srv.blockchain.blockTip().Height)
+	headerTipHeight := uint64(srv.blockchain.headerTip().Height)
+	syncState := srv.blockchain.chainState()
+	srv.blockchain.ChainLock.RUnlock()
+
+	// Exit early if the current tip height is below the final PoW block's height. We are ready to
+	// enable the FastHotStuffConsensus once we reach the final block of the PoW protocol. The
+	// FastHotStuffConsensus can only be enabled once it's at or past the final block height of
+	// the PoW protocol.
+	if tipHeight < srv.params.GetFinalPoWBlockHeight() {
+		return
+	}
+
+	// If the header's tip is not at the same height as the block tip, then we are still syncing
+	// and we should not transition to the FastHotStuffConsensus.
+	if headerTipHeight != tipHeight {
+		return
+	}
+
+	// If we are still syncing, then we should not transition to the FastHotStuffConsensus.
+	// We intentionally exclude the SyncStateSyncingHeaders to account for the case where we
+	// do not have a sync peer and are stuck in the SyncStateSyncingHeaders state.
+	skippedSyncStates := []SyncState{
+		SyncStateSyncingSnapshot, SyncStateSyncingBlocks, SyncStateNeedBlocksss, SyncStateSyncingHistoricalBlocks,
+	}
+	if collections.Contains(skippedSyncStates, syncState) {
+		return
+	}
+
+	// If we have a sync peer and have not reached the sync peer's starting block height, then
+	// we should sync all remaining blocks from the sync peer before transitioning to the
+	// FastHotStuffConsensus.
+	if srv.SyncPeer != nil && srv.SyncPeer.StartingBlockHeight() > tipHeight {
+		return
+	}
+
+	// At this point, we know that we have synced to the sync peer's tip or we don't have a sync
+	// peer. The header tip and the chain tip are also at the same height. We are ready to transition
+	// to the FastHotStuffConsensus.
+
+	srv.fastHotStuffConsensus.Start()
 }
 
 func (srv *Server) _startTransactionRelayer() {
@@ -2423,11 +3163,27 @@ func (srv *Server) Stop() {
 	srv.cmgr.Stop()
 	glog.Infof(CLog(Yellow, "Server.Stop: Closed the ConnectionManger"))
 
+	srv.networkManager.Stop()
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed the NetworkManager"))
+
 	// Stop the miner if we have one running.
 	if srv.miner != nil {
 		srv.miner.Stop()
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed the Miner"))
 	}
+
+	// Stop the PoS validator consensus if one is running
+	if srv.fastHotStuffConsensus != nil {
+		srv.fastHotStuffConsensus.Stop()
+	}
+
+	// Stop the PoS block proposer if we have one running.
+	if srv.fastHotStuffConsensus != nil {
+		srv.fastHotStuffConsensus.fastHotStuffEventLoop.Stop()
+		glog.Infof(CLog(Yellow, "Server.Stop: Closed the fastHotStuffEventLoop"))
+	}
+
+	// TODO: Stop the PoS mempool if we have one running.
 
 	if srv.mempool != nil {
 		// Before the node shuts down, write all the mempool txns to disk
@@ -2443,6 +3199,9 @@ func (srv *Server) Stop() {
 		}
 		glog.Infof(CLog(Yellow, "Server.Stop: Closed Mempool"))
 	}
+
+	glog.Infof(CLog(Yellow, "Server.Stop: Closed PosMempool"))
+	srv.posMempool.Stop()
 
 	// Stop the block producer
 	if srv.blockProducer != nil {
@@ -2481,11 +3240,14 @@ func (srv *Server) Start() {
 	// finds some Peers.
 	glog.Info("Server.Start: Starting Server")
 	srv.waitGroup.Add(1)
-	go srv.messageHandler()
+
+	go srv._startConsensus()
 
 	go srv._startAddressRelayer()
 
 	go srv._startTransactionRelayer()
+
+	srv.posMempool.Start()
 
 	// Once the ConnectionManager is started, peers will be found and connected to and
 	// messages will begin to flow in to be processed.
@@ -2496,6 +3258,14 @@ func (srv *Server) Start() {
 	if srv.miner != nil && len(srv.miner.PublicKeys) > 0 {
 		go srv.miner.Start()
 	}
+
+	// Initialize state syncer mempool job, if needed.
+	if srv.stateChangeSyncer != nil {
+		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	}
+
+	// Start the network manager's internal event loop to open and close connections to peers.
+	srv.networkManager.Start()
 }
 
 // SyncPrefixProgress keeps track of sync progress on an individual prefix. It is used in
@@ -2574,4 +3344,19 @@ func (progress *SyncProgress) PrintLoop() {
 			}
 		}
 	}
+}
+
+func (srv *Server) GetNetworkManagerConnections() []*RemoteNode {
+	return srv.networkManager.GetAllRemoteNodes().GetAll()
+}
+
+func (srv *Server) GetLatestView() uint64 {
+	if srv.fastHotStuffConsensus == nil || !srv.fastHotStuffConsensus.IsRunning() {
+		return 0
+	}
+	if srv.fastHotStuffConsensus.fastHotStuffEventLoop == nil ||
+		!srv.fastHotStuffConsensus.fastHotStuffEventLoop.IsRunning() {
+		return 0
+	}
+	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetCurrentView()
 }

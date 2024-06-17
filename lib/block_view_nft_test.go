@@ -1,13 +1,14 @@
 package lib
 
 import (
-	"github.com/dgraph-io/badger/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"math"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func _createNFTWithAdditionalRoyalties(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoParams,
@@ -50,8 +51,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateCreateNFTTxn(
 		updaterPkBytes,
@@ -91,7 +91,7 @@ func _createNFTWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB, par
 	// Always use height+1 for validation since it's assumed the transaction will
 	// get mined into the next block.
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -285,8 +285,7 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, _, _, err := chain.CreateNFTBidTxn(
 		updaterPkBytes,
@@ -308,7 +307,7 @@ func _createNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -372,8 +371,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	bidderPkBytes, _, err := Base58CheckDecode(bidderPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	bidderPKID := utxoView.GetPKIDForPublicKey(bidderPkBytes)
 	require.NotNil(bidderPKID)
@@ -402,7 +400,7 @@ func _acceptNFTBid(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoP
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -488,8 +486,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateUpdateNFTTxn(
 		updaterPkBytes,
@@ -516,7 +513,7 @@ func _updateNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPara
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -586,8 +583,7 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	receiverPkBytes, _, err := Base58CheckDecode(receiverPk)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateNFTTransferTxn(
 		senderPkBytes,
@@ -612,7 +608,7 @@ func _transferNFT(t *testing.T, chain *Blockchain, db *badger.DB, params *DeSoPa
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -675,8 +671,7 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateAcceptNFTTransferTxn(
 		updaterPkBytes,
@@ -699,7 +694,7 @@ func _acceptNFTTransfer(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -758,8 +753,7 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	updaterPkBytes, _, err := Base58CheckDecode(updaterPkBase58Check)
 	require.NoError(err)
 
-	utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-	require.NoError(err)
+	utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 	txn, totalInputMake, changeAmountMake, feesMake, err := chain.CreateBurnNFTTxn(
 		updaterPkBytes,
@@ -782,7 +776,7 @@ func _burnNFT(t *testing.T, chain *Blockchain, db *badger.DB,
 	// get mined into the next block.
 	blockHeight := chain.blockTip().Height + 1
 	utxoOps, totalInput, totalOutput, fees, err :=
-		utxoView.ConnectTransaction(txn, txHash, getTxnSize(*txn), blockHeight, true /*verifySignature*/, false /*ignoreUtxos*/)
+		utxoView.ConnectTransaction(txn, txHash, blockHeight, 0, true, false)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -831,32 +825,32 @@ func _burnNFTWithTestMeta(
 func TestBalanceModelNFTs(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestNFTBasic(t)
-	TestNFTRoyaltiesAndSpendingOfBidderUTXOs(t)
-	TestNFTSerialNumberZeroBid(t)
-	TestNFTMinimumBidAmount(t)
-	TestNFTCreatedIsNotForSale(t)
+	t.Run("TestNFTBasic", TestNFTBasic)
+	t.Run("TestNFTRoyaltiesAndSpendingOfBidderUTXOs", TestNFTRoyaltiesAndSpendingOfBidderUTXOs)
+	t.Run("TestNFTSerialNumberZeroBid", TestNFTSerialNumberZeroBid)
+	t.Run("TestNFTMinimumBidAmount", TestNFTMinimumBidAmount)
+	t.Run("TestNFTCreatedIsNotForSale", TestNFTCreatedIsNotForSale)
 }
 
 // Break up into multiple tests to keep memory footprint lower
 func TestBalanceModelNFTs2(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestNFTMoreErrorCases(t)
-	TestNFTBidsAreCanceledAfterAccept(t)
-	TestNFTDifferentMinBidAmountSerialNumbers(t)
-	TestNFTMaxCopiesGlobalParam(t)
-	TestNFTPreviousOwnersCantAcceptBids(t)
+	t.Run("TestNFTMoreErrorCases", TestNFTMoreErrorCases)
+	t.Run("TestNFTBidsAreCanceledAfterAccept", TestNFTBidsAreCanceledAfterAccept)
+	t.Run("TestNFTDifferentMinBidAmountSerialNumbers", TestNFTDifferentMinBidAmountSerialNumbers)
+	t.Run("TestNFTMaxCopiesGlobalParam", TestNFTMaxCopiesGlobalParam)
+	t.Run("TestNFTPreviousOwnersCantAcceptBids", TestNFTPreviousOwnersCantAcceptBids)
 }
 
 func TestBalanceModelNFTs3(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 
-	TestNFTTransfersAndBurns(t)
-	TestBidAmountZero(t)
-	TestNFTBuyNow(t)
-	TestNFTSplits(t)
-	TestNFTSplitsHardcorePKIDBug(t)
+	t.Run("TestNFTTransfersAndBurns", TestNFTTransfersAndBurns)
+	t.Run("TestBidAmountZero", TestBidAmountZero)
+	t.Run("TestNFTBuyNow", TestNFTBuyNow)
+	t.Run("TestNFTSplits", TestNFTSplits)
+	t.Run("TestNFTSplitsHardcorePKIDBug", TestNFTSplitsHardcorePKIDBug)
 }
 
 func TestNFTBasic(t *testing.T) {
@@ -1277,11 +1271,10 @@ func TestNFTBasic(t *testing.T) {
 	// This time set HasUnlockable to 'true'.
 	// Add some extra data to the NFT entries
 	{
-		utxoView, err := NewUtxoView(db, params, nil, chain.snapshot, nil)
-		require.NoError(err)
+		utxoView := NewUtxoView(db, params, nil, chain.snapshot, nil)
 
 		numCopies := uint64(10)
-		nftFee := utxoView.GlobalParamsEntry.CreateNFTFeeNanos * numCopies
+		nftFee := utxoView.GetCurrentGlobalParamsEntry().CreateNFTFeeNanos * numCopies
 
 		m0BalBeforeNFT := _getBalance(testMeta.t, testMeta.chain, nil, m0Pub)
 		require.Equal(getConditionalBalance(24, 24), m0BalBeforeNFT)

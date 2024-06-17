@@ -1,11 +1,7 @@
 package integration_testing
 
 import (
-	"fmt"
-	"github.com/deso-protocol/core/cmd"
 	"github.com/deso-protocol/core/lib"
-	"github.com/stretchr/testify/require"
-	"os"
 	"testing"
 )
 
@@ -16,35 +12,19 @@ import (
 //  4. node2 hypersyncs from node1
 //  5. once done, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSync(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config2.SyncType = lib.NodeSyncTypeHyperSync
-
-	config1.HyperSync = true
-	config2.HyperSync = true
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.HyperSync = true
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
 
-	// bridge the nodes together.
-	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Start())
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSync
+	node2.Config.HyperSync = true
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
@@ -52,9 +32,46 @@ func TestSimpleHyperSync(t *testing.T) {
 	compareNodesByState(t, node1, node2, 0)
 	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
-	fmt.Println("Databases match!")
+	t.Logf("Databases match!")
+}
+
+// TestPoSRegtestHypersyncArchival tests whether a node can successfully archival hypersync from another node after
+// the PoS transition. In the test, node1 will produce blocks until it creates a snapshot after the 2nd PoS fork height.
+// Then, we spawn node2, which will connect to node1 and hypersync from it. We then compare that the state dbs match.
+// This test takes a couple of minutes to run, and can potentially fail the db comparison if node1 produces a block
+// at the very end of the test, right before it stops, and node2 doesn't receive it in time. If this happens, rerun
+// the test, it should generally pass.
+func TestPoSRegtestHypersyncArchival(t *testing.T) {
+	node1 := simplePosNode(t, 18000, "node1", true)
+
+	node1.Config.Params = node1.Params
+	node1.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node1.Params.DefaultPoWSnapshotBlockHeightPeriod = 30
+	node1.Config.SnapshotBlockHeightPeriod = 60
+	node1.Config.HyperSync = true
+	node1 = startNode(t, node1)
+	condition := func() bool {
+		return node1.Server.GetBlockchain().BlockTip().Height >= 140
+	}
+	waitForConditionNoTimeout(t, "node1", condition)
+
+	node2 := simplePosNode(t, 18001, "node2", true)
+	node2.Config.MinerPublicKeys = []string{}
+	node2.Params.DefaultPoWSnapshotBlockHeightPeriod = 30
+	node2.Config.SnapshotBlockHeightPeriod = 60
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2.Config.HyperSync = true
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2 = startNode(t, node2)
+	condition2 := func() bool {
+		return node2.Server.GetBlockchain().BlockTip().Height >= 140 &&
+			node2.Server.GetBlockchain().ChainState() == lib.SyncStateFullyCurrent
+	}
+	waitForConditionNoTimeout(t, "node2", condition2)
+
 	node1.Stop()
 	node2.Stop()
+	compareNodesByStateOffline(t, node1, node2, 0)
 }
 
 // TestHyperSyncFromHyperSyncedNode test if a node can successfully hypersync from another hypersynced node:
@@ -65,49 +82,28 @@ func TestSimpleHyperSync(t *testing.T) {
 //  5. once done, bridge node3 and node2 so that node3 hypersyncs from node2.
 //  6. compare node1 state, db, and checksum matches node2, and node3.
 func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-	defer os.RemoveAll(dbDir3)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config3 := generateConfig(t, 18002, dbDir3, 10)
-	config3.SyncType = lib.NodeSyncTypeHyperSyncArchival
-
-	config1.HyperSync = true
-	config2.HyperSync = true
-	config3.HyperSync = true
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.HyperSync = true
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
-	node3 = startNode(t, node3)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
 
-	// bridge the nodes together.
-	bridge12 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge12.Start())
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2.Config.HyperSync = true
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
-	// bridge node3 to node2 to kick off hyper sync from a hyper synced node
-	bridge23 := NewConnectionBridge(node2, node3)
-	require.NoError(bridge23.Start())
+	node3 := spawnNodeProtocol1(t, 18002, "node3")
+	node3.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node3.Config.HyperSync = true
+	node3.Config.ConnectIPs = []string{"127.0.0.1:18001"}
+	node3 = startNode(t, node3)
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node3)
@@ -121,10 +117,7 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 	//compareNodesByDB(t, node2, node3, 0)
 	compareNodesByChecksum(t, node2, node3)
 
-	fmt.Println("Databases match!")
-	node1.Stop()
-	node2.Stop()
-	node3.Stop()
+	t.Logf("Databases match!")
 }
 
 // TestSimpleHyperSyncRestart test if a node can successfully hyper sync from another node:
@@ -135,51 +128,34 @@ func TestHyperSyncFromHyperSyncedNode(t *testing.T) {
 //  5. node2 reconnects to node1 and hypersyncs again.
 //  6. Once node2 finishes sync, compare node1 state, db, and checksum matches node2.
 func TestSimpleHyperSyncRestart(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-
-	config1.HyperSync = true
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2.HyperSync = true
-	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.HyperSync = true
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
 
-	// bridge the nodes together.
-	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Start())
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2.Config.HyperSync = true
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 
 	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
 	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
-	fmt.Println("Random sync prefix for a restart (re-use if test failed):", syncPrefix)
+	t.Logf("Random sync prefix for a restart (re-use if test failed): %v", syncPrefix)
+
 	// Reboot node2 at a specific sync prefix and reconnect it with node1
-	node2, bridge = restartAtSyncPrefixAndReconnectNode(t, node2, node1, bridge, syncPrefix)
+	node2 = restartAtSyncPrefix(t, node2, syncPrefix)
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
 	compareNodesByState(t, node1, node2, 0)
 	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
-	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
-	fmt.Println("Databases match!")
-	node1.Stop()
-	node2.Stop()
+	t.Logf("Random restart successful! Random sync prefix was: %v", syncPrefix)
+	t.Logf("Databases match!")
 }
 
 // TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer tests if a node can successfully restart while hypersyncing.
@@ -190,57 +166,34 @@ func TestSimpleHyperSyncRestart(t *testing.T) {
 //  5. after restart, bridge node2 with node3 and resume hypersync.
 //  6. once node2 finishes, compare node1, node2, node3 state, db, and checksums are identical.
 func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-	defer os.RemoveAll(dbDir3)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config3 := generateConfig(t, 18002, dbDir3, 10)
-	config3.SyncType = lib.NodeSyncTypeBlockSync
-
-	config1.HyperSync = true
-	config2.HyperSync = true
-	config3.HyperSync = true
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-	config3.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.HyperSync = true
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
-	node3 = startNode(t, node3)
-
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
+
+	node3 := spawnNodeProtocol1(t, 18002, "node3")
+	node3.Config.HyperSync = true
+	node3.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node3 = startNode(t, node3)
 	// wait for node3 to sync blocks
 	waitForNodeToFullySync(node3)
 
-	// bridge the nodes together.
-	bridge12 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge12.Start())
-
-	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
-	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
-	fmt.Println("Random prefix for a restart (re-use if test failed):", syncPrefix)
-	disconnectAtSyncPrefix(t, node2, bridge12, syncPrefix)
-
-	// bridge the nodes together.
-	bridge23 := NewConnectionBridge(node2, node3)
-	require.NoError(bridge23.Start())
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2.Config.HyperSync = true
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 
 	// Reboot node2 at a specific height and reconnect it with node1
-	//node2, bridge12 = restartAtHeightAndReconnectNode(t, node2, node1, bridge12, randomHeight)
+	syncIndex := randomUint32Between(t, 0, uint32(len(lib.StatePrefixes.StatePrefixesList)))
+	syncPrefix := lib.StatePrefixes.StatePrefixesList[syncIndex]
+	t.Logf("Random prefix for a restart (re-use if test failed): %v", syncPrefix)
+	node2 = shutdownAtSyncPrefix(t, node2, syncPrefix)
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18002"}
+	node2 = startNode(t, node2)
+
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
@@ -253,11 +206,8 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 	compareNodesByState(t, node1, node2, 0)
 	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
-	fmt.Println("Random restart successful! Random sync prefix was", syncPrefix)
-	fmt.Println("Databases match!")
-	node1.Stop()
-	node2.Stop()
-	node3.Stop()
+	t.Logf("Random restart successful! Random sync prefix was: %v", syncPrefix)
+	t.Logf("Databases match!")
 }
 
 // TODO: disconnecting the provider peer during hypersync doesn't work.
@@ -311,92 +261,49 @@ func TestSimpleHyperSyncDisconnectWithSwitchingToNewPeer(t *testing.T) {
 //}
 
 func TestArchivalMode(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-
-	config1.HyperSync = true
-	config2.HyperSync = true
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.HyperSync = true
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
 
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
 
-	// bridge the nodes together.
-	bridge := NewConnectionBridge(node1, node2)
-	require.NoError(bridge.Start())
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2.Config.HyperSync = true
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
 	compareNodesByDB(t, node1, node2, 0)
-
-	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
-	fmt.Println("Databases match!")
-	node1.Stop()
-	node2.Stop()
+	t.Logf("Databases match!")
 }
 
 func TestBlockSyncFromArchivalModeHyperSync(t *testing.T) {
-	require := require.New(t)
-	_ = require
-
-	dbDir1 := getDirectory(t)
-	dbDir2 := getDirectory(t)
-	dbDir3 := getDirectory(t)
-	defer os.RemoveAll(dbDir1)
-	defer os.RemoveAll(dbDir2)
-	defer os.RemoveAll(dbDir3)
-
-	config1 := generateConfig(t, 18000, dbDir1, 10)
-	config2 := generateConfig(t, 18001, dbDir2, 10)
-	config3 := generateConfig(t, 18002, dbDir3, 10)
-
-	config1.HyperSync = true
-	config1.SyncType = lib.NodeSyncTypeBlockSync
-	config2.HyperSync = true
-	config2.SyncType = lib.NodeSyncTypeHyperSyncArchival
-	config3.HyperSync = false
-	config3.SyncType = lib.NodeSyncTypeBlockSync
-	config1.ConnectIPs = []string{"deso-seed-2.io:17000"}
-
-	node1 := cmd.NewNode(config1)
-	node2 := cmd.NewNode(config2)
-	node3 := cmd.NewNode(config3)
-
+	node1 := spawnNodeProtocol1(t, 18000, "node1")
+	node1.Config.HyperSync = true
+	node1.Config.ConnectIPs = []string{"deso-seed-2.io:17000"}
 	node1 = startNode(t, node1)
-	node2 = startNode(t, node2)
-	node3 = startNode(t, node3)
-
 	// wait for node1 to sync blocks
 	waitForNodeToFullySync(node1)
 
-	// bridge the nodes together.
-	bridge12 := NewConnectionBridge(node1, node2)
-	require.NoError(bridge12.Start())
-
+	node2 := spawnNodeProtocol1(t, 18001, "node2")
+	node2.Config.SyncType = lib.NodeSyncTypeHyperSyncArchival
+	node2.Config.HyperSync = true
+	node2.Config.ConnectIPs = []string{"127.0.0.1:18000"}
+	node2 = startNode(t, node2)
 	// wait for node2 to sync blocks.
 	waitForNodeToFullySync(node2)
 
-	bridge23 := NewConnectionBridge(node2, node3)
-	require.NoError(bridge23.Start())
-
+	node3 := spawnNodeProtocol1(t, 18002, "node3")
+	node3.Config.SyncType = lib.NodeSyncTypeBlockSync
+	node3.Config.HyperSync = true
+	node3.Config.ConnectIPs = []string{"127.0.0.1:18001"}
+	node3 = startNode(t, node3)
 	// wait for node3 to sync blocks.
 	waitForNodeToFullySync(node3)
 
@@ -405,7 +312,5 @@ func TestBlockSyncFromArchivalModeHyperSync(t *testing.T) {
 
 	//compareNodesByDB(t, node1, node2, 0)
 	compareNodesByChecksum(t, node1, node2)
-	fmt.Println("Databases match!")
-	node1.Stop()
-	node2.Stop()
+	t.Logf("Databases match!")
 }

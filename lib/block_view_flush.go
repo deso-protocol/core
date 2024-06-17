@@ -2,11 +2,12 @@ package lib
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
-	"reflect"
 )
 
 func (bav *UtxoView) FlushToDb(blockHeight uint64) error {
@@ -43,11 +44,29 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	// This function prepares the data structures in the snapshot.
 	if bav.Snapshot != nil {
 		bav.Snapshot.PrepareAncestralRecordsFlush()
-
-		// When we finish flushing to the main DB, we'll also flush to ancestral records.
-		// This happens concurrently, which is why we have the 2-phase prepare-flush happening for snapshot.
-		defer bav.Snapshot.StartAncestralRecordsFlush(true)
 	}
+
+	err := bav.FlushToDBWithoutAncestralRecordsFlushWithTxn(txn, blockHeight)
+	if err != nil {
+		return err
+	}
+	// We can exit early if we're not using a snapshot.
+	if bav.Snapshot == nil {
+		return nil
+	}
+	// Flush the ancestral records to the DB.
+	err = bav.Snapshot.FlushAncestralRecordsWithTxn(txn)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// FlushToDBWithoutAncestralRecordsFlushWithTxn flushes the UtxoView to the DB without
+// calling PrepareAncestralRecordsFlush. This SHOULD ONLY be used when flushing the
+// view within a badger transaction that itself calls PrepareAncestralRecordsFlush
+// and defer StartAncestralRecordsFlush.
+func (bav *UtxoView) FlushToDBWithoutAncestralRecordsFlushWithTxn(txn *badger.Txn, blockHeight uint64) error {
 
 	// Only flush to BadgerDB if Postgres is disabled
 	if bav.Postgres == nil {
@@ -138,6 +157,48 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 		return err
 	}
 	if err := bav._flushNonceEntriesToDbWithTxn(txn); err != nil {
+		return err
+	}
+	if err := bav._flushLockedBalanceEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushLockupYieldCurvePointEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushValidatorEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushValidatorBLSPublicKeyPKIDPairEntryMappingsWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushStakeEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushLockedStakeEntriesToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	// TODO: We may want to move this into a new FlushToDb function that only flushes
+	// entries set in the OnEpochEndHook. No sense in wasting a bunch of cycles flushing
+	// all the other entries which will always be nil/empty in the OnEpochEndHook.
+	if err := bav._flushCurrentEpochEntryToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushCurrentRandomSeedHashToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotGlobalParamsEntryToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotValidatorSetToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotLeaderScheduleToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotStakesToRewardToDbWithTxn(txn, blockHeight); err != nil {
+		return err
+	}
+	if err := bav._flushSnapshotValidatorBLSPublicKeyPKIDPairEntryToDbWithTxn(txn, blockHeight); err != nil {
 		return err
 	}
 	return nil

@@ -1,10 +1,12 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
-	"io/ioutil"
 	"log"
+	"math"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -13,6 +15,27 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var expectedBlockHeaderVersion1 = &MsgDeSoHeader{
+	Version: 1,
+	PrevBlockHash: &BlockHash{
+		0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x10, 0x11,
+		0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x20, 0x21,
+		0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x30, 0x31,
+		0x32, 0x33,
+	},
+	TransactionMerkleRoot: &BlockHash{
+		0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x40, 0x41, 0x42, 0x43,
+		0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x50, 0x51, 0x52, 0x53,
+		0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x60, 0x61, 0x62, 0x63,
+		0x64, 0x65,
+	},
+	// Use full uint64 values to make sure serialization and de-serialization work
+	TstampNanoSecs: SecondsToNanoSeconds(1678943210),
+	Height:         uint64(1321012345),
+	Nonce:          uint64(12345678901234),
+	ExtraNonce:     uint64(101234123456789),
+}
 
 // Check that all state db prefixes have been correctly mapped to DeSoEncoder types via StatePrefixToDeSoEncoder
 func TestStatePrefixToDeSoEncoder(t *testing.T) {
@@ -62,7 +85,7 @@ func _GetTestBlockNode() *BlockNode {
 
 	// Header (make a copy)
 	bs.Header = NewMessage(MsgTypeHeader).(*MsgDeSoHeader)
-	headerBytes, _ := expectedBlockHeader.ToBytes(false)
+	headerBytes, _ := expectedBlockHeaderVersion1.ToBytes(false)
 	bs.Header.FromBytes(headerBytes)
 
 	// Status
@@ -72,7 +95,7 @@ func _GetTestBlockNode() *BlockNode {
 }
 
 func GetTestBadgerDb() (_db *badger.DB, _dir string) {
-	dir, err := ioutil.TempDir("", "badgerdb")
+	dir, err := os.MkdirTemp("", "badgerdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -148,7 +171,7 @@ func TestBlockNodePutGet(t *testing.T) {
 	err = PutHeightHashToNodeInfo(db, nil, b4, false /*bitcoinNodes*/, nil)
 	require.NoError(err)
 
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 
 	require.Len(blockIndex, 4)
@@ -201,7 +224,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	require.NoError(err)
 
 	// Check the block index.
-	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/)
+	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 	require.Len(blockIndex, 1)
 	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
@@ -583,78 +606,32 @@ func TestFollows(t *testing.T) {
 	}
 }
 
-func TestDeleteExpiredTransactorNonceEntries(t *testing.T) {
-	setBalanceModelBlockHeights(t)
+func TestEncodeUint16(t *testing.T) {
+	for _, num := range []uint16{0, 5819, math.MaxUint16} {
+		// Encode to bytes.
+		encoded := EncodeUint16(num)
+		require.Len(t, encoded, 2)
 
-	assert := assert.New(t)
-	require := require.New(t)
-	_ = assert
-	_ = require
-
-	chain, params, db := NewLowDifficultyBlockchain(t)
-	mempool, miner := NewTestMiner(t, chain, params, true /*isSender*/)
-
-	testMeta := &TestMeta{
-		t:       t,
-		chain:   chain,
-		params:  params,
-		mempool: mempool,
-		miner:   miner,
-		db:      db,
+		// Decode from bytes.
+		decoded := DecodeUint16(encoded)
+		require.Equal(t, num, decoded)
 	}
+}
 
-	_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
+func TestEncodeUint8(t *testing.T) {
+	for _, num := range []uint8{0, 95, math.MaxUint8} {
+		// Encode to bytes.
+		encoded := EncodeUint8(num)
+		require.Len(t, encoded, 1)
 
-	_registerOrTransferWithTestMeta(testMeta, "m0", senderPkString, m0Pub, senderPrivString, 7000)
-	_registerOrTransferWithTestMeta(testMeta, "", senderPkString, paramUpdaterPub, senderPrivString, 1000)
+		// Decode from bytes.
+		decoded := DecodeUint8(encoded)
+		require.Equal(t, num, decoded)
 
-	params.ExtraRegtestParamUpdaterKeys[MakePkMapKey(paramUpdaterPkBytes)] = true
-	// Param Updater sets the max nonce expiration block buffer to 1.
-	{
-		_updateGlobalParamsEntryWithMaxNonceExpirationBlockHeightOffsetAndTestMeta(
-			testMeta,
-			10,
-			paramUpdaterPub,
-			paramUpdaterPriv,
-			-1,
-			-1,
-			-1,
-			-1,
-			-1,
-			1,
-		)
-		// There should be once nonce in the db.
-		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
-		require.Equal(3, len(nonceEntries))
-		globalParamsEntry := DbGetGlobalParamsEntry(db, chain.snapshot)
-		require.Equal(globalParamsEntry.MaxNonceExpirationBlockHeightOffset, uint64(1))
+		// Read from bytes.
+		rr := bytes.NewReader(encoded)
+		decoded2, err := ReadUint8(rr)
+		require.NoError(t, err)
+		require.Equal(t, num, decoded2)
 	}
-
-	// Now new txns should have a single block expiration buffer.
-	// We'll have m0 sends 10 nanos to m1 and m2
-	{
-		// m0 sends 10 nanos to m1
-		_registerOrTransferWithTestMeta(testMeta, "m1", m0Pub, m1Pub, m0Priv, 10)
-		// m0 sends 10 nanos to m2
-		_registerOrTransferWithTestMeta(testMeta, "m2", m0Pub, m2Pub, m0Priv, 10)
-		// There should be 5 nonce entries in the db.
-		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
-		require.Equal(5, len(nonceEntries))
-	}
-
-	// Mine two blocks. This should delete the nonce entries for m0's txns.
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-	_, err = miner.MineAndProcessSingleBlock(0 /*threadIndex*/, mempool)
-	require.NoError(err)
-
-	// There should be 3 nonce entries in the db after mining these blocks
-	{
-		nonceEntries := DbGetAllTransactorNonceEntries(testMeta.db)
-		require.Equal(3, len(nonceEntries))
-	}
-
 }
