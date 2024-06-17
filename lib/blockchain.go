@@ -2170,14 +2170,6 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		return false, false, RuleErrorBlockHeightAfterProofOfStakeCutover
 	}
 
-	// Only accept blocks if the best chain is still in PoW. Once the best chain reaches the final
-	// height of the PoW protocol, it will transition to the PoS. We should not accept any more PoW
-	// blocks past this point because they will un-commit blocks that are already committed to the PoS
-	// chain.
-	if bc.BlockTip().Header.Height >= bc.params.GetFinalPoWBlockHeight() {
-		return false, false, RuleErrorBestChainIsAtProofOfStakeCutover
-	}
-
 	blockHeight := uint64(bc.BlockTip().Height + 1)
 	bc.timer.Start("Blockchain.ProcessBlock: Initial")
 
@@ -2485,6 +2477,14 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	isMainChain := false
 
 	bc.timer.End("Blockchain.ProcessBlock: Db Update")
+
+	// Only connect blocks if the best chain is still in PoW. Once the best chain reaches the final
+	// height of the PoW protocol, it will transition to the PoS. We should not accept any more PoW
+	// blocks past this point because they will un-commit blocks that are already committed to the
+	// PoS chain.
+	if currentTip.Header.Height >= bc.params.GetFinalPoWBlockHeight() {
+		return false, false, RuleErrorBestChainIsAtProofOfStakeCutover
+	}
 
 	if *parentNode.Hash == *currentTip.Hash {
 		bc.timer.Start("Blockchain.ProcessBlock: Transactions Validation")
