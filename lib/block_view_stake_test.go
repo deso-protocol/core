@@ -521,19 +521,6 @@ func _testStaking(t *testing.T, flushToDB bool) {
 		GlobalDeSoParams.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	}
 	{
-		// RuleErrorInvalidValidatorPKID
-		unlockStakeMetadata := &UnlockStakeMetadata{
-			ValidatorPublicKey: NewPublicKey(m2PkBytes),
-			StartEpochNumber:   currentEpochNumber,
-			EndEpochNumber:     currentEpochNumber,
-		}
-		_, err = _submitUnlockStakeTxn(
-			testMeta, m1Pub, m1Priv, unlockStakeMetadata, nil, flushToDB,
-		)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), RuleErrorInvalidValidatorPKID)
-	}
-	{
 		// RuleErrorInvalidUnlockStakeEpochRange
 		unlockStakeMetadata := &UnlockStakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),

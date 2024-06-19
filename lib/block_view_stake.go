@@ -2109,11 +2109,8 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 	}
 
 	// Validate ValidatorPublicKey.
-	validatorEntry, err := bav.GetValidatorByPublicKey(metadata.ValidatorPublicKey)
-	if err != nil {
-		return errors.Wrapf(err, "UtxoView.IsValidUnlockStakeMetadata: ")
-	}
-	if validatorEntry == nil || validatorEntry.isDeleted {
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(metadata.ValidatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
 		return errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView.IsValidUnlockStakeMetadata: ")
 	}
 
@@ -2148,7 +2145,7 @@ func (bav *UtxoView) IsValidUnlockStakeMetadata(transactorPkBytes []byte, metada
 
 	// Validate LockedStakeEntries exist.
 	lockedStakeEntries, err := bav.GetLockedStakeEntriesInRange(
-		validatorEntry.ValidatorPKID, transactorPKIDEntry.PKID, metadata.StartEpochNumber, metadata.EndEpochNumber,
+		validatorPKIDEntry.PKID, transactorPKIDEntry.PKID, metadata.StartEpochNumber, metadata.EndEpochNumber,
 	)
 	existsLockedStakeEntries := false
 	for _, lockedStakeEntry := range lockedStakeEntries {
