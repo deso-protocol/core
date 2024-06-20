@@ -264,15 +264,10 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 		return nil, fmt.Errorf("BroadcastTransaction: Txn hash is nil")
 	}
 	// Use the backendServer to add the transaction to the mempool and
-	// relay it to peers.
-	//
-	// With PoW, we need to verify signatures. With PoS, we don't need to because a background
-	// job is responsible for validating transactions.
-	verifySignatures := false
-	if srv.params.IsPoWBlockHeight(srv.blockchain.BlockTip().Header.Height) {
-		verifySignatures = true
-	}
-	mempoolTxs, err := srv._addNewTxn(nil /*peer*/, txn, false /*rateLimit*/, verifySignatures /*verifySignatures*/)
+	// relay it to peers. When a transaction is created by the user there
+	// is no need to consider a rateLimit and also no need to verifySignatures
+	// because we generally will have done that already.
+	mempoolTxs, err := srv._addNewTxn(nil /*peer*/, txn, false /*rateLimit*/)
 	if err != nil {
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
@@ -1970,8 +1965,7 @@ func (srv *Server) _relayTransactions() {
 	glog.V(3).Infof("Server._relayTransactions: Relay to all peers is complete!")
 }
 
-func (srv *Server) _addNewTxn(
-	pp *Peer, txn *MsgDeSoTxn, rateLimit bool, verifySignatures bool) ([]*MsgDeSoTxn, error) {
+func (srv *Server) _addNewTxn(pp *Peer, txn *MsgDeSoTxn, rateLimit bool) ([]*MsgDeSoTxn, error) {
 
 	if srv.ReadOnlyMode {
 		err := fmt.Errorf("Server._addNewTxnAndRelay: Not processing txn from peer %v "+
@@ -2015,7 +2009,7 @@ func (srv *Server) _addNewTxn(
 	// PoW protocol. If we're on the PoW protocol, then we use the PoW mempool's,
 	// txn validity checks to signal whether the txn has been added or not.
 	if uint64(tipHeight) < srv.params.GetFinalPoWBlockHeight() {
-		_, err := srv.mempool.ProcessTransaction(txn, true, rateLimit, peerID, verifySignatures)
+		_, err := srv.mempool.ProcessTransaction(txn, true, rateLimit, peerID, true)
 		if err != nil {
 			return nil, errors.Wrapf(err, "Server._addNewTxn: Problem adding transaction to mempool: ")
 		}
