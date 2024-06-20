@@ -3110,17 +3110,14 @@ func (bav *UtxoView) _checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey(
 	// this derived key is allowed to perform.
 
 	// Convert ValidatorPublicKey to ValidatorPKID.
-	validatorEntry, err := bav.GetValidatorByPublicKey(txMeta.ValidatorPublicKey)
-	if err != nil {
-		return derivedKeyEntry, errors.Wrapf(err, "_checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
-	}
-	if validatorEntry == nil || validatorEntry.isDeleted {
+	validatorPKIDEntry := bav.GetPKIDForPublicKey(txMeta.ValidatorPublicKey.ToBytes())
+	if validatorPKIDEntry == nil || validatorPKIDEntry.isDeleted {
 		return derivedKeyEntry, errors.Wrapf(RuleErrorInvalidValidatorPKID, "UtxoView._checkUnlockStakeTxnSpendingLimitAndUpdateDerivedKey: ")
 	}
 
 	// Check spending limit for this validator.
 	// If not found, check spending limit for any validator.
-	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
+	for _, validatorPKID := range []*PKID{validatorPKIDEntry.PKID, &ZeroPKID} {
 		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
 		stakeLimitKey := MakeStakeLimitKey(validatorPKID)
 		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.UnlockStakeLimitMap[stakeLimitKey]
