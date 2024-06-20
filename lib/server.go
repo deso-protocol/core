@@ -267,7 +267,7 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
 	// because we generally will have done that already.
-	mempoolTxs, err := srv._addNewTxn(nil /*peer*/, txn, false /*rateLimit*/, false /*verifySignatures*/)
+	mempoolTxs, err := srv._addNewTxn(nil /*peer*/, txn, false /*rateLimit*/, true /*verifySignatures*/)
 	if err != nil {
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
