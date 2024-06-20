@@ -264,10 +264,15 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 		return nil, fmt.Errorf("BroadcastTransaction: Txn hash is nil")
 	}
 	// Use the backendServer to add the transaction to the mempool and
-	// relay it to peers. When a transaction is created by the user there
-	// is no need to consider a rateLimit and also no need to verifySignatures
-	// because we generally will have done that already.
-	mempoolTxs, err := srv._addNewTxn(nil /*peer*/, txn, false /*rateLimit*/, true /*verifySignatures*/)
+	// relay it to peers.
+	//
+	// With PoW, we need to verify signatures. With PoS, we don't need to because a background
+	// job is responsible for validating transactions.
+	verifySignatures := false
+	if srv.params.IsPoWBlockHeight(srv.blockchain.BlockTip().Header.Height) {
+		verifySignatures = true
+	}
+	mempoolTxs, err := srv._addNewTxn(nil /*peer*/, txn, false /*rateLimit*/, verifySignatures /*verifySignatures*/)
 	if err != nil {
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
