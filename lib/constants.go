@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -1064,14 +1063,14 @@ var MainnetForkHeights = ForkHeights{
 	// Tues May 23 2023 @ 9am PST
 	BlockRewardPatchBlockHeight: uint32(235134),
 
-	// FIXME: set to real block height when ready
-	ProofOfStake1StateSetupBlockHeight: uint32(math.MaxUint32),
+	// Tues July 2 2024 @ 12pm PST
+	ProofOfStake1StateSetupBlockHeight: uint32(349167),
 
-	// FIXME: set to real block height when ready
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(math.MaxUint32),
+	// Tues July 9 2024 @ 12pm PST
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(351153),
 
-	// FIXME: set to real block height when ready
-	LockupsBlockHeight: uint32(math.MaxUint32),
+	// Tues July 2 2024 @ 12pm PST
+	LockupsBlockHeight: uint32(349167),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
