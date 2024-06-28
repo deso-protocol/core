@@ -2424,6 +2424,9 @@ func (migration *EncoderMigration) StartMigrations() error {
 		migrationChecksum.Completed = true
 	}
 	migration.completed = true
+	if err = migration.SaveMigrations(); err != nil {
+		return errors.Wrapf(err, "EncoderMigration.StartMigrations: Problem saving migrations to db")
+	}
 	return nil
 }
 
