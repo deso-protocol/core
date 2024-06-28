@@ -403,10 +403,10 @@ func (bridge *ConnectionBridge) Disconnect() {
 	}
 
 	bridge.disabled = true
-	bridge.connectionInboundA.Disconnect()
-	bridge.connectionInboundB.Disconnect()
-	bridge.connectionOutboundA.Disconnect()
-	bridge.connectionOutboundB.Disconnect()
+	bridge.connectionInboundA.Disconnect("ConnectionBridge.Disconnect")
+	bridge.connectionInboundB.Disconnect("ConnectionBridge.Disconnect")
+	bridge.connectionOutboundA.Disconnect("ConnectionBridge.Disconnect")
+	bridge.connectionOutboundB.Disconnect("ConnectionBridge.Disconnect")
 	bridge.outboundListenerA.Close()
 	bridge.outboundListenerB.Close()
 

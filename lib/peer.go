@@ -93,6 +93,10 @@ type Peer struct {
 	// Set to zero until Disconnect has been called on the Peer. Used to make it
 	// so that the logic in Disconnect will only be executed once.
 	disconnected int32
+	// TODO: This should be an enum.
+	// disconnectReason is the reason the peer was disconnected. It is set the first
+	// time Disconnect is called on a peer.
+	disconnectReason string
 	// Signals that the peer is now in the stopped state.
 	quit chan interface{}
 
@@ -413,7 +417,7 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 				// GetHeaders request.
 				glog.Errorf("Server._handleGetBlocks: Disconnecting peer %v because "+
 					"she asked for a block with hash %v that we don't have", pp, msg.HashList[0])
-				pp.Disconnect()
+				pp.Disconnect("handleGetBlocks - requested block with hash we don't have. protocolV2")
 				return
 			}
 			allBlocks.Blocks = append(allBlocks.Blocks, blockToSend)
@@ -442,7 +446,7 @@ func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
 				// GetHeaders request.
 				glog.Errorf("Server._handleGetBlocks: Disconnecting peer %v because "+
 					"she asked for a block with hash %v that we don't have", pp, msg.HashList[0])
-				pp.Disconnect()
+				pp.Disconnect("handleGetBlocks - requested block with hash we don't have. protocol < v2")
 				return
 			}
 			pp.AddDeSoMessage(blockToSend, false)
@@ -464,7 +468,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	if pp.snapshotChunkRequestInFlight {
 		glog.V(1).Infof("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v"+
 			"because he already requested a GetSnapshot", pp)
-		pp.Disconnect()
+		pp.Disconnect("handleGetSnapshot - peer already requested a snapshot chunk")
 		return
 	}
 	pp.snapshotChunkRequestInFlight = true
@@ -474,7 +478,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	if pp.srv.snapshot == nil {
 		glog.Errorf("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"and disconnecting because node doesn't support HyperSync", pp)
-		pp.Disconnect()
+		pp.Disconnect("handleGetSnapshot - peer doesn't support HyperSync")
 		return
 	}
 
@@ -497,7 +501,7 @@ func (pp *Peer) HandleGetSnapshot(msg *MsgDeSoGetSnapshot) {
 	if len(msg.SnapshotStartKey) == 0 || len(msg.GetPrefix()) == 0 {
 		glog.Errorf("Peer.HandleGetSnapshot: Ignoring GetSnapshot from Peer %v "+
 			"because SnapshotStartKey or Prefix are empty", pp)
-		pp.Disconnect()
+		pp.Disconnect("handleGetSnapshot - empty SnapshotStartKey or Prefix")
 		return
 	}
 
@@ -788,7 +792,7 @@ out:
 func (pp *Peer) String() string {
 	isDisconnected := ""
 	if pp.disconnected != 0 {
-		isDisconnected = ", DISCONNECTED"
+		isDisconnected = fmt.Sprintf(", DISCONNECTED (%v)", pp.disconnectReason)
 	}
 	return fmt.Sprintf("[ Remote Address: %v%s PeerID=%d ]", pp.addrStr, isDisconnected, pp.ID)
 }
@@ -1007,7 +1011,7 @@ out:
 			glog.V(3).Infof("Writing Message: (%v)", msg)
 			if err := pp.WriteDeSoMessage(msg); err != nil {
 				glog.Errorf("Peer.outHandler: Problem sending message to peer: %v: %v", pp, err)
-				pp.Disconnect()
+				pp.Disconnect("outHandler - problem sending message to peer")
 			}
 		case <-stallTicker.C:
 			// Every second take a look to see if there's something that the peer should
@@ -1025,7 +1029,9 @@ out:
 				glog.Errorf("Peer.outHandler: Peer %v took too long to response to "+
 					"reqest. Expected MsgType=%v at time %v but it is now time %v",
 					pp, firstEntry.MessageType, firstEntry.TimeExpected, nowTime)
-				pp.Disconnect()
+				pp.Disconnect(fmt.Sprintf(
+					"outHandler - peer took too long to respond to request, expected MsgType=%v",
+					firstEntry.MessageType))
 			}
 
 		case <-pp.quit:
@@ -1060,7 +1066,7 @@ func (pp *Peer) _maybeAddBlocksToSend(msg DeSoMessage) error {
 	// We can safely increase this without breaking backwards-compatibility because old
 	// nodes will never send us more hashes than this.
 	if len(pp.blocksToSend) > MaxBlocksInFlightPoS {
-		pp.Disconnect()
+		pp.Disconnect("maybeAddBlocksToSend - too many blocks requested")
 		return fmt.Errorf("_maybeAddBlocksToSend: Disconnecting peer %v because she requested %d "+
 			"blocks, which is more than the %d blocks allowed "+
 			"in flight", pp, len(pp.blocksToSend), MaxBlocksInFlightPoS)
@@ -1148,7 +1154,7 @@ func (pp *Peer) inHandler() {
 	// is processed.
 	idleTimer := time.AfterFunc(idleTimeout, func() {
 		glog.V(1).Infof("Peer.inHandler: Peer %v no answer for %v -- disconnecting", pp, idleTimeout)
-		pp.Disconnect()
+		pp.Disconnect("inHandler - no answer for idleTimeout")
 	})
 
 out:
@@ -1230,7 +1236,7 @@ out:
 	idleTimer.Stop()
 
 	// Disconnect the Peer if it isn't already.
-	pp.Disconnect()
+	pp.Disconnect("inHandler - done processing messages")
 
 	glog.V(1).Infof("Peer.inHandler: done for peer: %v", pp)
 }
@@ -1326,15 +1332,18 @@ func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 	return msg, nil
 }
 
+// TODO: Disconnect reason enum
+
 // Disconnect closes a peer's network connection.
-func (pp *Peer) Disconnect() {
+func (pp *Peer) Disconnect(reason string) {
 	// Only run the logic the first time Disconnect is called.
-	glog.V(1).Infof(CLog(Yellow, "Peer.Disconnect: Starting"))
+	glog.V(0).Infof(CLog(Yellow, "Peer.Disconnect: Starting for Peer %v with reason: %v"), pp, reason)
 	if atomic.LoadInt32(&pp.disconnected) != 0 {
 		glog.V(1).Infof("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
 		return
 	}
 	atomic.AddInt32(&pp.disconnected, 1)
+	pp.disconnectReason = reason
 
 	glog.V(2).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 

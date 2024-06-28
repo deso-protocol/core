@@ -386,7 +386,7 @@ func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddres
 }
 
 // Disconnect disconnects the remote node, closing the attempted connection or the established connection.
-func (rn *RemoteNode) Disconnect() {
+func (rn *RemoteNode) Disconnect(disconnectReason string) {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
