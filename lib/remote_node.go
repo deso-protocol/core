@@ -402,7 +402,7 @@ func (rn *RemoteNode) Disconnect(disconnectReason string) {
 		rn.cmgr.CloseAttemptedConnection(id)
 	case RemoteNodeStatus_Connected, RemoteNodeStatus_VersionSent, RemoteNodeStatus_VerackSent,
 		RemoteNodeStatus_HandshakeCompleted:
-		rn.cmgr.CloseConnection(id)
+		rn.cmgr.CloseConnection(id, disconnectReason)
 	}
 	rn.setStatusTerminated()
 }
