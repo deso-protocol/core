@@ -65,9 +65,9 @@ func main() {
 	}
 
 	messagesFromPeer := make(chan *lib.ServerMessage)
-	peer := lib.NewPeer(conn, true, netAddrss, true,
+	peer := lib.NewPeer(0, conn, true, netAddrss, true,
 		10000, 0, &lib.DeSoMainnetParams,
-		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny)
+		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny, nil)
 	time.Sleep(1 * time.Second)
 	if err := peer.NegotiateVersion(lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
 		panic(err)
@@ -163,7 +163,7 @@ func main() {
 				}
 
 				time.Sleep(1)
-				peer.Disconnect()
+				peer.Disconnect("done dumping mempool")
 				break
 			}
 		}
@@ -238,7 +238,7 @@ func main() {
 			}
 		}
 
-		peer.Disconnect()
+		peer.Disconnect("done loading txns")
 
 	} else {
 		fmt.Println("Command must be 'dump' or 'load'")

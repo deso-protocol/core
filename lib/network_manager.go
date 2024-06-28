@@ -254,7 +254,7 @@ func (nm *NetworkManager) _handleVersionMessage(origin *Peer, desoMsg DeSoMessag
 	if verMsg, ok = desoMsg.(*MsgDeSoVersion); !ok {
 		glog.Errorf("NetworkManager.handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
 			"error casting version message", origin.ID)
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "error casting version message")
 		return
 	}
 
@@ -264,7 +264,7 @@ func (nm *NetworkManager) _handleVersionMessage(origin *Peer, desoMsg DeSoMessag
 		nm.usedNonces.Delete(msgNonce)
 		glog.Errorf("NetworkManager.handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
 			"nonce collision, nonce (%v)", origin.ID, msgNonce)
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "nonce collision")
 		return
 	}
 
@@ -273,7 +273,7 @@ func (nm *NetworkManager) _handleVersionMessage(origin *Peer, desoMsg DeSoMessag
 	if err := rn.HandleVersionMessage(verMsg, responseNonce); err != nil {
 		glog.Errorf("NetworkManager.handleVersionMessage: Requesting PeerDisconnect for id: (%v) "+
 			"error handling version message: %v", origin.ID, err)
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, fmt.Sprintf("error handling version message: %v", err))
 		return
 
 	}
@@ -297,7 +297,7 @@ func (nm *NetworkManager) _handleVerackMessage(origin *Peer, desoMsg DeSoMessage
 	if vrkMsg, ok = desoMsg.(*MsgDeSoVerack); !ok {
 		glog.Errorf("NetworkManager.handleVerackMessage: Disconnecting RemoteNode with id: (%v) "+
 			"error casting verack message", origin.ID)
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "error casting verack message")
 		return
 	}
 
@@ -305,7 +305,7 @@ func (nm *NetworkManager) _handleVerackMessage(origin *Peer, desoMsg DeSoMessage
 	if err := rn.HandleVerackMessage(vrkMsg); err != nil {
 		glog.Errorf("NetworkManager.handleVerackMessage: Requesting PeerDisconnect for id: (%v) "+
 			"error handling verack message: %v", origin.ID, err)
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, fmt.Sprintf("error handling verack message: %v", err))
 		return
 	}
 
@@ -321,7 +321,7 @@ func (nm *NetworkManager) _handleDisconnectedPeerMessage(origin *Peer, desoMsg D
 
 	glog.V(2).Infof("NetworkManager._handleDisconnectedPeerMessage: Handling disconnected peer message for "+
 		"id=%v", origin.ID)
-	nm.DisconnectById(NewRemoteNodeId(origin.ID))
+	nm.DisconnectById(NewRemoteNodeId(origin.ID), "peer disconnected")
 	// Update the persistentIpToRemoteNodeIdsMap, in case the disconnected peer was a persistent peer.
 	ipRemoteNodeIdMap := nm.persistentIpToRemoteNodeIdsMap.ToMap()
 	for ip, id := range ipRemoteNodeIdMap {
@@ -459,7 +459,7 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 func (nm *NetworkManager) cleanupFailedInboundConnection(remoteNode *RemoteNode, connection Connection) {
 	glog.V(2).Infof("NetworkManager.cleanupFailedInboundConnection: Cleaning up failed inbound connection")
 	if remoteNode != nil {
-		nm.Disconnect(remoteNode)
+		nm.Disconnect(remoteNode, "cleaning up failed inbound connection")
 	}
 	connection.Close()
 }
@@ -478,7 +478,7 @@ func (nm *NetworkManager) cleanupFailedOutboundConnection(connection Connection)
 	id := NewRemoteNodeId(oc.attemptId)
 	rn := nm.GetRemoteNodeById(id)
 	if rn != nil {
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "cleaning up failed outbound connection")
 	}
 	oc.Close()
 	nm.cmgr.RemoveAttemptedOutboundAddrs(oc.address)
@@ -578,14 +578,14 @@ func (nm *NetworkManager) refreshValidatorIndices() {
 			if _, ok := nm.GetValidatorOutboundIndex().Get(pk.Serialize()); ok {
 				glog.V(2).Infof("NetworkManager.refreshValidatorIndices: Disconnecting Validator RemoteNode "+
 					"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
-				nm.Disconnect(rn)
+				nm.Disconnect(rn, "outbound - validator public key already present in validator index")
 				continue
 			}
 		} else {
 			if _, ok := nm.GetValidatorInboundIndex().Get(pk.Serialize()); ok {
 				glog.V(2).Infof("NetworkManager.refreshValidatorIndices: Disconnecting Validator RemoteNode "+
 					"(%v) has validator public key (%v) that is already present in validator index", rn, pk)
-				nm.Disconnect(rn)
+				nm.Disconnect(rn, "inbound - validator public key already present in validator index")
 				continue
 			}
 		}
@@ -704,7 +704,7 @@ func (nm *NetworkManager) refreshNonValidatorOutboundIndex() {
 		}
 		glog.V(2).Infof("NetworkManager.refreshNonValidatorOutboundIndex: Disconnecting attempted remote "+
 			"node (id=%v) due to excess outbound RemoteNodes", rn.GetId())
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "excess attempted outbound RemoteNodes")
 		excessiveOutboundRemoteNodes--
 	}
 	// Now disconnect the connected remote nodes, if we still have too many remote nodes.
@@ -714,7 +714,7 @@ func (nm *NetworkManager) refreshNonValidatorOutboundIndex() {
 		}
 		glog.V(2).Infof("NetworkManager.refreshNonValidatorOutboundIndex: Disconnecting connected remote "+
 			"node (id=%v) due to excess outbound RemoteNodes", rn.GetId())
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "excess connected outbound RemoteNodes")
 		excessiveOutboundRemoteNodes--
 	}
 }
@@ -754,7 +754,7 @@ func (nm *NetworkManager) refreshNonValidatorInboundIndex() {
 		}
 		glog.V(2).Infof("NetworkManager.refreshNonValidatorInboundIndex: Disconnecting inbound remote "+
 			"node (id=%v) due to excess inbound RemoteNodes", rn.GetId())
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "excess inbound RemoteNodes")
 		excessiveInboundRemoteNodes--
 	}
 }
@@ -943,7 +943,7 @@ func (nm *NetworkManager) AttachOutboundConnection(
 	}
 
 	if err := remoteNode.AttachOutboundConnection(conn, na, isPersistent); err != nil {
-		nm.Disconnect(remoteNode)
+		nm.Disconnect(remoteNode, fmt.Sprintf("error attaching outbound connection: %v", err))
 		return nil, errors.Wrapf(err, "NetworkManager.AttachOutboundConnection: Problem calling AttachOutboundConnection "+
 			"for addr: (%s). Disconnecting remote node (id=%v)", conn.RemoteAddr().String(), remoteNode.GetId())
 	}
@@ -959,7 +959,7 @@ func (nm *NetworkManager) DisconnectAll() {
 	allRemoteNodes := nm.GetAllRemoteNodes().GetAll()
 	for _, rn := range allRemoteNodes {
 		glog.V(2).Infof("NetworkManager.DisconnectAll: Disconnecting from remote node (id=%v)", rn.GetId())
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, "disconnecting all remote nodes")
 	}
 }
 
@@ -1001,22 +1001,22 @@ func (nm *NetworkManager) ProcessCompletedHandshake(remoteNode *RemoteNode) {
 	nm.srv.maybeRequestAddresses(remoteNode)
 }
 
-func (nm *NetworkManager) Disconnect(rn *RemoteNode) {
+func (nm *NetworkManager) Disconnect(rn *RemoteNode, disconnectReason string) {
 	if rn == nil {
 		return
 	}
 	glog.V(2).Infof("NetworkManager.Disconnect: Disconnecting from remote node id=%v", rn.GetId())
-	rn.Disconnect()
+	rn.Disconnect(disconnectReason)
 	nm.removeRemoteNodeFromIndexer(rn)
 }
 
-func (nm *NetworkManager) DisconnectById(id RemoteNodeId) {
+func (nm *NetworkManager) DisconnectById(id RemoteNodeId, disconnectReason string) {
 	rn := nm.GetRemoteNodeById(id)
 	if rn == nil {
 		return
 	}
 
-	nm.Disconnect(rn)
+	nm.Disconnect(rn, disconnectReason)
 }
 
 func (nm *NetworkManager) SendMessage(rn *RemoteNode, desoMessage DeSoMessage) error {
@@ -1067,7 +1067,7 @@ func (nm *NetworkManager) Cleanup() {
 	for _, rn := range allRemoteNodes {
 		if rn.IsTimedOut() {
 			glog.V(2).Infof("NetworkManager.Cleanup: Disconnecting from remote node (id=%v)", rn.GetId())
-			nm.Disconnect(rn)
+			nm.Disconnect(rn, "cleanup")
 		}
 	}
 }
@@ -1261,7 +1261,7 @@ func (nm *NetworkManager) InitiateHandshake(rn *RemoteNode) {
 	nonce := uint64(RandInt64(math.MaxInt64))
 	if err := rn.InitiateHandshake(nonce); err != nil {
 		glog.Errorf("NetworkManager.InitiateHandshake: Error initiating handshake: %v", err)
-		nm.Disconnect(rn)
+		nm.Disconnect(rn, fmt.Sprintf("error initiating handshake: %v", err))
 	}
 	nm.usedNonces.Add(nonce)
 }
@@ -1285,7 +1285,7 @@ func (nm *NetworkManager) handleHandshakeComplete(remoteNode *RemoteNode) {
 	if err := nm.handleHandshakeCompletePoSMessage(remoteNode); err != nil {
 		glog.Errorf("NetworkManager.handleHandshakeComplete: Error handling PoS handshake peer message: %v, "+
 			"remoteNodePk (%s)", err, remoteNode.GetValidatorPublicKey().Serialize())
-		nm.Disconnect(remoteNode)
+		nm.Disconnect(remoteNode, fmt.Sprintf("error handling PoS handshake peer message: %v", err))
 		return
 	}
 	nm.ProcessCompletedHandshake(remoteNode)
@@ -1317,7 +1317,7 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 	existingValidator, ok := nm.GetValidatorOutboundIndex().Get(validatorPk.Serialize())
 	if ok && remoteNode.GetId() != existingValidator.GetId() {
 		if remoteNode.IsPersistent() && !existingValidator.IsPersistent() {
-			nm.Disconnect(existingValidator)
+			nm.Disconnect(existingValidator, "outbound - duplicate validator public key")
 			return nil
 		}
 		return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Outbound RemoteNode with duplicate validator public key. "+
