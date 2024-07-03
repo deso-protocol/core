@@ -461,7 +461,7 @@ func (cmgr *ConnectionManager) SendMessage(msg DeSoMessage, peerId uint64) error
 	return nil
 }
 
-func (cmgr *ConnectionManager) CloseConnection(peerId uint64) {
+func (cmgr *ConnectionManager) CloseConnection(peerId uint64, disconnectReason string) {
 	glog.V(2).Infof("ConnectionManager.CloseConnection: Closing connection to peer (id= %v)", peerId)
 
 	var peer *Peer
@@ -472,7 +472,7 @@ func (cmgr *ConnectionManager) CloseConnection(peerId uint64) {
 	if !ok {
 		return
 	}
-	peer.Disconnect()
+	peer.Disconnect(fmt.Sprintf("ConnectionManager.CloseConnection: Closing connection to peer: %v", disconnectReason))
 }
 
 // Update our data structures to remove this peer.
@@ -550,15 +550,15 @@ func (cmgr *ConnectionManager) Stop() {
 		len(cmgr.persistentPeers))
 	for _, peer := range cmgr.inboundPeers {
 		glog.V(1).Infof(CLog(Red, fmt.Sprintf("ConnectionManager.Stop: Inbound peer (%v)", peer)))
-		peer.Disconnect()
+		peer.Disconnect("ConnectionManager.Stop: Stopping ConnectionManager")
 	}
 	for _, peer := range cmgr.outboundPeers {
 		glog.V(1).Infof("ConnectionManager.Stop: Outbound peer (%v)", peer)
-		peer.Disconnect()
+		peer.Disconnect("ConnectionManager.Stop: Stopping ConnectionManager")
 	}
 	for _, peer := range cmgr.persistentPeers {
 		glog.V(1).Infof("ConnectionManager.Stop: Persistent peer (%v)", peer)
-		peer.Disconnect()
+		peer.Disconnect("ConnectionManager.Stop: Stopping ConnectionManager")
 	}
 
 	// Close all of the listeners.

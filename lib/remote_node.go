@@ -386,7 +386,7 @@ func (rn *RemoteNode) AttachOutboundConnection(conn net.Conn, na *wire.NetAddres
 }
 
 // Disconnect disconnects the remote node, closing the attempted connection or the established connection.
-func (rn *RemoteNode) Disconnect() {
+func (rn *RemoteNode) Disconnect(disconnectReason string) {
 	rn.mtx.Lock()
 	defer rn.mtx.Unlock()
 
@@ -402,7 +402,7 @@ func (rn *RemoteNode) Disconnect() {
 		rn.cmgr.CloseAttemptedConnection(id)
 	case RemoteNodeStatus_Connected, RemoteNodeStatus_VersionSent, RemoteNodeStatus_VerackSent,
 		RemoteNodeStatus_HandshakeCompleted:
-		rn.cmgr.CloseConnection(id)
+		rn.cmgr.CloseConnection(id, disconnectReason)
 	}
 	rn.setStatusTerminated()
 }

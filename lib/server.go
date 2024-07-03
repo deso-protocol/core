@@ -1075,7 +1075,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				"found between the received header height %v does not match the checkpoint block info %v",
 				pp, srv.blockchain.chainState(), headerReceived.Height,
 				srv.blockchain.GetCheckpointBlockInfo().String())
-			pp.Disconnect()
+			pp.Disconnect("Header height mismatch with checkpoint block info")
 			return
 		}
 
@@ -1100,7 +1100,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				"because error occurred processing header: %v, isOrphan: %v",
 				pp, srv.blockchain.chainState(), err, isOrphan)
 
-			pp.Disconnect()
+			pp.Disconnect("Error processing header")
 			return
 		}
 	}
@@ -1310,7 +1310,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			"she indicated that she has more headers but the last hash %v in "+
 			"the header bundle does not correspond to a block in our index.",
 			pp, lastHash)
-		pp.Disconnect()
+		pp.Disconnect("Last hash in header bundle not in our index")
 		return
 	}
 	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
@@ -1372,7 +1372,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if srv.snapshot == nil {
 		glog.Errorf("srv._handleSnapshot: Received a snapshot message from a peer but srv.snapshot is nil. " +
 			"This peer shouldn't send us snapshot messages because we didn't pass the SFHyperSync flag.")
-		pp.Disconnect()
+		pp.Disconnect("handleSnapshot: Snapshot message received but snapshot is nil")
 		return
 	}
 
@@ -1380,7 +1380,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if srv.blockchain.ChainState() != SyncStateSyncingSnapshot {
 		glog.Errorf("srv._handleSnapshot: Received a snapshot message from peer but chain is not currently syncing from "+
 			"snapshot. This means peer is most likely misbehaving so we'll disconnect them. Peer: (%v)", pp)
-		pp.Disconnect()
+		pp.Disconnect("handleSnapshot: Chain is not syncing from snapshot")
 		return
 	}
 
@@ -1388,7 +1388,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// We should disconnect the peer because he is misbehaving or doesn't have the snapshot.
 		glog.Errorf("srv._handleSnapshot: Received a snapshot messages with empty snapshot chunk "+
 			"disconnecting misbehaving peer (%v)", pp)
-		pp.Disconnect()
+		pp.Disconnect("handleSnapshot: Empty snapshot chunk received from peer")
 		return
 	}
 
@@ -1426,7 +1426,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			"hyper sync height (%v) and hash (%v)",
 			msg.SnapshotMetadata.SnapshotBlockHeight, msg.SnapshotMetadata.CurrentEpochBlockHash,
 			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash)
-		pp.Disconnect()
+		pp.Disconnect("handleSnapshot: Snapshot metadata does not match expected snapshot metadata")
 		return
 	}
 
@@ -1443,7 +1443,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("srv._handleSnapshot: Problem finding appropriate sync prefix progress "+
 			"disconnecting misbehaving peer (%v)", pp)
-		pp.Disconnect()
+		pp.Disconnect("handleSnapshot: Problem finding appropriate sync prefix progress")
 		return
 	}
 
@@ -1457,7 +1457,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("srv._handleSnapshot: HyperSyncProgress epoch checksum bytes does not match that received from peer, "+
 			"disconnecting misbehaving peer (%v)", pp)
-		pp.Disconnect()
+		pp.Disconnect("handleSnapshot: Snapshot checksum bytes do not match expected checksum bytes")
 		return
 	}
 
@@ -1480,7 +1480,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			glog.Errorf("srv._handleSnapshot: Snapshot chunk DBEntry key has mismatched prefix "+
 				"disconnecting misbehaving peer (%v)", pp)
 			srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
-			pp.Disconnect()
+			pp.Disconnect("handleSnapshot: Snapshot chunk DBEntry key has mismatched prefix")
 			return
 		}
 		dbChunk = append(dbChunk, msg.SnapshotChunk[0])
@@ -1492,7 +1492,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			glog.Errorf("srv._handleSnapshot: Received a snapshot chunk that's not in-line with the sync progress "+
 				"disconnecting misbehaving peer (%v)", pp)
 			srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
-			pp.Disconnect()
+			pp.Disconnect("handleSnapshot: Snapshot chunk not in-line with sync progress")
 			return
 		}
 	}
@@ -1509,7 +1509,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 				glog.Errorf("srv._handleSnapshot: DBEntry key has mismatched prefix "+
 					"disconnecting misbehaving peer (%v)", pp)
 				srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
-				pp.Disconnect()
+				pp.Disconnect("handleSnapshot: DBEntry key has mismatched prefix")
 				return
 			}
 			// Make sure that the dbChunk is sorted increasingly.
@@ -1519,7 +1519,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 					"value (%v) and second entry with index (%v) and value (%v) disconnecting misbehaving peer (%v)",
 					ii-1, dbChunk[ii-1].Key, ii, dbChunk[ii].Key, pp)
 				srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
-				pp.Disconnect()
+				pp.Disconnect("handleSnapshot: dbChunk entries are not sorted")
 				return
 			}
 		}
@@ -2185,7 +2185,7 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 	// fetch headers, blocks, etc. So we'll be back.
 	glog.Errorf("Server._handleBlock: Encountered an error processing "+
 		"block %v. Disconnecting from peer %v: %s", blockMsg, pp, suffix)
-	pp.Disconnect()
+	pp.Disconnect("Problem processing block")
 }
 
 // This function handles a single block that we receive from our peer. Originally, we would receive blocks
@@ -2258,7 +2258,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 			"found between the received header height %v does not match the checkpoint block info %v",
 			pp, srv.blockchain.chainState(), blk.Header.Height,
 			srv.blockchain.GetCheckpointBlockInfo().Hash.String())
-		pp.Disconnect()
+		pp.Disconnect("Mismatch between received header height and checkpoint block info")
 		return
 	}
 
@@ -2434,7 +2434,7 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 		glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received EMPTY block bundle "+
 			"at header height ( %v ) from Peer %v. Disconnecting peer since this should never happen.",
 			srv.blockchain.headerTip().Height, pp)))
-		pp.Disconnect()
+		pp.Disconnect("Received empty block bundle.")
 		return
 	}
 	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received blocks ( %v->%v / %v ) from Peer %v. "+
@@ -2593,7 +2593,7 @@ func (srv *Server) _processTransactions(pp *Peer, transactions []*MsgDeSoTxn) []
 				glog.Errorf(fmt.Sprintf("Server._handleTransactionBundle: Disconnecting "+
 					"Peer %v for sending us a transaction %v with fee below the minimum fee %d",
 					pp, txn, srv.mempool.minFeeRateNanosPerKB))
-				pp.Disconnect()
+				pp.Disconnect("Transaction fee below minimum fee")
 			}
 
 			// Don't do anything else if we got an error.
@@ -2673,7 +2673,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	var ok bool
 	if msg, ok = desoMsg.(*MsgDeSoAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.networkManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id, "Problem decoding MsgDeSoAddr")
 		return
 	}
 
@@ -2689,7 +2689,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 			"Peer id=%v for sending us an addr message with %d transactions, which exceeds "+
 			"the max allowed %d",
 			pp.ID, len(msg.AddrList), MaxAddrsPerAddrMsg))
-		srv.networkManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id, "Addr message too large")
 		return
 	}
 
@@ -2740,7 +2740,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	if _, ok := desoMsg.(*MsgDeSoGetAddr); !ok {
 		glog.Errorf("Server._handleAddrMessage: Problem decoding "+
 			"MsgDeSoAddr: %v", spew.Sdump(desoMsg))
-		srv.networkManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id, "Problem decoding MsgDeSoGetAddr")
 		return
 	}
 
@@ -2769,7 +2769,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	rn := srv.networkManager.GetRemoteNodeById(id)
 	if err := srv.networkManager.SendMessage(rn, res); err != nil {
 		glog.Errorf("Server._handleGetAddrMessage: Problem sending addr message to peer %v: %v", pp, err)
-		srv.networkManager.DisconnectById(id)
+		srv.networkManager.DisconnectById(id, "Problem sending addr message")
 		return
 	}
 }

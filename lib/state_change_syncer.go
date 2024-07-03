@@ -192,7 +192,8 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	// Decode the block height.
 	entryBlockHeight, err := ReadUvarint(rr)
 	if err != nil {
-		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height")
+		entryBlockHeight = blockHeight
+		fmt.Printf("StateChangeEntry.RawDecodeWithoutMetadata: error decoding block height: %v", err)
 	}
 	stateChangeEntry.BlockHeight = entryBlockHeight
 
