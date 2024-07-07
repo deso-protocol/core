@@ -846,7 +846,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		utxoViewAndOpsAtBlockHash, err := server.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*uncommittedBlock.Hash)
 		if err != nil {
 			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-				FlushId:        uuid.Nil,
+				FlushId:        originalCommittedFlushId,
 				Succeeded:      false,
 				IsMempoolFlush: true,
 			})
@@ -862,7 +862,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 				}, false),
 				Block: utxoViewAndOpsAtBlockHash.Block,
 			},
-			FlushId:      uuid.Nil,
+			FlushId:      originalCommittedFlushId,
 			IsMempoolTxn: true,
 		})
 		// getUtxoViewAtBlockHash returns a copy of the view, so we
