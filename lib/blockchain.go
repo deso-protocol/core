@@ -1550,10 +1550,16 @@ func (bc *Blockchain) isHyperSyncCondition() bool {
 
 	blockTip := bc.blockTip()
 	headerTip := bc.headerTip()
+	headerTipHeight := uint64(headerTip.Height)
 	snapshotBlockHeightPeriod := bc.params.GetSnapshotBlockHeightPeriod(
 		uint64(headerTip.Height),
 		bc.Snapshot().GetSnapshotBlockHeightPeriod(),
 	)
+	posSetupForkHeight := uint64(bc.params.ForkHeights.ProofOfStake1StateSetupBlockHeight)
+	if headerTipHeight > posSetupForkHeight &&
+		headerTipHeight-(headerTipHeight%snapshotBlockHeightPeriod) < posSetupForkHeight {
+		snapshotBlockHeightPeriod = bc.params.DefaultPoWSnapshotBlockHeightPeriod
+	}
 	if uint64(headerTip.Height-blockTip.Height) >= snapshotBlockHeightPeriod {
 		return true
 	}
