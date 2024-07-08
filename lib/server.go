@@ -1852,10 +1852,10 @@ func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 	// TODO: Sending a sync/mempool message to a random Peer periodically seems like it would
 	// be a good way to fill any gaps.
 	newPeer := srv.cmgr.RandomPeer()
-	if newPeer == nil {
-		// If we don't have a new Peer, remove everything that was destined for
-		// this Peer. Note we don't need to copy the iterator because everything
-		// below doesn't take a reference to it.
+	if newPeer == nil || !newPeer.canReceiveInvMessages {
+		// If we don't have a new Peer or the new peer can't receive INV messages,
+		// remove everything that was destined for this Peer. Note we don't need to
+		// copy the iterator because everything below doesn't take a reference to it.
 		for hashIter, requestInfo := range srv.requestedTransactionsMap {
 			hash := hashIter
 			if requestInfo.PeerWhoSentInv.ID == pp.ID {
@@ -1888,11 +1888,13 @@ func (srv *Server) _cleanupDonePeerState(pp *Peer) {
 		requestInfo.TimeRequested = time.Now()
 		txnHashesReassigned = append(txnHashesReassigned, hashCopy)
 	}
-	// Request any hashes we might have reassigned in a goroutine to keep things
-	// moving.
-	newPeer.AddDeSoMessage(&MsgDeSoGetTransactions{
-		HashList: txnHashesReassigned,
-	}, false)
+	if len(txnHashesReassigned) > 0 {
+		// Request any hashes we might have reassigned in a goroutine to keep things
+		// moving.
+		newPeer.AddDeSoMessage(&MsgDeSoGetTransactions{
+			HashList: txnHashesReassigned,
+		}, false)
+	}
 }
 
 func (srv *Server) _handleDisconnectedPeerMessage(pp *Peer) {
