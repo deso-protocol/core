@@ -1020,7 +1020,6 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 		if ok && fetchedRn.GetId() == rn.GetId() {
 			nm.GetValidatorOutboundIndex().Remove(rn.GetValidatorPublicKey().Serialize())
 		}
-		return
 	}
 
 	// Second, handle the inbound case.
@@ -1041,7 +1040,6 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 	for ip, remoteNodeId := range allPersistentIpRemoteNodeIds {
 		if remoteNodeId == rn.GetId() {
 			nm.persistentIpToRemoteNodeIdsMap.Remove(ip)
-			break
 		}
 	}
 }
