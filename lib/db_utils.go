@@ -8959,7 +8959,7 @@ func DBGetProfileEntryForPKID(db *badger.DB, snap *Snapshot, pkid *PKID) *Profil
 	return ret
 }
 
-func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID, params *DeSoParams, eventManager *EventManager, entryIs}Deleted bool) error {
+func DBDeleteProfileEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, pkid *PKID, params *DeSoParams, eventManager *EventManager, entryIsDeleted bool) error {
 
 	// First pull up the mapping that exists for the profile pub key passed in.
 	// If one doesn't exist then there's nothing to do.
