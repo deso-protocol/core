@@ -844,13 +844,24 @@ func (pp *Peer) _handleOutExpectedResponse(msg DeSoMessage) {
 	switch msg.GetMsgType() {
 	case MsgTypeGetBlocks:
 		getBlocks := msg.(*MsgDeSoGetBlocks)
-		// We have one block expected for each entry in the message.
-		for ii := range getBlocks.HashList {
+		if pp.NegotiatedProtocolVersion >= ProtocolVersion2 {
+			// TODO: What if the amount of blocks exceeds a single MsgTypeBlockBundle response.
+			// Note there isn't really a way in the current code for us to request more
+			// blocks in a single bundle that we should expect in a single response, so
+			// we should be ok.
 			pp._addExpectedResponse(&ExpectedResponse{
-				TimeExpected: time.Now().Add(
-					stallTimeout + time.Duration(int64(ii)*int64(stallTimeout))),
-				MessageType: MsgTypeBlock,
+				TimeExpected: time.Now().Add(stallTimeout),
+				MessageType:  MsgTypeBlockBundle,
 			})
+		} else {
+			// We have one block expected for each entry in the message.
+			for ii := range getBlocks.HashList {
+				pp._addExpectedResponse(&ExpectedResponse{
+					TimeExpected: time.Now().Add(
+						stallTimeout + time.Duration(int64(ii)*int64(stallTimeout))),
+					MessageType: MsgTypeBlock,
+				})
+			}
 		}
 	case MsgTypeGetHeaders:
 		// If we're sending a GetHeaders message, the Peer should respond within
@@ -1121,6 +1132,7 @@ func (pp *Peer) _handleInExpectedResponse(rmsg DeSoMessage) error {
 	// Do this in a separate switch to keep things clean.
 	msgType := rmsg.GetMsgType()
 	if msgType == MsgTypeBlock ||
+		msgType == MsgTypeBlockBundle ||
 		msgType == MsgTypeHeaderBundle ||
 		msgType == MsgTypeTransactionBundle ||
 		msgType == MsgTypeTransactionBundleV2 ||
