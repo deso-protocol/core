@@ -765,8 +765,22 @@ func (nm *NetworkManager) connectNonValidators() {
 	// Connect to addresses passed via the --connect-ips flag. These addresses are persistent in the sense that if we
 	// disconnect from one, we will try to reconnect to the same one.
 	for _, connectIp := range nm.connectIps {
-		if _, ok := nm.persistentIpToRemoteNodeIdsMap.Get(connectIp); ok {
-			continue
+		// Get the RemoteNodeId associated with the connectIp. If we don't have it,
+		// then we need to connect to the connectIp. Otherwise, we need to check if
+		// we've been disconnected. If we have, we need to clean up the RemoteNode.
+		if rnId, ok := nm.persistentIpToRemoteNodeIdsMap.Get(connectIp); ok {
+			rn := nm.GetRemoteNodeById(rnId)
+			// If we have the remote node and it's not disconnected, we continue.
+			// Note that we specifically don't use IsConnected to check because
+			// we don't want to reinitiate the connection if we're performing
+			// the handshake.
+			if rn != nil && !rn.IsNotConnected() {
+				continue
+			}
+			// Call the DisconnectById function to clean up the RemoteNode and remove it from
+			// the persistent IPs map. We'll be reconnecting this node down below.
+			nm.DisconnectById(rnId, "persistent connection disconnected, cleaning up in connectNonValidators")
+			nm.persistentIpToRemoteNodeIdsMap.Remove(connectIp)
 		}
 
 		glog.Infof("NetworkManager.initiatePersistentConnections: Connecting to connectIp: %v", connectIp)
