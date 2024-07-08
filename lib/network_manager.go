@@ -744,9 +744,10 @@ func (nm *NetworkManager) connectNonValidators() {
 			continue
 		}
 
-		// Add the connectIp to the persistentIpToRemoteNodeIdsMap only after adding the RemoteNode
-		// to the RemoteNode indices. Because this function is single threaded, this guarantees that
-		// only this RemoteNode is using the connectIp.
+		// Add the connectIp to persistentIpToRemoteNodeIdsMap only after adding the RemoteNode to
+		// the RemoteNode indices above. Because this function is called by a single thread, it guarantees
+		// that only this RemoteNode is using the connectIp and that the connectIp can only be added to
+		// persistentIpToRemoteNodeIdsMap if the RemoteNode is indexed.
 		nm.persistentIpToRemoteNodeIdsMap.Set(connectIp, id)
 	}
 
@@ -1034,7 +1035,7 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 	// efficient to do here because the number of persistent IPs will always be small.
 	//
 	// Clearing out the persistent IP here AFTER deleting the remote node guarantees that
-	// only the above remove node previously used this IP, AND now that both have been deleted
+	// only the above RemoteNode previously used this IP, AND now that both have been deleted
 	// the IP is safe to reconnect again.
 	allPersistentIpRemoteNodeIds := nm.persistentIpToRemoteNodeIdsMap.ToMap()
 	for ip, remoteNodeId := range allPersistentIpRemoteNodeIds {
@@ -1046,7 +1047,8 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 }
 
 func (nm *NetworkManager) Cleanup() {
-	// Clean up all remote nodes that are left in the network manager that have timed out.
+	// Clean up all RemoteNodes that have timed out or are left indexed due to some other
+	// unexpected failure.
 	allRemoteNodes := nm.GetAllRemoteNodes().GetAll()
 	for _, rn := range allRemoteNodes {
 		if rn.IsTimedOut() {
