@@ -813,9 +813,12 @@ func DBUpdateValidatorWithTxn(
 	// when absolutely necessary.
 	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
 		fmt.Printf("Skipping write for validator %+v\n", validatorEntry.ValidatorPKID)
+		fmt.Printf("dbEntryBytes: %+v\n", dbEntryBytes)
 		return nil
 	}
 	fmt.Printf("Not skipping write for validator %+v\n", validatorEntry.ValidatorPKID)
+	fmt.Printf("dbEntryBytes: %+v\n", dbEntryBytes)
+	fmt.Printf("entryToWriteBytes: %+v\n", entryToWriteBytes)
 
 	// Set ValidatorEntry in PrefixValidatorByPKID. This should gracefully overwrite an existing entry
 	// if one exists.
