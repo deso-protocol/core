@@ -692,7 +692,7 @@ func (snap *Snapshot) WaitForAllOperationsToFinish() {
 		}
 	}
 
-	ticker := time.NewTicker(10 * time.Millisecond)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	for {
 		<-ticker.C
 
