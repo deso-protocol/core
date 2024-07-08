@@ -322,13 +322,6 @@ func (nm *NetworkManager) _handleDisconnectedPeerMessage(origin *Peer, desoMsg D
 	glog.V(2).Infof("NetworkManager._handleDisconnectedPeerMessage: Handling disconnected peer message for "+
 		"id=%v", origin.ID)
 	nm.DisconnectById(NewRemoteNodeId(origin.ID), "peer disconnected")
-	// Update the persistentIpToRemoteNodeIdsMap, in case the disconnected peer was a persistent peer.
-	ipRemoteNodeIdMap := nm.persistentIpToRemoteNodeIdsMap.ToMap()
-	for ip, id := range ipRemoteNodeIdMap {
-		if id.ToUint64() == origin.ID {
-			nm.persistentIpToRemoteNodeIdsMap.Remove(ip)
-		}
-	}
 }
 
 // _handleNewConnectionMessage is called when a new outbound or inbound connection is established. It is responsible
@@ -482,32 +475,6 @@ func (nm *NetworkManager) cleanupFailedOutboundConnection(connection Connection)
 	}
 	oc.Close()
 	nm.cmgr.RemoveAttemptedOutboundAddrs(oc.address)
-}
-
-// ###########################
-// ## Persistent Connections
-// ###########################
-
-// refreshConnectIps is called periodically by the persistent connector. It is responsible for connecting to all
-// persistent IP addresses that we are not already connected to.
-func (nm *NetworkManager) refreshConnectIps() {
-	// Connect to addresses passed via the --connect-ips flag. These addresses are persistent in the sense that if we
-	// disconnect from one, we will try to reconnect to the same one.
-	for _, connectIp := range nm.connectIps {
-		if _, ok := nm.persistentIpToRemoteNodeIdsMap.Get(connectIp); ok {
-			continue
-		}
-
-		glog.Infof("NetworkManager.initiatePersistentConnections: Connecting to connectIp: %v", connectIp)
-		id, err := nm.CreateNonValidatorPersistentOutboundConnection(connectIp)
-		if err != nil {
-			glog.Errorf("NetworkManager.initiatePersistentConnections: Problem connecting "+
-				"to connectIp %v: %v", connectIp, err)
-			continue
-		}
-
-		nm.persistentIpToRemoteNodeIdsMap.Set(connectIp, id)
-	}
 }
 
 // ###########################
@@ -777,6 +744,10 @@ func (nm *NetworkManager) connectNonValidators() {
 			continue
 		}
 
+		// Add the connectIp to persistentIpToRemoteNodeIdsMap only after adding the RemoteNode to
+		// the RemoteNode indices above. Because this function is called by a single thread, it guarantees
+		// that only this RemoteNode is using the connectIp and that the connectIp can only be added to
+		// persistentIpToRemoteNodeIdsMap if the RemoteNode is indexed.
 		nm.persistentIpToRemoteNodeIdsMap.Set(connectIp, id)
 	}
 
@@ -1039,30 +1010,43 @@ func (nm *NetworkManager) removeRemoteNodeFromIndexer(rn *RemoteNode) {
 	nm.GetNonValidatorOutboundIndex().Remove(rn.GetId())
 	nm.GetNonValidatorInboundIndex().Remove(rn.GetId())
 
-	// Try to evict the remote node from the validator index. If the remote node is not a validator, then there is nothing to do.
-	if rn.GetValidatorPublicKey() == nil {
-		return
-	}
 	// Only remove from the validator index if the fetched remote node is the same as the one we are trying to remove.
 	// Otherwise, we could have a fun edge-case where a duplicated validator connection ends up removing an
 	// existing validator connection from the index.
-	// First handle the outbound RemoteNode case.
+
+	// First, handle the outbound RemoteNode case.
 	if rn.IsOutbound() {
 		fetchedRn, ok := nm.GetValidatorOutboundIndex().Get(rn.GetValidatorPublicKey().Serialize())
 		if ok && fetchedRn.GetId() == rn.GetId() {
 			nm.GetValidatorOutboundIndex().Remove(rn.GetValidatorPublicKey().Serialize())
 		}
-		return
 	}
 
-	// If the node is inbound, perform a similar check.
-	fetchedRn, ok := nm.GetValidatorInboundIndex().Get(rn.GetValidatorPublicKey().Serialize())
-	if ok && fetchedRn.GetId() == rn.GetId() {
-		nm.GetValidatorInboundIndex().Remove(rn.GetValidatorPublicKey().Serialize())
+	// Second, handle the inbound case.
+	if rn.IsInbound() {
+		fetchedRn, ok := nm.GetValidatorInboundIndex().Get(rn.GetValidatorPublicKey().Serialize())
+		if ok && fetchedRn.GetId() == rn.GetId() {
+			nm.GetValidatorInboundIndex().Remove(rn.GetValidatorPublicKey().Serialize())
+		}
+	}
+
+	// Finally, remove the RemoteNode's ID from the persistent IPs map. This is safe and
+	// efficient to do here because the number of persistent IPs will always be small.
+	//
+	// Clearing out the persistent IP here AFTER deleting the remote node guarantees that
+	// only the above RemoteNode previously used this IP, AND now that both have been deleted
+	// the IP is safe to reconnect again.
+	allPersistentIpRemoteNodeIds := nm.persistentIpToRemoteNodeIdsMap.ToMap()
+	for ip, remoteNodeId := range allPersistentIpRemoteNodeIds {
+		if remoteNodeId == rn.GetId() {
+			nm.persistentIpToRemoteNodeIdsMap.Remove(ip)
+		}
 	}
 }
 
 func (nm *NetworkManager) Cleanup() {
+	// Clean up all RemoteNodes that have timed out or are left indexed due to some other
+	// unexpected failure.
 	allRemoteNodes := nm.GetAllRemoteNodes().GetAll()
 	for _, rn := range allRemoteNodes {
 		if rn.IsTimedOut() {
