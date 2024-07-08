@@ -2508,7 +2508,7 @@ func EstimateMaxTxnFeeV1(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) uint64 {
 
 func (mp *DeSoMempool) EstimateFee(txn *MsgDeSoTxn, minFeeRateNanosPerKB uint64) (uint64, error) {
 	feeRate := mp.EstimateFeeRate(minFeeRateNanosPerKB)
-	return EstimateMaxTxnFeeV1(txn, feeRate), nil
+	return computeFeeRecursive(txn, feeRate)
 }
 
 func (mp *DeSoMempool) EstimateFeeRate(minFeeRateNanosPerKB uint64) uint64 {
