@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"math"
 	"net"
@@ -814,6 +815,21 @@ func DBUpdateValidatorWithTxn(
 	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
 		fmt.Printf("Skipping write for validator %+v\n", validatorEntry.ValidatorPKID)
 		fmt.Printf("dbEntryBytes: %+v\n", dbEntryBytes)
+		// We explicitly emit an upsert operation here for state syncer
+		// for the case where the entry is the same.
+		if eventManager != nil {
+			eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType:        DbOperationTypeUpsert,
+					KeyBytes:             DBKeyForValidatorByPKID(validatorEntry),
+					EncoderBytes:         entryToWriteBytes,
+					AncestralRecordBytes: dbEntryBytes,
+					IsReverted:           false,
+				},
+				FlushId:      uuid.Nil,
+				IsMempoolTxn: eventManager.isMempoolManager,
+			})
+		}
 		return nil
 	}
 	fmt.Printf("Not skipping write for validator %+v\n", validatorEntry.ValidatorPKID)

@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/google/uuid"
 	"math"
 	"sort"
 
@@ -591,6 +592,21 @@ func DBUpdateSnapshotValidatorSetEntryWithTxn(
 	entryToWriteBytes := EncodeToBytes(blockHeight, validatorEntry)
 	// If the entry in the db is the same as the entry we want to write, then no need to do anything.
 	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
+		// We explicitly emit an upsert operation here for state syncer
+		// for the case where the entry is the same.
+		if eventManager != nil {
+			eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType:        DbOperationTypeUpsert,
+					KeyBytes:             DBKeyForSnapshotValidatorSetByPKID(validatorEntry, snapshotAtEpochNumber),
+					EncoderBytes:         entryToWriteBytes,
+					AncestralRecordBytes: dbEntryBytes,
+					IsReverted:           false,
+				},
+				FlushId:      uuid.Nil,
+				IsMempoolTxn: eventManager.isMempoolManager,
+			})
+		}
 		return nil
 	}
 
