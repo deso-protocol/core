@@ -813,8 +813,6 @@ func DBUpdateValidatorWithTxn(
 	// a secondary optimization to only update the PrefixValidatorByStatusAndStakeAmount index
 	// when absolutely necessary.
 	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
-		fmt.Printf("Skipping write for validator %+v\n", validatorEntry.ValidatorPKID)
-		fmt.Printf("dbEntryBytes: %+v\n", dbEntryBytes)
 		// We explicitly emit an upsert operation here for state syncer
 		// for the case where the entry is the same.
 		if eventManager != nil {
@@ -832,9 +830,6 @@ func DBUpdateValidatorWithTxn(
 		}
 		return nil
 	}
-	fmt.Printf("Not skipping write for validator %+v\n", validatorEntry.ValidatorPKID)
-	fmt.Printf("dbEntryBytes: %+v\n", dbEntryBytes)
-	fmt.Printf("entryToWriteBytes: %+v\n", entryToWriteBytes)
 
 	// Set ValidatorEntry in PrefixValidatorByPKID. This should gracefully overwrite an existing entry
 	// if one exists.
