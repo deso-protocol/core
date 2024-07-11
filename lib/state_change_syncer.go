@@ -853,6 +853,16 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			})
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectBlock uncommitted block: ")
 		}
+		// Emit the Block event.
+		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+			StateChangeEntry: &StateChangeEntry{
+				OperationType: DbOperationTypeUpsert,
+				KeyBytes:      BlockHashToBlockKey(uncommittedBlock.Hash),
+				EncoderBytes:  EncodeToBytes(blockHeight, utxoViewAndOpsAtBlockHash.Block, false),
+			},
+			FlushId:      originalCommittedFlushId,
+			IsMempoolTxn: true,
+		})
 		// Emit the UtxoOps event.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
@@ -861,7 +871,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 				EncoderBytes: EncodeToBytes(blockHeight, &UtxoOperationBundle{
 					UtxoOpBundle: utxoViewAndOpsAtBlockHash.UtxoOps,
 				}, false),
-				Block: utxoViewAndOpsAtBlockHash.Block,
 			},
 			FlushId:      originalCommittedFlushId,
 			IsMempoolTxn: true,
