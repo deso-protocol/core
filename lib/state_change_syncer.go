@@ -854,14 +854,23 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectBlock uncommitted block: ")
 		}
 		// Emit the Block event.
+		blockBytes, err := utxoViewAndOpsAtBlockHash.Block.ToBytes(false)
+		if err != nil {
+			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:        originalCommittedFlushId,
+				Succeeded:      false,
+				IsMempoolFlush: true,
+			})
+			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: error converting block to bytes: ")
+		}
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
 			StateChangeEntry: &StateChangeEntry{
 				OperationType: DbOperationTypeUpsert,
 				KeyBytes:      BlockHashToBlockKey(uncommittedBlock.Hash),
-				EncoderBytes:  EncodeToBytes(blockHeight, utxoViewAndOpsAtBlockHash.Block, false),
+				EncoderBytes:  blockBytes,
 			},
 			FlushId:      originalCommittedFlushId,
-			IsMempoolTxn: true,
+			IsMempoolTxn: false,
 		})
 		// Emit the UtxoOps event.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
@@ -873,7 +882,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 				}, false),
 			},
 			FlushId:      originalCommittedFlushId,
-			IsMempoolTxn: true,
+			IsMempoolTxn: false,
 		})
 		// getUtxoViewAtBlockHash returns a copy of the view, so we
 		// set the mempoolTxUtxoView to the view at the block hash

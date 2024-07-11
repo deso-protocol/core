@@ -872,7 +872,7 @@ var RegtestForkHeights = ForkHeights{
 	// to allow for 144 blocks/epoch * 2 epochs = 288 blocks to be mined
 	// before the chain transitions to PoS. Two epoch transitions must take
 	// place for the chain to set up the validator set to run PoS.
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(300),
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(60),
 
 	LockupsBlockHeight: uint32(1),
 
@@ -917,6 +917,8 @@ func (params *DeSoParams) EnableRegtest() {
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	params.DefaultStakingRewardsAPYBasisPoints = 100000 * 100 // 100000% for regtest
+
+	params.DefaultEpochDurationNumBlocks = 10
 }
 
 func (params *DeSoParams) IsPoWBlockHeight(blockHeight uint64) bool {
