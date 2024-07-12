@@ -133,8 +133,11 @@ const (
 	// EncoderTypeBLSPublicKeyPKIDPairEntry represents a BLS public key <> PKID mapping.
 	EncoderTypeBLSPublicKeyPKIDPairEntry EncoderType = 51
 
+	// EncoderTypeBlockNode represents a block node in the blockchain.
+	EncoderTypeBlockNode EncoderType = 52
+
 	// EncoderTypeEndBlockView encoder type should be at the end and is used for automated tests.
-	EncoderTypeEndBlockView EncoderType = 52
+	EncoderTypeEndBlockView EncoderType = 53
 )
 
 // Txindex encoder types.

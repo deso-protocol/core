@@ -75,7 +75,7 @@ type DBPrefixes struct {
 	//
 	// Key format: <prefix_id, height uint32 (big-endian), hash BlockHash>
 	// Value format: serialized BlockNode
-	PrefixHeightHashToNodeInfo        []byte `prefix_id:"[1]"`
+	PrefixHeightHashToNodeInfo        []byte `prefix_id:"[1]" core_state:"true"`
 	PrefixBitcoinHeightHashToNodeInfo []byte `prefix_id:"[2]"`
 
 	// We store the hash of the node that is the current tip of the main chain.
@@ -4877,6 +4877,10 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	)
 
 	rr := bytes.NewReader(data)
+	return DeserializeBlockNodeFromReader(rr, blockNode)
+}
+
+func DeserializeBlockNodeFromReader(rr *bytes.Reader, blockNode *BlockNode) (*BlockNode, error) {
 	// Hash
 	_, err := io.ReadFull(rr, blockNode.Hash[:])
 	if err != nil {
