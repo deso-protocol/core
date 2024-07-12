@@ -237,6 +237,16 @@ func (nn *BlockNode) GetEncoderType() EncoderType {
 	return EncoderTypeBlockNode
 }
 
+// Append DeSo Encoder Metadata bytes to BlockNode bytes.
+func AddEncoderMetadataToBlockNodeBytes(blockNodeBytes []byte, blockHeight uint64) []byte {
+	var blockData []byte
+	blockData = append(blockData, BoolToByte(true))
+	blockData = append(blockData, UintToBuf(uint64((&BlockNode{}).GetEncoderType()))...)
+	blockData = append(blockData, UintToBuf(uint64((&BlockNode{}).GetVersionByte(blockHeight)))...)
+	blockData = append(blockData, EncodeByteArray(blockNodeBytes)...)
+	return blockData
+}
+
 func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {
 	diffBigint := btcdchain.CompactToBig(diffBits)
 	return BigintToHash(diffBigint)

@@ -440,6 +440,9 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		if encoder.GetEncoderType() == EncoderTypeBlock {
 			stateChangeEntry.EncoderBytes = AddEncoderMetadataToMsgDeSoBlockBytes(stateChangeEntry.EncoderBytes, stateChangeEntry.BlockHeight)
 		}
+		if encoder.GetEncoderType() == EncoderTypeBlockNode {
+			stateChangeEntry.EncoderBytes = AddEncoderMetadataToBlockNodeBytes(stateChangeEntry.EncoderBytes, stateChangeEntry.BlockHeight)
+		}
 
 		encoderType = encoder.GetEncoderType()
 	} else {

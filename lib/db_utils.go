@@ -647,6 +647,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	if bytes.Equal(prefix, Prefixes.PrefixBlockHashToBlock) {
 		// prefix_id:"[0]"
 		return true, &MsgDeSoBlock{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixHeightHashToNodeInfo) {
+		// prefix_id:"[1]"
+		return true, &BlockNode{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
 		// prefix_id:"[5]"
 		return true, &UtxoEntry{}
