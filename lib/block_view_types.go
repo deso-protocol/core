@@ -296,6 +296,8 @@ func (encoderType EncoderType) New() DeSoEncoder {
 		return &LockupYieldCurvePoint{}
 	case EncoderTypeBLSPublicKeyPKIDPairEntry:
 		return &BLSPublicKeyPKIDPairEntry{}
+	case EncoderTypeBlockNode:
+		return &BlockNode{}
 	}
 
 	// Txindex encoder types

@@ -4880,10 +4880,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	)
 
 	rr := bytes.NewReader(data)
-	return DeserializeBlockNodeFromReader(rr, blockNode)
-}
 
-func DeserializeBlockNodeFromReader(rr *bytes.Reader, blockNode *BlockNode) (*BlockNode, error) {
 	// Hash
 	_, err := io.ReadFull(rr, blockNode.Hash[:])
 	if err != nil {

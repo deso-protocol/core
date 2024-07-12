@@ -208,24 +208,19 @@ func (nn *BlockNode) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata .
 		glog.Errorf("BlockNode.RawEncodeWithoutMetadata: Problem serializing BlockNode: %v", err)
 		return []byte{}
 	}
-	return nnBytes
+	return EncodeByteArray(nnBytes)
 }
 
 func (nn *BlockNode) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
-	blockNode := NewBlockNode(
-		nil,          // Parent
-		&BlockHash{}, // Hash
-		0,            // Height
-		&BlockHash{}, // DifficultyTarget
-		nil,          // CumWork
-		nil,          // Header
-		StatusNone,   // Status
-	)
-	deserializedBlockNode, err := DeserializeBlockNodeFromReader(rr, blockNode)
+	blockNodeBytes, err := DecodeByteArray(rr)
 	if err != nil {
-		return errors.Wrapf(err, "BlockNode.RawDecodeWithoutMetadata: Problem deserializing BlockNode")
+		return errors.Wrapf(err, "BlockNode.RawDecodeWithoutMetadata: Problem decoding block node")
 	}
-	*nn = *deserializedBlockNode
+	blockNode, err := DeserializeBlockNode(blockNodeBytes)
+	if err != nil {
+		return errors.Wrapf(err, "BlockNode.RawDecodeWithoutMetadata: Problem deserializing block node")
+	}
+	*nn = *blockNode
 	return nil
 }
 
