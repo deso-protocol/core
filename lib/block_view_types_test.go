@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"encoding/hex"
+	"math/big"
 	"reflect"
 	"testing"
 	"time"
@@ -25,6 +26,13 @@ func TestEmptyTypeEncoders(t *testing.T) {
 		} else if testType.GetEncoderType() == EncoderTypeTxn {
 			testType = &MsgDeSoTxn{
 				TxnMeta: &BasicTransferMetadata{},
+			}
+		} else if testType.GetEncoderType() == EncoderTypeBlockNode {
+			testType = &BlockNode{
+				Hash:             &BlockHash{},
+				DifficultyTarget: &BlockHash{},
+				CumWork:          big.NewInt(0),
+				Header:           &MsgDeSoHeader{},
 			}
 		}
 		testBytes := EncodeToBytes(0, testType)
@@ -69,6 +77,19 @@ func TestRandomTypeEncoders(t *testing.T) {
 			}
 			decodeCases[ii] = &MsgDeSoTxn{
 				TxnMeta: &BasicTransferMetadata{},
+			}
+		} else if encodeCases[ii].GetEncoderType() == EncoderTypeBlockNode {
+			encodeCases[ii] = &BlockNode{
+				Hash:             &BlockHash{},
+				DifficultyTarget: &BlockHash{},
+				CumWork:          big.NewInt(0),
+				Header:           &MsgDeSoHeader{},
+			}
+			decodeCases[ii] = &BlockNode{
+				Hash:             &BlockHash{},
+				DifficultyTarget: &BlockHash{},
+				CumWork:          big.NewInt(0),
+				Header:           &MsgDeSoHeader{},
 			}
 		}
 		encodedBytes := EncodeToBytes(0, encodeCases[ii])
