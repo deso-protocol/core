@@ -178,7 +178,7 @@ func (blockStatus BlockStatus) String() string {
 // of the best chain.
 type BlockNode struct {
 	// Pointer to a node representing the block's parent.
-	Parent *BlockNode
+	Parent *BlockNode `fake:"skip"`
 
 	// The hash computed on this block.
 	Hash *BlockHash
