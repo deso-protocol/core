@@ -872,7 +872,7 @@ var RegtestForkHeights = ForkHeights{
 	// to allow for 144 blocks/epoch * 2 epochs = 288 blocks to be mined
 	// before the chain transitions to PoS. Two epoch transitions must take
 	// place for the chain to set up the validator set to run PoS.
-	ProofOfStake2ConsensusCutoverBlockHeight: uint32(300),
+	ProofOfStake2ConsensusCutoverBlockHeight: uint32(40),
 
 	LockupsBlockHeight: uint32(1),
 
@@ -889,6 +889,12 @@ func (params *DeSoParams) EnableRegtest() {
 		glog.Error("Regtest mode can only be enabled in testnet mode")
 		return
 	}
+
+	params.DefaultEpochDurationNumBlocks = uint64(10)
+	params.DefaultBlockProductionIntervalMillisecondsPoS = 1000 // 1.5s TODO: verify this is a sane value.
+	params.DefaultTimeoutIntervalMillisecondsPoS = 2000         // 30s TODO: verify this is a sane value.
+	params.DefaultMempoolFeeEstimatorNumMempoolBlocks = 100
+	params.DefaultMempoolFeeEstimatorNumPastBlocks = 100
 
 	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
 	// Seed: verb find card ship another until version devote guilt strong lemon six
