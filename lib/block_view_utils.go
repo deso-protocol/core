@@ -1,6 +1,9 @@
 package lib
 
-import "github.com/pkg/errors"
+import (
+	"github.com/golang/glog"
+	"github.com/pkg/errors"
+)
 
 // SafeUtxoView is a wrapper around a UtxoView that provides a safe way to connect transactions
 // into a UtxoView without side effects when the connect fails.
@@ -40,6 +43,33 @@ func (safeUtxoView *SafeUtxoView) ConnectTransaction(
 	_fees uint64,
 	_err error,
 ) {
+	var revertBackupToPrimary bool
+	// If a transaction panics when connecting to the primary view, then
+	// we know it is invalid, and we should revert the primary view to the
+	// backup view. If the transaction panics when connecting to the backup
+	// view, then we should revert the backup view to the primary view and
+	// return a valid txn response.
+	// Note that we generally don't like to recover from panics as a panic
+	// signals an issue in the code that should be fixed. Additionally, we're
+	// breaking convention here as we don't like to set named return
+	// values, but we can't explicitly return values from a deferred function.
+	// We always prefer explicitly returning values instead of setting named
+	// return values as it makes the code easier to understand and maintain
+	// However, we are making an exception in this circumstance to ensure that
+	// nodes safely recover from a panic when trying to connect transactions.
+	defer func() {
+		if r := recover(); r != nil {
+			if revertBackupToPrimary {
+				safeUtxoView.backupView = safeUtxoView.primaryView.CopyUtxoView()
+				return
+			}
+			glog.Errorf("safeUtxoView.ConnectTransaction: Recovered from panic: %v", r)
+			_utxoOps = nil
+			_totalInput, _totalOutput, _fees = 0, 0, 0
+			_err = errors.Errorf("ConnectTransaction: Recovered from panic: %v", r)
+			safeUtxoView.primaryView = safeUtxoView.backupView.CopyUtxoView()
+		}
+	}()
 	// Connect the transaction to the primary view.
 	utxoOpsForTxn, totalInput, totalOutput, fees, err := safeUtxoView.primaryView.ConnectTransaction(
 		txn, txHash, blockHeight, blockTimestampNanoSecs, verifySignatures, ignoreUtxos,
@@ -50,6 +80,8 @@ func (safeUtxoView *SafeUtxoView) ConnectTransaction(
 		safeUtxoView.primaryView = safeUtxoView.backupView.CopyUtxoView()
 		return nil, 0, 0, 0, errors.Wrapf(err, "TryConnectTransaction: Problem connecting txn on copy view")
 	}
+
+	revertBackupToPrimary = true
 
 	// Connect the transaction to the backup view.
 	_, _, _, _, err = safeUtxoView.backupView.ConnectTransaction(
