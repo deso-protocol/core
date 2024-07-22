@@ -630,7 +630,7 @@ func simplePosNode(t *testing.T, port uint32, id string, regtest bool) *cmd.Node
 	if regtest {
 		node.Config.MinerPublicKeys = []string{seedPhraseToPublicKeyBase58Check(t, blsSeedPhrase, node.Params)}
 		node.Config.Regtest = true
-		node.Params.EnableRegtest()
+		node.Params.EnableRegtest(false)
 	}
 	return node
 }
