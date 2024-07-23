@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"time"
 
 	"github.com/golang/glog"
@@ -680,6 +681,12 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	// Fetch the validator list at the tip.
 	validatorList := fe.tip.validatorList
 
+	for _, validator := range validatorList {
+		glog.V(2).Infof("Validator: Key: %v, Stake: %v, Domains: %v",
+			validator.GetPublicKey().ToString(),
+			validator.GetStakeAmount().ToBig().String(), validator.GetDomains())
+	}
+
 	// Compute the chain tip's signature payload.
 	voteSignaturePayload := GetVoteSignaturePayload(tipBlock.GetView(), tipBlock.GetBlockHash())
 
@@ -710,6 +717,10 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 		signersList.Set(ii, true)
 		signatures = append(signatures, vote.GetSignature())
 	}
+
+	glog.V(2).Infof("FastHotStuffEventLoop.tryConstructVoteQCInCurrentView: "+
+		"Total Stake: %s, Total Voting Stake: %s, Signers List: %v, Num Signatures: %d",
+		totalStake.ToBig().String(), totalVotingStake.ToBig().String(), signersList, len(signatures))
 
 	// If we don't have a super-majority vote for the chain tip, then we can't build a QC.
 	if !isSuperMajorityStake(totalVotingStake, totalStake) {
@@ -756,6 +767,20 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	// proposed in the next view. So if we want to propose a timeout QC in the current view, we need
 	// to aggregate timeouts from the previous one.
 	timeoutsByValidator := fe.timeoutsSeenByView[fe.currentView-1]
+
+	glog.V(2).Infof("FastHotStuffEventLoop.tryConstructTimeoutQCInCurrentView: "+
+		"Spewing timeoutsByValidator: %v", spew.Sdump(timeoutsByValidator))
+	glog.V(2).Infof("FastHotStuffEventLoop.tryConstructTimeoutQCInCurrentView: " +
+		"Printing timeouts by validator: ")
+	for key, _ := range timeoutsByValidator {
+		validator, exists := fe.tip.validatorLookup[key]
+		if !exists {
+			glog.V(2).Infof("Validator not found for key %v", key)
+			continue
+		}
+		glog.V(2).Infof("Validator: Key: %v, Stake: %v, Domains: %v",
+			key, validator.GetStakeAmount().ToBig().String(), validator.GetDomains())
+	}
 
 	// Tracks the highQC from validators as we go along.
 	var validatorsHighQC QuorumCertificate
@@ -826,6 +851,10 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		signatures = append(signatures, timeout.GetSignature())
 		highQCViews[ii] = timeout.GetHighQC().GetView()
 	}
+
+	glog.V(2).Infof("FastHotStuffEventLoop.tryConstructTimeoutQCInCurrentView: "+
+		"totalStake: %s, totalTimedOutStake: %s",
+		totalStake.ToBig().String(), totalTimedOutStake.ToBig().String())
 
 	// Check if we have a super majority of stake that has timed out
 	if !isSuperMajorityStake(totalTimedOutStake, totalStake) {
