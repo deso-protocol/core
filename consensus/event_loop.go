@@ -609,10 +609,10 @@ func (fe *fastHotStuffEventLoop) resetScheduledTasks() {
 	if fe.tip.block.GetView() < fe.currentView-1 {
 		// Note, there is no risk of underflow here because the following is guaranteed:
 		// currentView > tip.block.GetView() + 1.
-		//numTimeouts := fe.currentView - fe.tip.block.GetView() - 1
+		numTimeouts := fe.currentView - fe.tip.block.GetView() - 1
 
 		// Compute the exponential back-off: nextTimeoutDuration * 2^numTimeouts
-		timeoutDuration = fe.timeoutBaseDuration * 3 // * time.Duration(powerOfTwo(numTimeouts, maxConsecutiveTimeouts))
+		timeoutDuration = fe.timeoutBaseDuration * time.Duration(powerOfTwo(numTimeouts, maxConsecutiveTimeouts))
 	}
 
 	// Schedule the next crank timer task. This will run with currentView param.
