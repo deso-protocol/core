@@ -433,10 +433,10 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Connection is not an outboundConnection")
 	}
 
-	if !addrmgr.IsRoutable(oc.address) {
-		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Rejecting OUTBOUND peer (%s) "+
-			"due to unroutable address", oc.address.IP.String())
-	}
+	//if !addrmgr.IsRoutable(oc.address) {
+	//	return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Rejecting OUTBOUND peer (%s) "+
+	//		"due to unroutable address", oc.address.IP.String())
+	//}
 
 	if oc.failed {
 		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Failed to connect to peer (%s:%v)",
