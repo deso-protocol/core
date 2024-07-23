@@ -528,6 +528,11 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	// Broadcast the block to the validator network
 	validators := fc.networkManager.GetConnectedValidators()
 	for _, validator := range validators {
+		glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: Broadcasting "+
+			"timeout msg %v to validator ID=%v pubkey=%v addr=%v",
+			timeoutMsg.ToString(),
+			validator.GetId(),
+			validator.validatorPublicKey.ToString(), validator.GetNetAddress())
 		sendMessageToRemoteNodeAsync(validator, timeoutMsg)
 	}
 
@@ -537,7 +542,8 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 // HandleValidatorTimeout is called when we receive a validator timeout message from a peer. This function
 // processes the timeout locally in the FastHotStuffEventLoop.
 func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) ([]*BlockHash, error) {
-	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorTimeout: %s", msg.ToString())
+	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorTimeout: %s [%v %v]", msg.ToString(),
+		msg.VotingPublicKey.ToString(), msg.TimedOutView)
 	glog.V(2).Infof("FastHotStuffConsensus.HandleValidatorTimeout: %s", fc.fastHotStuffEventLoop.ToString())
 
 	// Hold a write lock on the consensus, since we need to update the timeout message in the
