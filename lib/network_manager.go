@@ -395,6 +395,16 @@ func (nm *NetworkManager) processInboundConnection(conn Connection) (*RemoteNode
 		return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Connection is not an inboundConnection")
 	}
 
+	na, err := nm.ConvertIPStringToNetAddress(ic.connection.RemoteAddr().String())
+	if err != nil {
+		return nil, errors.Wrapf(err, "NetworkManager.handleInboundConnection: Problem calling "+
+			"ConvertIPStringToNetAddress for addr: (%s)", ic.connection.RemoteAddr().String())
+	}
+	if !addrmgr.IsRoutable(na) {
+		return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Rejecting INBOUND peer (%s) "+
+			"due to unroutable address", ic.connection.RemoteAddr().String())
+	}
+
 	// If we want to limit inbound connections to one per IP address, check to make sure this address isn't already connected.
 	if nm.limitOneInboundRemoteNodePerIP &&
 		nm.isDuplicateInboundIPAddress(ic.connection.RemoteAddr()) {
@@ -402,12 +412,6 @@ func (nm *NetworkManager) processInboundConnection(conn Connection) (*RemoteNode
 		return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Rejecting INBOUND peer (%s) due to "+
 			"already having an inbound connection from the same IP with limit_one_inbound_connection_per_ip set",
 			ic.connection.RemoteAddr().String())
-	}
-
-	na, err := nm.ConvertIPStringToNetAddress(ic.connection.RemoteAddr().String())
-	if err != nil {
-		return nil, errors.Wrapf(err, "NetworkManager.handleInboundConnection: Problem calling "+
-			"ConvertIPStringToNetAddress for addr: (%s)", ic.connection.RemoteAddr().String())
 	}
 
 	remoteNode, err := nm.AttachInboundConnection(ic.connection, na)
@@ -427,6 +431,11 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 	var ok bool
 	if oc, ok = conn.(*outboundConnection); !ok {
 		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Connection is not an outboundConnection")
+	}
+
+	if !addrmgr.IsRoutable(oc.address) {
+		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Rejecting OUTBOUND peer (%s) "+
+			"due to unroutable address", oc.address.IP.String())
 	}
 
 	if oc.failed {
@@ -1001,7 +1010,8 @@ func (nm *NetworkManager) Disconnect(rn *RemoteNode, disconnectReason string) {
 	if rn == nil {
 		return
 	}
-	glog.V(2).Infof("NetworkManager.Disconnect: Disconnecting from remote node id=%v", rn.GetId())
+	glog.V(2).Infof("NetworkManager.Disconnect: Disconnecting from remote "+
+		"node id=%v for reason %v", rn.GetId(), disconnectReason)
 	rn.Disconnect(disconnectReason)
 	nm.removeRemoteNodeFromIndexer(rn)
 }
@@ -1326,6 +1336,10 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 	existingValidator, ok := nm.GetValidatorOutboundIndex().Get(validatorPk.Serialize())
 	if ok && remoteNode.GetId() != existingValidator.GetId() {
 		if remoteNode.IsPersistent() && !existingValidator.IsPersistent() {
+			glog.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Outbound RemoteNode with duplicate validator public key. "+
+				"Existing validator id: %v, new validator id: %v, ip old: %v, ip new: %v",
+				existingValidator.GetId().ToUint64(), remoteNode.GetId().ToUint64(),
+				existingValidator.GetNetAddress(), remoteNode.GetNetAddress())
 			nm.Disconnect(existingValidator, "outbound - duplicate validator public key")
 			return nil
 		}
