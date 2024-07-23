@@ -212,6 +212,9 @@ func (srv *Server) AdminOverrideViewNumber(view uint64) error {
 		srv.posMempool,
 		signer,
 	)
+	if err := srv.fastHotStuffConsensus.Start(); err != nil {
+		return fmt.Errorf("AdminOverrideViewNumber: Problem starting FastHotStuffConsensus: %v", err)
+	}
 	return nil
 }
 
