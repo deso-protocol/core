@@ -250,7 +250,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
 		// comment at the top of snapshot.go for more information on how this works.
 		if shouldRestart {
-			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got en error while starting server and shouldRestart "+
+			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got an error while starting server and shouldRestart "+
 				"is true. Node will be erased and resynced. Error: (%v)", err)))
 			node.nodeMessageChan <- lib.NodeErase
 			return
