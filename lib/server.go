@@ -190,6 +190,31 @@ func (srv *Server) GetNetworkManager() *NetworkManager {
 	return srv.networkManager
 }
 
+func (srv *Server) AdminOverrideViewNumber(view uint64) error {
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.fastHotStuffEventLoop == nil {
+		return fmt.Errorf("AdminOverrideViewNumber: FastHotStuffConsensus is nil")
+	}
+	if view < srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetCurrentView() {
+		return fmt.Errorf("AdminOverrideViewNumber: Cannot set view to a number less than the current view")
+	}
+	signer := srv.fastHotStuffConsensus.signer
+	srv.fastHotStuffConsensus.Stop()
+	srv.blockchain.checkpointBlockInfoLock.Lock()
+	if srv.blockchain.checkpointBlockInfo == nil {
+		srv.blockchain.checkpointBlockInfo = &CheckpointBlockInfo{}
+	}
+	srv.blockchain.checkpointBlockInfo.LatestView = view
+	srv.blockchain.checkpointBlockInfoLock.Unlock()
+	srv.fastHotStuffConsensus = NewFastHotStuffConsensus(
+		srv.params,
+		srv.networkManager,
+		srv.blockchain,
+		srv.posMempool,
+		signer,
+	)
+	return nil
+}
+
 // dataLock must be acquired for writing before calling this function.
 func (srv *Server) _removeRequest(hash *BlockHash) {
 	// Just be lazy and remove the hash from everything indiscriminately to
