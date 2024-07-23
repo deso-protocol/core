@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -90,11 +91,11 @@ type Config struct {
 // suggested workaround:
 // https://github.com/spf13/viper/issues/380
 func GetStringSliceWorkaround(flagName string) []string {
-	var ret []string
-	if err := viper.UnmarshalKey(flagName, &ret); err != nil {
-		glog.Fatalf("Error reading %s: %v", flagName, err)
+	value := viper.GetString(flagName)
+	if value == "" || value == " " {
+		return []string{}
 	}
-	return ret
+	return strings.Split(value, ",")
 }
 
 func LoadConfig() *Config {
@@ -175,7 +176,8 @@ func LoadConfig() *Config {
 	config.BlockCypherAPIKey = viper.GetString("block-cypher-api-key")
 	config.BlockProducerSeed = viper.GetString("block-producer-seed")
 	config.TrustedBlockProducerStartHeight = viper.GetUint64("trusted-block-producer-start-height")
-	config.TrustedBlockProducerPublicKeys = GetStringSliceWorkaround("trusted-block-producer-public-keys")
+	// TODO: Couldn't get this to work with environement variable
+	config.TrustedBlockProducerPublicKeys = viper.GetStringSlice("trusted-block-producer-public-keys")
 	glog.V(2).Infof("Trusted Block Producer Public Keys: %v", config.TrustedBlockProducerPublicKeys)
 
 	// Logging
