@@ -400,10 +400,10 @@ func (nm *NetworkManager) processInboundConnection(conn Connection) (*RemoteNode
 		return nil, errors.Wrapf(err, "NetworkManager.handleInboundConnection: Problem calling "+
 			"ConvertIPStringToNetAddress for addr: (%s)", ic.connection.RemoteAddr().String())
 	}
-	if !addrmgr.IsRoutable(na) {
-		return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Rejecting INBOUND peer (%s) "+
-			"due to unroutable address", ic.connection.RemoteAddr().String())
-	}
+	//if !addrmgr.IsRoutable(na) {
+	//	return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Rejecting INBOUND peer (%s) "+
+	//		"due to unroutable address", ic.connection.RemoteAddr().String())
+	//}
 
 	// If we want to limit inbound connections to one per IP address, check to make sure this address isn't already connected.
 	if nm.limitOneInboundRemoteNodePerIP &&
