@@ -383,12 +383,13 @@ func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 		glog.Infof("Node.listenToNodeMessages: Finished stopping node")
 		switch operation {
 		case lib.NodeErase:
-			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
-				glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
-					"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
-					node.Config.DataDirectory, err)))
-				return
-			}
+			glog.Error("Not actually erasing node")
+			//if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
+			//	glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
+			//		"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
+			//		node.Config.DataDirectory, err)))
+			//	return
+			//}
 		}
 
 		glog.Infof("Node.listenToNodeMessages: Restarting node")

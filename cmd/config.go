@@ -89,6 +89,9 @@ type Config struct {
 
 func GetViperCommaSeparatedStringSlice(flagName string) []string {
 	value := viper.GetString(flagName)
+	if value == "" {
+		return []string{}
+	}
 	return strings.Split(value, ",")
 }
 
@@ -171,6 +174,7 @@ func LoadConfig() *Config {
 	config.BlockProducerSeed = viper.GetString("block-producer-seed")
 	config.TrustedBlockProducerStartHeight = viper.GetUint64("trusted-block-producer-start-height")
 	config.TrustedBlockProducerPublicKeys = GetViperCommaSeparatedStringSlice("trusted-block-producer-public-keys")
+	glog.V(2).Infof("Trusted Block Producer Public Keys: %v", config.TrustedBlockProducerPublicKeys)
 
 	// Logging
 	config.LogDirectory = viper.GetString("log-dir")
