@@ -2009,7 +2009,7 @@ func (srv *Server) _addNewTxn(pp *Peer, txn *MsgDeSoTxn, rateLimit bool) ([]*Msg
 	chainState := srv.blockchain.chainState()
 	srv.blockchain.ChainLock.RUnlock()
 
-	if chainState != SyncStateFullyCurrent {
+	if chainState != SyncStateFullyCurrent || !srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
 		// We allow txn relay if chain is in a need blocks state and is running PoS.
 		// We will error in two cases:
 		// - the chainState is not need blocks state
