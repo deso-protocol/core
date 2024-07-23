@@ -682,9 +682,13 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	validatorList := fe.tip.validatorList
 
 	for _, validator := range validatorList {
+		domains := ""
+		for _, domain := range validator.GetDomains() {
+			domains += string(domain)
+		}
 		glog.V(2).Infof("Validator: Key: %v, Stake: %v, Domains: %v",
 			validator.GetPublicKey().ToString(),
-			validator.GetStakeAmount().ToBig().String(), validator.GetDomains())
+			validator.GetStakeAmount().ToBig().String(), domains)
 	}
 
 	// Compute the chain tip's signature payload.
@@ -778,8 +782,12 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 			glog.V(2).Infof("Validator not found for key %v", key)
 			continue
 		}
+		domains := ""
+		for _, domain := range validator.GetDomains() {
+			domains += string(domain)
+		}
 		glog.V(2).Infof("Validator: Key: %v, Stake: %v, Domains: %v",
-			key, validator.GetStakeAmount().ToBig().String(), validator.GetDomains())
+			key, validator.GetStakeAmount().ToBig().String(), domains)
 	}
 
 	// Tracks the highQC from validators as we go along.
