@@ -1110,7 +1110,7 @@ var DeSoMainnetParams = DeSoParams{
 	MinChainWorkHex: "000000000000000000000000000000000000000000000000006314f9a85a949b",
 
 	MaxTipAgePoW: 24 * time.Hour,
-	MaxTipAgePoS: time.Hour,
+	MaxTipAgePoS: 24 * time.Hour,
 
 	// ===================================================================================
 	// Mainnet Bitcoin config

@@ -581,6 +581,11 @@ func (bc *Blockchain) updateCheckpointBlockInfo() {
 	// form the final checkpoint block info.
 	var highestHeightCheckpointBlockInfo *CheckpointBlockInfo
 	highestView := uint64(0)
+	bc.checkpointBlockInfoLock.RLock()
+	if bc.checkpointBlockInfo != nil {
+		highestView = bc.checkpointBlockInfo.LatestView
+	}
+	bc.checkpointBlockInfoLock.RUnlock()
 	for _, checkpointBlockInfo := range checkpointBlockInfos {
 		if checkpointBlockInfo.Error != nil {
 			glog.Errorf("updateCheckpointBlockInfo: Error getting checkpoint block info: %v", checkpointBlockInfo.Error)

@@ -39,6 +39,19 @@ func NewFastHotStuffConsensus(
 	}
 }
 
+func (fc *FastHotStuffConsensus) AdminOverrideViewNumber(view uint64) {
+	fc.Stop()
+	fc.blockchain.checkpointBlockInfoLock.Lock()
+	if fc.blockchain.checkpointBlockInfo == nil {
+		fc.blockchain.checkpointBlockInfo = &CheckpointBlockInfo{}
+	}
+	fc.blockchain.checkpointBlockInfo.LatestView = view
+	fc.blockchain.checkpointBlockInfoLock.Unlock()
+	if err := fc.Start(); err != nil {
+		glog.Errorf("adminOverrideViewNumber: Error starting FastHotStuffConsensus: %v", err)
+	}
+}
+
 // FastHotStuffConsensus.Start initializes and starts the FastHotStuffEventLoop based on the
 // blockchain state. This should only be called once the blockchain has synced, the node is
 // ready to join the validator network, and the node is able to validate blocks in the steady state.
