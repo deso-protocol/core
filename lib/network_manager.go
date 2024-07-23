@@ -177,6 +177,19 @@ func (nm *NetworkManager) Stop() {
 // ## NetworkManager Routines
 // ###########################
 
+func (nm *NetworkManager) printActiveValidators() {
+	// Log all of the validators we're connected to
+	nm.activeValidatorsMapLock.RLock()
+	defer nm.activeValidatorsMapLock.RUnlock()
+	validatorDomains := []string{}
+	for _, validator := range nm.activeValidatorsMap.ToMap() {
+		validatorDomains = append(validatorDomains,
+			consensus.DomainsToString(validator.GetDomains()))
+	}
+	glog.V(2).Infof("NetworkManager.printActiveValidators: Active validators: %v",
+		validatorDomains)
+}
+
 // startValidatorConnector is responsible for ensuring that the node is connected to all active validators. It does
 // this in two steps. First, it looks through the already established connections and checks if any of these connections
 // are validators. If they are, it adds them to the validator index. It also checks if any of the existing validators
@@ -190,8 +203,12 @@ func (nm *NetworkManager) startValidatorConnector() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
+			glog.V(2).Infof("NetworkManager.startValidatorConnector: Refreshing validator indices...")
+			nm.printActiveValidators()
 			nm.refreshValidatorIndices()
 			nm.connectValidators()
+			glog.V(2).Infof("NetworkManager.startValidatorConnector: Indices refreshed.")
+			nm.printActiveValidators()
 		}
 	}
 }
@@ -209,9 +226,13 @@ func (nm *NetworkManager) startNonValidatorConnector() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
+			glog.V(2).Infof("NetworkManager.startNonValidatorConnector: Refreshing NON validator indices...")
+			nm.printActiveValidators()
 			nm.refreshNonValidatorOutboundIndex()
 			nm.refreshNonValidatorInboundIndex()
 			nm.connectNonValidators()
+			glog.V(2).Infof("NetworkManager.startNonValidatorConnector: Finished refreshing NON validator indices...")
+			nm.printActiveValidators()
 		}
 	}
 }
@@ -227,7 +248,11 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
+			glog.V(2).Infof("NetworkManager.startRemoteNodeCleanup: Starting remote node cleanup...")
+			nm.printActiveValidators()
 			nm.Cleanup()
+			glog.V(2).Infof("NetworkManager.startRemoteNodeCleanup: Finished remote node cleanup...")
+			nm.printActiveValidators()
 		}
 	}
 
