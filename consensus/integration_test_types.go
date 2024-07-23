@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"github.com/golang/glog"
 	"sync"
 	"time"
 
@@ -108,6 +109,18 @@ func (node *validatorNode) GetStakeAmount() *uint256.Int {
 
 func (node *validatorNode) GetDomains() [][]byte {
 	return [][]byte{}
+}
+
+func DomainsToString(domainsBytes [][]byte) string {
+	domains := ""
+	for _, domain := range domainsBytes {
+		domains += string(domain) + ", "
+	}
+	return domains
+}
+
+func (node *validatorNode) GetDomainsString() string {
+	return DomainsToString(node.GetDomains())
 }
 
 func (node *validatorNode) ProcessBlock(incomingBlock *block) {
@@ -313,7 +326,10 @@ func (node *validatorNode) ProcessTimeout(timeout TimeoutMessage) {
 		return
 	}
 
-	node.eventLoop.ProcessValidatorTimeout(timeout)
+	if err := node.eventLoop.ProcessValidatorTimeout(timeout); err != nil {
+		glog.V(2).Infof("ProcessTimeout: Error processing timeout from validator %v: %v",
+			timeout.GetPublicKey().ToString(), err)
+	}
 }
 
 func (node *validatorNode) Start() {
@@ -400,6 +416,9 @@ func (node *validatorNode) broadcastTimeout(event *FastHotStuffEvent) {
 
 	// Broadcast the block to all validators.
 	for _, validator := range node.validatorNodes {
+		glog.V(2).Infof("broadcastTimeout: Broadcasting timeout message from validator "+
+			"%v (%v) to validator %v (%v)", node.GetDomainsString(), node.GetPublicKey().ToString(),
+			validator.GetDomainsString(), validator.GetPublicKey().ToString())
 		go validator.ProcessTimeout(timeout)
 	}
 }

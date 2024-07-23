@@ -250,7 +250,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		// records to the DB. In this case, the snapshot is corrupted and needs to be computed. See the
 		// comment at the top of snapshot.go for more information on how this works.
 		if shouldRestart {
-			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got en error while starting server and shouldRestart "+
+			glog.Infof(lib.CLog(lib.Red, fmt.Sprintf("Start: Got an error while starting server and shouldRestart "+
 				"is true. Node will be erased and resynced. Error: (%v)", err)))
 			node.nodeMessageChan <- lib.NodeErase
 			return
@@ -383,12 +383,13 @@ func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 		glog.Infof("Node.listenToNodeMessages: Finished stopping node")
 		switch operation {
 		case lib.NodeErase:
-			if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
-				glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
-					"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
-					node.Config.DataDirectory, err)))
-				return
-			}
+			glog.Error("Not actually erasing node")
+			//if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
+			//	glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
+			//		"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
+			//		node.Config.DataDirectory, err)))
+			//	return
+			//}
 		}
 
 		glog.Infof("Node.listenToNodeMessages: Restarting node")

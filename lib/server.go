@@ -2884,6 +2884,9 @@ func (srv *Server) _handleFastHotStuffConsensusEvent(event *consensus.FastHotStu
 }
 
 func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
+	if msg.GetMsgType() != MsgTypeValidatorVote {
+		return
+	}
 	// It's possible that the consensus controller hasn't been initialized. If so,
 	// we log an error and move on.
 	if srv.fastHotStuffConsensus == nil {
@@ -2897,6 +2900,9 @@ func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
 }
 
 func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) {
+	if msg.GetMsgType() != MsgTypeValidatorTimeout {
+		return
+	}
 	// It's possible that the consensus controller hasn't been initialized. If so,
 	// we log an error and move on.
 	if srv.fastHotStuffConsensus == nil {

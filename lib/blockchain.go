@@ -919,7 +919,8 @@ func NewBlockchain(
 	for _, keyStr := range trustedBlockProducerPublicKeyStrs {
 		pkBytes, _, err := Base58CheckDecode(keyStr)
 		if err != nil {
-			return nil, fmt.Errorf("Error decoding trusted block producer public key: %v", err)
+			return nil, fmt.Errorf("Error decoding trusted block producer "+
+				"public key: %v, %v", trustedBlockProducerPublicKeyStrs, err)
 		}
 		trustedBlockProducerPublicKeys[MakePkMapKey(pkBytes)] = true
 	}
