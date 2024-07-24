@@ -776,7 +776,7 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		"Spewing timeoutsByValidator: %v", spew.Sdump(timeoutsByValidator))
 	glog.V(2).Infof("FastHotStuffEventLoop.tryConstructTimeoutQCInCurrentView: " +
 		"Printing timeouts by validator: ")
-	for key, _ := range timeoutsByValidator {
+	for key := range timeoutsByValidator {
 		validator, exists := fe.tip.validatorLookup[key]
 		if !exists {
 			glog.V(2).Infof("Validator not found for key %v", key)
