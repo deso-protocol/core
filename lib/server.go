@@ -2010,16 +2010,12 @@ func (srv *Server) _addNewTxn(pp *Peer, txn *MsgDeSoTxn, rateLimit bool) ([]*Msg
 	srv.blockchain.ChainLock.RUnlock()
 
 	if chainState != SyncStateFullyCurrent && !srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
-		// We allow txn relay if chain is in a need blocks state and is running PoS.
-		// We will error in two cases:
-		// - the chainState is not need blocks state
-		// - the chainState is need blocks state but the chain is not on PoS.
-		if chainState != SyncStateNeedBlocksss || !srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
-			err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
-				"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
-			glog.Error(err)
-			return nil, err
-		}
+		// We allow txn relay if chain is fully current OR the chain is running PoS.
+		// Otherwise, we error.
+		err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
+			"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
+		glog.Error(err)
+		return nil, err
 	}
 
 	glog.V(1).Infof("Server._addNewTxnAndRelay: txn: %v, peer: %v", txn, pp)
