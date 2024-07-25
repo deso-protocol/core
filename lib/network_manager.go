@@ -190,10 +190,8 @@ func (nm *NetworkManager) startValidatorConnector() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
-			glog.V(2).Infof("NetworkManager.startValidatorConnector: Refreshing validator indices...")
 			nm.refreshValidatorIndices()
 			nm.connectValidators()
-			glog.V(2).Infof("NetworkManager.startValidatorConnector: Indices refreshed.")
 		}
 	}
 }
@@ -408,11 +406,6 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 	var ok bool
 	if oc, ok = conn.(*outboundConnection); !ok {
 		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Connection is not an outboundConnection")
-	}
-
-	if !addrmgr.IsRoutable(oc.address) {
-		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Rejecting OUTBOUND peer (%s) "+
-			"due to unroutable address", oc.address.IP.String())
 	}
 
 	if oc.failed {
