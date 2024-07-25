@@ -209,11 +209,9 @@ func (nm *NetworkManager) startNonValidatorConnector() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
-			glog.V(2).Infof("NetworkManager.startNonValidatorConnector: Refreshing NON validator indices...")
 			nm.refreshNonValidatorOutboundIndex()
 			nm.refreshNonValidatorInboundIndex()
 			nm.connectNonValidators()
-			glog.V(2).Infof("NetworkManager.startNonValidatorConnector: Finished refreshing NON validator indices...")
 		}
 	}
 }
@@ -229,9 +227,7 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 			nm.exitGroup.Done()
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
-			glog.V(2).Infof("NetworkManager.startRemoteNodeCleanup: Starting remote node cleanup...")
 			nm.Cleanup()
-			glog.V(2).Infof("NetworkManager.startRemoteNodeCleanup: Finished remote node cleanup...")
 		}
 	}
 
