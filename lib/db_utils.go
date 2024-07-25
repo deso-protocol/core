@@ -75,7 +75,7 @@ type DBPrefixes struct {
 	//
 	// Key format: <prefix_id, height uint32 (big-endian), hash BlockHash>
 	// Value format: serialized BlockNode
-	PrefixHeightHashToNodeInfo        []byte `prefix_id:"[1]"`
+	PrefixHeightHashToNodeInfo        []byte `prefix_id:"[1]" core_state:"true"`
 	PrefixBitcoinHeightHashToNodeInfo []byte `prefix_id:"[2]"`
 
 	// We store the hash of the node that is the current tip of the main chain.
@@ -647,6 +647,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	if bytes.Equal(prefix, Prefixes.PrefixBlockHashToBlock) {
 		// prefix_id:"[0]"
 		return true, &MsgDeSoBlock{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixHeightHashToNodeInfo) {
+		// prefix_id:"[1]"
+		return true, &BlockNode{}
 	} else if bytes.Equal(prefix, Prefixes.PrefixUtxoKeyToUtxoEntry) {
 		// prefix_id:"[5]"
 		return true, &UtxoEntry{}
@@ -4877,6 +4880,7 @@ func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	)
 
 	rr := bytes.NewReader(data)
+
 	// Hash
 	_, err := io.ReadFull(rr, blockNode.Hash[:])
 	if err != nil {
