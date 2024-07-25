@@ -177,19 +177,6 @@ func (nm *NetworkManager) Stop() {
 // ## NetworkManager Routines
 // ###########################
 
-func (nm *NetworkManager) printActiveValidators() {
-	// Log all of the validators we're connected to
-	nm.activeValidatorsMapLock.RLock()
-	defer nm.activeValidatorsMapLock.RUnlock()
-	validatorDomains := []string{}
-	for _, validator := range nm.activeValidatorsMap.ToMap() {
-		validatorDomains = append(validatorDomains,
-			consensus.DomainsToString(validator.GetDomains()))
-	}
-	glog.V(2).Infof("NetworkManager.printActiveValidators: Active validators: %v",
-		validatorDomains)
-}
-
 // startValidatorConnector is responsible for ensuring that the node is connected to all active validators. It does
 // this in two steps. First, it looks through the already established connections and checks if any of these connections
 // are validators. If they are, it adds them to the validator index. It also checks if any of the existing validators
