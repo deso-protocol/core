@@ -17,6 +17,7 @@ type Config struct {
 	MempoolDumpDirectory string
 	TXIndex              bool
 	Regtest              bool
+	RegtestAccelerated   bool
 	PostgresURI          string
 
 	// Peers
@@ -114,6 +115,7 @@ func LoadConfig() *Config {
 	config.MempoolDumpDirectory = viper.GetString("mempool-dump-dir")
 	config.TXIndex = viper.GetBool("txindex")
 	config.Regtest = viper.GetBool("regtest")
+	config.RegtestAccelerated = viper.GetBool("regtest-accelerated")
 	config.PostgresURI = viper.GetString("postgres-uri")
 	config.HyperSync = viper.GetBool("hypersync")
 	config.ForceChecksum = viper.GetBool("force-checksum")

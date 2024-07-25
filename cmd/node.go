@@ -83,7 +83,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 
 	// Check for regtest mode
 	if node.Config.Regtest {
-		node.Params.EnableRegtest()
+		node.Params.EnableRegtest(node.Config.RegtestAccelerated)
 	}
 
 	// Validate params

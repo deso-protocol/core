@@ -3071,8 +3071,9 @@ func (srv *Server) getFastHotStuffConsensusEventChannel() chan *consensus.FastHo
 }
 
 func (srv *Server) resetFastHotStuffConsensusTransitionCheckTime() {
-	// Check once every 60 seconds if the FastHotStuffConsensus is ready to start.
-	srv.fastHotStuffConsensusTransitionCheckTime = time.Now().Add(60 * time.Second)
+	// Check if the FastHotStuffConsensus is ready to start based on the FastHotStuffConsensusTransitionCheckDuration.
+	srv.fastHotStuffConsensusTransitionCheckTime = time.Now().Add(
+		srv.params.FastHotStuffConsensusTransitionCheckDuration)
 }
 
 func (srv *Server) getFastHotStuffTransitionCheckTime() <-chan time.Time {
