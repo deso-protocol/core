@@ -1110,7 +1110,7 @@ var DeSoMainnetParams = DeSoParams{
 	MinChainWorkHex: "000000000000000000000000000000000000000000000000006314f9a85a949b",
 
 	MaxTipAgePoW: 24 * time.Hour,
-	MaxTipAgePoS: 24 * time.Hour,
+	MaxTipAgePoS: 3 * time.Hour,
 
 	// ===================================================================================
 	// Mainnet Bitcoin config
@@ -1544,7 +1544,7 @@ var DeSoTestnetParams = DeSoParams{
 	// TODO: Set to one day when we launch the testnet. In the meantime this value
 	// is more useful for local testing.
 	MaxTipAgePoW: time.Hour * 24,
-	MaxTipAgePoS: time.Hour,
+	MaxTipAgePoS: time.Hour * 3,
 
 	// Difficulty can't decrease to below 50% of its previous value or increase
 	// to above 200% of its previous value.
