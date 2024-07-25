@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"math"
 	"net"
@@ -812,6 +813,21 @@ func DBUpdateValidatorWithTxn(
 	// a secondary optimization to only update the PrefixValidatorByStatusAndStakeAmount index
 	// when absolutely necessary.
 	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
+		// We explicitly emit an upsert operation here for state syncer
+		// for the case where the entry is the same.
+		if eventManager != nil {
+			eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType:        DbOperationTypeUpsert,
+					KeyBytes:             DBKeyForValidatorByPKID(validatorEntry),
+					EncoderBytes:         entryToWriteBytes,
+					AncestralRecordBytes: dbEntryBytes,
+					IsReverted:           false,
+				},
+				FlushId:      uuid.Nil,
+				IsMempoolTxn: eventManager.isMempoolManager,
+			})
+		}
 		return nil
 	}
 

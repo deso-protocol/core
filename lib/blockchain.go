@@ -178,7 +178,7 @@ func (blockStatus BlockStatus) String() string {
 // of the best chain.
 type BlockNode struct {
 	// Pointer to a node representing the block's parent.
-	Parent *BlockNode
+	Parent *BlockNode `fake:"skip"`
 
 	// The hash computed on this block.
 	Hash *BlockHash
@@ -200,6 +200,46 @@ type BlockNode struct {
 	// Status holds the validation state for the block and whether or not
 	// it's stored in the database.
 	Status BlockStatus
+}
+
+func (nn *BlockNode) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	nnBytes, err := SerializeBlockNode(nn)
+	if err != nil {
+		glog.Errorf("BlockNode.RawEncodeWithoutMetadata: Problem serializing BlockNode: %v", err)
+		return []byte{}
+	}
+	return EncodeByteArray(nnBytes)
+}
+
+func (nn *BlockNode) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	blockNodeBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "BlockNode.RawDecodeWithoutMetadata: Problem decoding block node")
+	}
+	blockNode, err := DeserializeBlockNode(blockNodeBytes)
+	if err != nil {
+		return errors.Wrapf(err, "BlockNode.RawDecodeWithoutMetadata: Problem deserializing block node")
+	}
+	*nn = *blockNode
+	return nil
+}
+
+func (nn *BlockNode) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (nn *BlockNode) GetEncoderType() EncoderType {
+	return EncoderTypeBlockNode
+}
+
+// Append DeSo Encoder Metadata bytes to BlockNode bytes.
+func AddEncoderMetadataToBlockNodeBytes(blockNodeBytes []byte, blockHeight uint64) []byte {
+	var blockData []byte
+	blockData = append(blockData, BoolToByte(true))
+	blockData = append(blockData, UintToBuf(uint64((&BlockNode{}).GetEncoderType()))...)
+	blockData = append(blockData, UintToBuf(uint64((&BlockNode{}).GetVersionByte(blockHeight)))...)
+	blockData = append(blockData, EncodeByteArray(blockNodeBytes)...)
+	return blockData
 }
 
 func _difficultyBitsToHash(diffBits uint32) (_diffHash *BlockHash) {

@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+	"github.com/google/uuid"
 	"sort"
 
 	"github.com/dgraph-io/badger/v3"
@@ -942,6 +943,21 @@ func DBUpdateStakeEntryWithTxn(
 	// If the entry we're about to write is the exact same as what's already in the db then
 	// don't write it.
 	if bytes.Equal(dbEntryBytes, entryToWriteBytes) {
+		if eventManager != nil {
+			// We explicitly emit an upsert operation here for state syncer
+			// for the case where the entry is the same.
+			eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+				StateChangeEntry: &StateChangeEntry{
+					OperationType:        DbOperationTypeUpsert,
+					KeyBytes:             DBKeyForStakeByValidatorAndStaker(stakeEntry.ValidatorPKID, stakeEntry.StakerPKID),
+					EncoderBytes:         entryToWriteBytes,
+					AncestralRecordBytes: dbEntryBytes,
+					IsReverted:           false,
+				},
+				FlushId:      uuid.Nil,
+				IsMempoolTxn: eventManager.isMempoolManager,
+			})
+		}
 		return nil
 	}
 

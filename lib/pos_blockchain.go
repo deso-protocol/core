@@ -1736,6 +1736,29 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, verifySignatures bool
 			glog.V(2).Infof("commitBlockPoS: Preparing snapshot flush")
 		}
 
+		// We generally expect DBSetWithTxn to handle emitting state syncer operations
+		// for all KVs. However, blocks are a special case as we insert them into the
+		// DB to store them before they're committed. State syncer may delete blocks
+		// based on the BlockNode status, so we explicitly emit a state syncer operation
+		// for the full block even though we are not inserting it into the DB here.
+		if bc.eventManager != nil {
+			blockBytes, err := block.ToBytes(false)
+			if err != nil {
+				glog.Errorf("commitBlockPoS: Problem serializing block %v: %v", blockHash, err)
+			} else {
+				bc.eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
+					StateChangeEntry: &StateChangeEntry{
+						OperationType: DbOperationTypeUpsert,
+						KeyBytes:      BlockHashToBlockKey(blockHash),
+						EncoderBytes:  blockBytes,
+						IsReverted:    false,
+					},
+					FlushId:      uuid.Nil,
+					IsMempoolTxn: false,
+				})
+			}
+		}
+
 		// Store the new block's node in our node index in the db under the
 		//   <height uin32, blockHash BlockHash> -> <node info>
 		// index.
