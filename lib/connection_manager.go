@@ -159,26 +159,31 @@ func NewConnectionManager(
 
 // Check if the address passed shares a group with any addresses already in our data structures.
 func (cmgr *ConnectionManager) IsFromRedundantOutboundIPAddress(na *wire.NetAddress) bool {
-	groupKey := addrmgr.GroupKey(na)
-	// For the sake of running multiple nodes on the same machine, we allow localhost connections.
-	if groupKey == "local" {
-		return false
-	}
+	return false
+	// TODO: Delete this code once we're 100% sure we don't need it.
+	// This group checking was required as an early DDOS prevention measure,
+	// but it is no longer required because most nodes have other ways of preventing attacks.
 
-	cmgr.mtxOutboundConnIPGroups.Lock()
-	numGroupsForKey := cmgr.outboundConnIPGroups[groupKey]
-	cmgr.mtxOutboundConnIPGroups.Unlock()
-
-	if numGroupsForKey != 0 && numGroupsForKey != 1 {
-		glog.V(2).Infof("IsFromRedundantOutboundIPAddress: Found numGroupsForKey != (0 or 1). Is (%d) "+
-			"instead for addr (%s) and group key (%s). This "+
-			"should never happen.", numGroupsForKey, na.IP.String(), groupKey)
-	}
-
-	if numGroupsForKey == 0 {
-		return false
-	}
-	return true
+	//groupKey := addrmgr.GroupKey(na)
+	//// For the sake of running multiple nodes on the same machine, we allow localhost connections.
+	//if groupKey == "local" {
+	//	return false
+	//}
+	//
+	//cmgr.mtxOutboundConnIPGroups.Lock()
+	//numGroupsForKey := cmgr.outboundConnIPGroups[groupKey]
+	//cmgr.mtxOutboundConnIPGroups.Unlock()
+	//
+	//if numGroupsForKey != 0 && numGroupsForKey != 1 {
+	//	glog.V(2).Infof("IsFromRedundantOutboundIPAddress: Found numGroupsForKey != (0 or 1). Is (%d) "+
+	//		"instead for addr (%s) and group key (%s). This "+
+	//		"should never happen.", numGroupsForKey, na.IP.String(), groupKey)
+	//}
+	//
+	//if numGroupsForKey == 0 {
+	//	return false
+	//}
+	//return true
 }
 
 func (cmgr *ConnectionManager) AddToGroupKey(na *wire.NetAddress) {

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -87,6 +88,17 @@ type Config struct {
 	CheckpointSyncingProviders []string
 }
 
+// Viper doesn't work when you have environment variables. This is the
+// suggested workaround:
+// https://github.com/spf13/viper/issues/380
+func GetStringSliceWorkaround(flagName string) []string {
+	value := viper.GetString(flagName)
+	if value == "" || value == " " {
+		return []string{}
+	}
+	return strings.Split(value, ",")
+}
+
 func LoadConfig() *Config {
 	config := Config{}
 
@@ -134,9 +146,10 @@ func LoadConfig() *Config {
 	config.TransactionValidationRefreshIntervalMillis = viper.GetUint64("transaction-validation-refresh-interval-millis")
 
 	// Peers
-	config.ConnectIPs = viper.GetStringSlice("connect-ips")
-	config.AddIPs = viper.GetStringSlice("add-ips")
-	config.AddSeeds = viper.GetStringSlice("add-seeds")
+	config.ConnectIPs = GetStringSliceWorkaround("connect-ips")
+	glog.V(2).Infof("Connect IPs read in: %v", config.ConnectIPs)
+	config.AddIPs = GetStringSliceWorkaround("add-ips")
+	config.AddSeeds = GetStringSliceWorkaround("add-seeds")
 	config.TargetOutboundPeers = viper.GetUint32("target-outbound-peers")
 	config.StallTimeoutSeconds = viper.GetUint64("stall-timeout-seconds")
 
@@ -152,7 +165,7 @@ func LoadConfig() *Config {
 	config.PeerConnectionRefreshIntervalMillis = viper.GetUint64("peer-connection-refresh-interval-millis")
 
 	// Mining + Admin
-	config.MinerPublicKeys = viper.GetStringSlice("miner-public-keys")
+	config.MinerPublicKeys = GetStringSliceWorkaround("miner-public-keys")
 	config.NumMiningThreads = viper.GetUint64("num-mining-threads")
 
 	// Fees
@@ -165,7 +178,9 @@ func LoadConfig() *Config {
 	config.BlockCypherAPIKey = viper.GetString("block-cypher-api-key")
 	config.BlockProducerSeed = viper.GetString("block-producer-seed")
 	config.TrustedBlockProducerStartHeight = viper.GetUint64("trusted-block-producer-start-height")
+	// TODO: Couldn't get this to work with environement variable
 	config.TrustedBlockProducerPublicKeys = viper.GetStringSlice("trusted-block-producer-public-keys")
+	glog.V(2).Infof("Trusted Block Producer Public Keys: %v", config.TrustedBlockProducerPublicKeys)
 
 	// Logging
 	config.LogDirectory = viper.GetString("log-dir")
@@ -183,7 +198,7 @@ func LoadConfig() *Config {
 	config.StateSyncerMempoolTxnSyncLimit = viper.GetUint64("state-syncer-mempool-txn-sync-limit")
 
 	// PoS Checkpoint Syncing
-	config.CheckpointSyncingProviders = viper.GetStringSlice("checkpoint-syncing-providers")
+	config.CheckpointSyncingProviders = GetStringSliceWorkaround("checkpoint-syncing-providers")
 	for _, provider := range config.CheckpointSyncingProviders {
 		if _, err := url.ParseRequestURI(provider); err != nil {
 			glog.Fatalf("Invalid checkpoint syncing provider URL: %v", provider)

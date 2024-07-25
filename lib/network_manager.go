@@ -976,7 +976,8 @@ func (nm *NetworkManager) Disconnect(rn *RemoteNode, disconnectReason string) {
 	if rn == nil {
 		return
 	}
-	glog.V(2).Infof("NetworkManager.Disconnect: Disconnecting from remote node id=%v", rn.GetId())
+	glog.V(2).Infof("NetworkManager.Disconnect: Disconnecting from remote "+
+		"node id=%v for reason %v", rn.GetId(), disconnectReason)
 	rn.Disconnect(disconnectReason)
 	nm.removeRemoteNodeFromIndexer(rn)
 }
@@ -1301,6 +1302,10 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 	existingValidator, ok := nm.GetValidatorOutboundIndex().Get(validatorPk.Serialize())
 	if ok && remoteNode.GetId() != existingValidator.GetId() {
 		if remoteNode.IsPersistent() && !existingValidator.IsPersistent() {
+			glog.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Outbound RemoteNode with duplicate validator public key. "+
+				"Existing validator id: %v, new validator id: %v, ip old: %v, ip new: %v",
+				existingValidator.GetId().ToUint64(), remoteNode.GetId().ToUint64(),
+				existingValidator.GetNetAddress(), remoteNode.GetNetAddress())
 			nm.Disconnect(existingValidator, "outbound - duplicate validator public key")
 			return nil
 		}

@@ -190,6 +190,34 @@ func (srv *Server) GetNetworkManager() *NetworkManager {
 	return srv.networkManager
 }
 
+func (srv *Server) AdminOverrideViewNumber(view uint64) error {
+	if srv.fastHotStuffConsensus == nil || srv.fastHotStuffConsensus.fastHotStuffEventLoop == nil {
+		return fmt.Errorf("AdminOverrideViewNumber: FastHotStuffConsensus is nil")
+	}
+	if view < srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetCurrentView() {
+		return fmt.Errorf("AdminOverrideViewNumber: Cannot set view to a number less than the current view")
+	}
+	signer := srv.fastHotStuffConsensus.signer
+	srv.fastHotStuffConsensus.Stop()
+	srv.blockchain.checkpointBlockInfoLock.Lock()
+	if srv.blockchain.checkpointBlockInfo == nil {
+		srv.blockchain.checkpointBlockInfo = &CheckpointBlockInfo{}
+	}
+	srv.blockchain.checkpointBlockInfo.LatestView = view
+	srv.blockchain.checkpointBlockInfoLock.Unlock()
+	srv.fastHotStuffConsensus = NewFastHotStuffConsensus(
+		srv.params,
+		srv.networkManager,
+		srv.blockchain,
+		srv.posMempool,
+		signer,
+	)
+	if err := srv.fastHotStuffConsensus.Start(); err != nil {
+		return fmt.Errorf("AdminOverrideViewNumber: Problem starting FastHotStuffConsensus: %v", err)
+	}
+	return nil
+}
+
 // dataLock must be acquired for writing before calling this function.
 func (srv *Server) _removeRequest(hash *BlockHash) {
 	// Just be lazy and remove the hash from everything indiscriminately to
@@ -1981,17 +2009,13 @@ func (srv *Server) _addNewTxn(pp *Peer, txn *MsgDeSoTxn, rateLimit bool) ([]*Msg
 	chainState := srv.blockchain.chainState()
 	srv.blockchain.ChainLock.RUnlock()
 
-	if chainState != SyncStateFullyCurrent {
-		// We allow txn relay if chain is in a need blocks state and is running PoS.
-		// We will error in two cases:
-		// - the chainState is not need blocks state
-		// - the chainState is need blocks state but the chain is not on PoS.
-		if chainState != SyncStateNeedBlocksss || !srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
-			err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
-				"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
-			glog.Error(err)
-			return nil, err
-		}
+	if chainState != SyncStateFullyCurrent && !srv.blockchain.params.IsPoSBlockHeight(tipHeight) {
+		// We allow txn relay if chain is fully current OR the chain is running PoS.
+		// Otherwise, we error.
+		err := fmt.Errorf("Server._addNewTxnAndRelay: Cannot process txn "+
+			"from peer %v while syncing: %v %v", pp, srv.blockchain.chainState(), txn.Hash())
+		glog.Error(err)
+		return nil, err
 	}
 
 	glog.V(1).Infof("Server._addNewTxnAndRelay: txn: %v, peer: %v", txn, pp)
@@ -2856,6 +2880,9 @@ func (srv *Server) _handleFastHotStuffConsensusEvent(event *consensus.FastHotStu
 }
 
 func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
+	if msg.GetMsgType() != MsgTypeValidatorVote {
+		return
+	}
 	// It's possible that the consensus controller hasn't been initialized. If so,
 	// we log an error and move on.
 	if srv.fastHotStuffConsensus == nil {
@@ -2869,6 +2896,9 @@ func (srv *Server) _handleValidatorVote(pp *Peer, msg *MsgDeSoValidatorVote) {
 }
 
 func (srv *Server) _handleValidatorTimeout(pp *Peer, msg *MsgDeSoValidatorTimeout) {
+	if msg.GetMsgType() != MsgTypeValidatorTimeout {
+		return
+	}
 	// It's possible that the consensus controller hasn't been initialized. If so,
 	// we log an error and move on.
 	if srv.fastHotStuffConsensus == nil {

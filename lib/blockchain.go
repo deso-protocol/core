@@ -560,6 +560,16 @@ type Blockchain struct {
 	timer *Timer
 }
 
+func (bc *Blockchain) getHighestCheckpointView() uint64 {
+	bc.checkpointBlockInfoLock.RLock()
+	defer bc.checkpointBlockInfoLock.RUnlock()
+
+	if bc.checkpointBlockInfo != nil {
+		return bc.checkpointBlockInfo.LatestView
+	}
+	return uint64(0)
+}
+
 func (bc *Blockchain) updateCheckpointBlockInfo() {
 	if len(bc.checkpointSyncingProviders) == 0 {
 		glog.V(2).Info("updateCheckpointBlockInfo: No checkpoint syncing providers set. Skipping update.")
@@ -580,7 +590,7 @@ func (bc *Blockchain) updateCheckpointBlockInfo() {
 	// from the checkpoint syncing providers. We'll combine these two pieces of information to
 	// form the final checkpoint block info.
 	var highestHeightCheckpointBlockInfo *CheckpointBlockInfo
-	highestView := uint64(0)
+	highestView := bc.getHighestCheckpointView()
 	for _, checkpointBlockInfo := range checkpointBlockInfos {
 		if checkpointBlockInfo.Error != nil {
 			glog.Errorf("updateCheckpointBlockInfo: Error getting checkpoint block info: %v", checkpointBlockInfo.Error)
@@ -914,7 +924,8 @@ func NewBlockchain(
 	for _, keyStr := range trustedBlockProducerPublicKeyStrs {
 		pkBytes, _, err := Base58CheckDecode(keyStr)
 		if err != nil {
-			return nil, fmt.Errorf("Error decoding trusted block producer public key: %v", err)
+			return nil, fmt.Errorf("Error decoding trusted block producer "+
+				"public key: %v, %v", trustedBlockProducerPublicKeyStrs, err)
 		}
 		trustedBlockProducerPublicKeys[MakePkMapKey(pkBytes)] = true
 	}
