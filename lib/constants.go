@@ -836,6 +836,11 @@ type DeSoParams struct {
 
 	EncoderMigrationHeights     *EncoderMigrationHeights
 	EncoderMigrationHeightsList []*MigrationHeight
+
+	// The interval at which we check for the transition from PoW to PoS consensus.
+	// This is 60 seconds for mainnet and testnet, but can be set to a lower value
+	// for regtest to get a faster cutover.
+	FastHotStuffConsensusTransitionCheckDuration time.Duration
 }
 
 var RegtestForkHeights = ForkHeights{
@@ -884,11 +889,12 @@ var RegtestForkHeights = ForkHeights{
 
 // EnableRegtest allows for local development and testing with incredibly fast blocks with block rewards that
 // can be spent as soon as they are mined. It also removes the default testnet seeds
-func (params *DeSoParams) EnableRegtest() {
+func (params *DeSoParams) EnableRegtest(isAcceleratedRegtest bool) {
 	if params.NetworkType != NetworkType_TESTNET {
 		glog.Error("Regtest mode can only be enabled in testnet mode")
 		return
 	}
+	glog.Infof("Enabling regtest mode: accelerated=%v", isAcceleratedRegtest)
 
 	// Add a key defined in n0_test to the ParamUpdater set when running in regtest mode.
 	// Seed: verb find card ship another until version devote guilt strong lemon six
@@ -911,9 +917,24 @@ func (params *DeSoParams) EnableRegtest() {
 	// Set the PoS default jail inactive validator grace period epochs to 3.
 	params.DefaultJailInactiveValidatorGracePeriodEpochs = 3
 
+	// Check for consensus transition every second.
+	params.FastHotStuffConsensusTransitionCheckDuration = 1 * time.Second
+
 	// In regtest, we start all the fork heights at zero. These can be adjusted
 	// for testing purposes to ensure that a transition does not cause issues.
 	params.ForkHeights = RegtestForkHeights
+	if isAcceleratedRegtest {
+		params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 30
+		params.DefaultEpochDurationNumBlocks = uint64(5)
+		params.DefaultBlockProductionIntervalMillisecondsPoS = 1000 // 1s
+		params.DefaultTimeoutIntervalMillisecondsPoS = 2000         // 2s
+		newSeedBalance := &DeSoOutput{
+			PublicKey:   MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"),
+			AmountNanos: 1e14,
+		}
+
+		params.SeedBalances = append(params.SeedBalances, newSeedBalance)
+	}
 	params.EncoderMigrationHeights = GetEncoderMigrationHeights(&params.ForkHeights)
 	params.EncoderMigrationHeightsList = GetEncoderMigrationHeightsList(&params.ForkHeights)
 	params.DefaultStakingRewardsAPYBasisPoints = 100000 * 100 // 100000% for regtest
@@ -1110,7 +1131,7 @@ var DeSoMainnetParams = DeSoParams{
 	MinChainWorkHex: "000000000000000000000000000000000000000000000000006314f9a85a949b",
 
 	MaxTipAgePoW: 24 * time.Hour,
-	MaxTipAgePoS: time.Hour,
+	MaxTipAgePoS: 24 * time.Hour,
 
 	// ===================================================================================
 	// Mainnet Bitcoin config
@@ -1383,6 +1404,9 @@ var DeSoMainnetParams = DeSoParams{
 	ForkHeights:                 MainnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&MainnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&MainnetForkHeights),
+
+	// Check every 60 seconds if the FastHotStuffConsensus is ready to start.
+	FastHotStuffConsensusTransitionCheckDuration: 60 * time.Second,
 }
 
 func mustDecodeHexBlockHashBitcoin(ss string) *BlockHash {
@@ -1544,7 +1568,7 @@ var DeSoTestnetParams = DeSoParams{
 	// TODO: Set to one day when we launch the testnet. In the meantime this value
 	// is more useful for local testing.
 	MaxTipAgePoW: time.Hour * 24,
-	MaxTipAgePoS: time.Hour,
+	MaxTipAgePoS: time.Hour * 24,
 
 	// Difficulty can't decrease to below 50% of its previous value or increase
 	// to above 200% of its previous value.
@@ -1697,6 +1721,9 @@ var DeSoTestnetParams = DeSoParams{
 	ForkHeights:                 TestnetForkHeights,
 	EncoderMigrationHeights:     GetEncoderMigrationHeights(&TestnetForkHeights),
 	EncoderMigrationHeightsList: GetEncoderMigrationHeightsList(&TestnetForkHeights),
+
+	// Check every 60 seconds if the FastHotStuffConsensus is ready to start.
+	FastHotStuffConsensusTransitionCheckDuration: 60 * time.Second,
 }
 
 // GetDataDir gets the user data directory where we store files

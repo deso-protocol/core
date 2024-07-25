@@ -57,6 +57,9 @@ func SetupRunFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().Bool("regtest", false,
 		"Can only be used in conjunction with --testnet. Creates a private testnet node with fast block times"+
 			"and instantly spendable block rewards.")
+	cmd.PersistentFlags().Bool("regtest-accelerated", false, "Can only be used in conjunction with --regtest. "+
+		"Accelerates the regtest network by lowering PoS cutover height, lowering epoch duration, and seeding "+
+		"some balances. Useful for testing purposes.")
 	cmd.PersistentFlags().String("postgres-uri", "", "BETA: Use Postgres as the backing store for chain data."+
 		"When enabled, most data is stored in postgres although badger is still currently used for some state. Run your "+
 		"Postgres instance on the same machine as your node for optimal performance.")
