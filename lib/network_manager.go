@@ -204,11 +204,9 @@ func (nm *NetworkManager) startValidatorConnector() {
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
 			glog.V(2).Infof("NetworkManager.startValidatorConnector: Refreshing validator indices...")
-			nm.printActiveValidators()
 			nm.refreshValidatorIndices()
 			nm.connectValidators()
 			glog.V(2).Infof("NetworkManager.startValidatorConnector: Indices refreshed.")
-			nm.printActiveValidators()
 		}
 	}
 }
@@ -227,12 +225,10 @@ func (nm *NetworkManager) startNonValidatorConnector() {
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
 			glog.V(2).Infof("NetworkManager.startNonValidatorConnector: Refreshing NON validator indices...")
-			nm.printActiveValidators()
 			nm.refreshNonValidatorOutboundIndex()
 			nm.refreshNonValidatorInboundIndex()
 			nm.connectNonValidators()
 			glog.V(2).Infof("NetworkManager.startNonValidatorConnector: Finished refreshing NON validator indices...")
-			nm.printActiveValidators()
 		}
 	}
 }
@@ -249,10 +245,8 @@ func (nm *NetworkManager) startRemoteNodeCleanup() {
 			return
 		case <-time.After(nm.peerConnectionRefreshInterval):
 			glog.V(2).Infof("NetworkManager.startRemoteNodeCleanup: Starting remote node cleanup...")
-			nm.printActiveValidators()
 			nm.Cleanup()
 			glog.V(2).Infof("NetworkManager.startRemoteNodeCleanup: Finished remote node cleanup...")
-			nm.printActiveValidators()
 		}
 	}
 
@@ -395,16 +389,6 @@ func (nm *NetworkManager) processInboundConnection(conn Connection) (*RemoteNode
 		return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Connection is not an inboundConnection")
 	}
 
-	na, err := nm.ConvertIPStringToNetAddress(ic.connection.RemoteAddr().String())
-	if err != nil {
-		return nil, errors.Wrapf(err, "NetworkManager.handleInboundConnection: Problem calling "+
-			"ConvertIPStringToNetAddress for addr: (%s)", ic.connection.RemoteAddr().String())
-	}
-	//if !addrmgr.IsRoutable(na) {
-	//	return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Rejecting INBOUND peer (%s) "+
-	//		"due to unroutable address", ic.connection.RemoteAddr().String())
-	//}
-
 	// If we want to limit inbound connections to one per IP address, check to make sure this address isn't already connected.
 	if nm.limitOneInboundRemoteNodePerIP &&
 		nm.isDuplicateInboundIPAddress(ic.connection.RemoteAddr()) {
@@ -412,6 +396,12 @@ func (nm *NetworkManager) processInboundConnection(conn Connection) (*RemoteNode
 		return nil, fmt.Errorf("NetworkManager.handleInboundConnection: Rejecting INBOUND peer (%s) due to "+
 			"already having an inbound connection from the same IP with limit_one_inbound_connection_per_ip set",
 			ic.connection.RemoteAddr().String())
+	}
+
+	na, err := nm.ConvertIPStringToNetAddress(ic.connection.RemoteAddr().String())
+	if err != nil {
+		return nil, errors.Wrapf(err, "NetworkManager.handleInboundConnection: Problem calling "+
+			"ConvertIPStringToNetAddress for addr: (%s)", ic.connection.RemoteAddr().String())
 	}
 
 	remoteNode, err := nm.AttachInboundConnection(ic.connection, na)
@@ -433,10 +423,10 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Connection is not an outboundConnection")
 	}
 
-	//if !addrmgr.IsRoutable(oc.address) {
-	//	return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Rejecting OUTBOUND peer (%s) "+
-	//		"due to unroutable address", oc.address.IP.String())
-	//}
+	if !addrmgr.IsRoutable(oc.address) {
+		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Rejecting OUTBOUND peer (%s) "+
+			"due to unroutable address", oc.address.IP.String())
+	}
 
 	if oc.failed {
 		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Failed to connect to peer (%s:%v)",

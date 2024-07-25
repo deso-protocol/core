@@ -160,6 +160,10 @@ func NewConnectionManager(
 // Check if the address passed shares a group with any addresses already in our data structures.
 func (cmgr *ConnectionManager) IsFromRedundantOutboundIPAddress(na *wire.NetAddress) bool {
 	return false
+	// TODO: Delete this code once we're 100% sure we don't need it.
+	// This group checking was required as an early DDOS prevention measure,
+	// but it is no longer required because most nodes have other ways of preventing attacks.
+
 	//groupKey := addrmgr.GroupKey(na)
 	//// For the sake of running multiple nodes on the same machine, we allow localhost connections.
 	//if groupKey == "local" {

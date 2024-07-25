@@ -2,7 +2,6 @@ package consensus
 
 import (
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
 	"time"
 
 	"github.com/golang/glog"
@@ -681,14 +680,12 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	// Fetch the validator list at the tip.
 	validatorList := fe.tip.validatorList
 
-	for _, validator := range validatorList {
-		domains := ""
-		for _, domain := range validator.GetDomains() {
-			domains += string(domain)
-		}
+	for _, validatorItem := range validatorList {
 		glog.V(2).Infof("Validator: Key: %v, Stake: %v, Domains: %v",
-			validator.GetPublicKey().ToString(),
-			validator.GetStakeAmount().ToBig().String(), domains)
+			validatorItem.GetPublicKey().ToString(),
+			validatorItem.GetStakeAmount().ToBig().String(),
+			DomainsToString(validatorItem.GetDomains()),
+		)
 	}
 
 	// Compute the chain tip's signature payload.
@@ -771,23 +768,16 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	// proposed in the next view. So if we want to propose a timeout QC in the current view, we need
 	// to aggregate timeouts from the previous one.
 	timeoutsByValidator := fe.timeoutsSeenByView[fe.currentView-1]
-
-	glog.V(2).Infof("FastHotStuffEventLoop.tryConstructTimeoutQCInCurrentView: "+
-		"Spewing timeoutsByValidator: %v", spew.Sdump(timeoutsByValidator))
 	glog.V(2).Infof("FastHotStuffEventLoop.tryConstructTimeoutQCInCurrentView: " +
 		"Printing timeouts by validator: ")
 	for key := range timeoutsByValidator {
-		validator, exists := fe.tip.validatorLookup[key]
+		validatorItem, exists := fe.tip.validatorLookup[key]
 		if !exists {
 			glog.V(2).Infof("Validator not found for key %v", key)
 			continue
 		}
-		domains := ""
-		for _, domain := range validator.GetDomains() {
-			domains += string(domain)
-		}
 		glog.V(2).Infof("Validator: Key: %v, Stake: %v, Domains: %v",
-			key, validator.GetStakeAmount().ToBig().String(), domains)
+			key, validatorItem.GetStakeAmount().ToBig().String(), DomainsToString(validatorItem.GetDomains()))
 	}
 
 	// Tracks the highQC from validators as we go along.

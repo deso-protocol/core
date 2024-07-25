@@ -384,6 +384,9 @@ func (node *Node) listenToNodeMessages(exitChannels ...*chan struct{}) {
 		switch operation {
 		case lib.NodeErase:
 			glog.Error("Not actually erasing node")
+			// TODO: Clean up this path. This NodeErase code was added when we upgraded to HyperSync,
+			//  but it's not worth compromising the node if a false positive sends us here.
+
 			//if err := os.RemoveAll(node.Config.DataDirectory); err != nil {
 			//	glog.Fatal(lib.CLog(lib.Red, fmt.Sprintf("IMPORTANT: Problem removing the directory (%v), you "+
 			//		"should run `rm -rf %v` to delete it manually. Error: (%v)", node.Config.DataDirectory,
