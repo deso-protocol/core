@@ -11,7 +11,8 @@ import (
 func TestFeeEstimator(t *testing.T) {
 	randSource := rand.New(rand.NewSource(2373))
 	globalParams := _testGetDefaultGlobalParams()
-
+	// Set test global params min fee rate to 100
+	globalParams.MinimumNetworkFeeNanosPerKB = 100
 	globalParams.MempoolMaxSizeBytes = uint64(1e9)
 	mempoolBackupIntervalMillis := uint64(30000)
 
@@ -34,8 +35,12 @@ func TestFeeEstimator(t *testing.T) {
 		globalParams.MinimumNetworkFeeNanosPerKB,
 		big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)),
 		mempool.txnRegister.feeBucketGrowthRateBasisPoints)
-	// set the feeMin to the second fee bucket.
-	feeMin := minFeeBucketMax + 1
+	// set the feeMin to the third fee bucket.
+	secondMinFeeBucketMin, secondMinFeeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+		minFeeBucketMax+1,
+		big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)),
+		mempool.txnRegister.feeBucketGrowthRateBasisPoints)
+	feeMin := secondMinFeeBucketMax + 1
 	// Construct a FeeEstimator with no transactions in it. We should get the minimum fee bucket.
 	// We make some dummy block to get around validations.
 	posFeeEstimator := &PoSFeeEstimator{}
@@ -162,6 +167,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// Update the global params
 		globalParams = _testGetDefaultGlobalParams()
+		globalParams.MinimumNetworkFeeNanosPerKB = 100
 		globalParams.MempoolCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
@@ -214,6 +220,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// Update the global params
 		globalParams = _testGetDefaultGlobalParams()
+		globalParams.MinimumNetworkFeeNanosPerKB = 100
 		globalParams.MempoolCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
@@ -266,6 +273,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// Update the global params
 		globalParams = _testGetDefaultGlobalParams()
+		globalParams.MinimumNetworkFeeNanosPerKB = 100
 		globalParams.MempoolCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
@@ -282,11 +290,64 @@ func TestFeeEstimator(t *testing.T) {
 	{
 		// Okay now make congestion factor 50% and make the max block size be more than 2x the
 		// total size of transactions we added. We should get the previous fee bucket, in this
-		// case this is the minimum fee rate bucket.
+		// case this is the second minimum fee rate bucket.
 		congestionFactor := uint64(50 * 100)
 		priorityPercentileBasisPoints := uint64(10000)
 		maxBlockSizeMempool := 2 * numBytesMempool
 		maxBlockSizePastBlocks := 2 * numBytesPastBlocks
+		// We use the max to determine which to pass to the hybrid estimator.
+		maxBlockSizeHybrid := maxBlockSizePastBlocks
+		if maxBlockSizeMempool > maxBlockSizePastBlocks {
+			maxBlockSizeHybrid = maxBlockSizeMempool
+		}
+		estimatedMempoolFeeRate = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.mempoolTransactionRegister, congestionFactor, priorityPercentileBasisPoints, 1,
+			maxBlockSizeMempool)
+		require.Equal(t, secondMinFeeBucketMin, estimatedMempoolFeeRate)
+		estimatedMempoolFee, err = posFeeEstimator.mempoolFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizeMempool)
+		require.NoError(t, err)
+		validateTxnFee(t, txn, estimatedMempoolFee, estimatedMempoolFeeRate)
+
+		// Let's do the same for past blocks estimator
+		estimatedPastBlocksFeeRate = posFeeEstimator.estimateFeeRateNanosPerKBGivenTransactionRegister(
+			posFeeEstimator.pastBlocksTransactionRegister, congestionFactor, priorityPercentileBasisPoints, 1,
+			maxBlockSizePastBlocks)
+		require.Equal(t, secondMinFeeBucketMin, estimatedPastBlocksFeeRate)
+		estimatedPastBlocksFee, err = posFeeEstimator.pastBlocksFeeEstimate(txn, congestionFactor,
+			priorityPercentileBasisPoints, maxBlockSizePastBlocks)
+		require.NoError(t, err)
+		validateTxnFee(t, txn, estimatedPastBlocksFee, estimatedPastBlocksFeeRate)
+
+		// Both the mempool and next block fee and fee rates should be equal since we have
+		// everything in the same fee bucket.
+		require.Equal(t, estimatedMempoolFee, estimatedPastBlocksFee)
+		require.Equal(t, estimatedMempoolFeeRate, estimatedPastBlocksFeeRate)
+
+		// Update the global params
+		globalParams = _testGetDefaultGlobalParams()
+		globalParams.MinimumNetworkFeeNanosPerKB = 100
+		globalParams.MempoolCongestionFactorBasisPoints = congestionFactor
+		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
+		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
+		globalParams.MempoolPastBlocksPriorityPercentileBasisPoints = priorityPercentileBasisPoints
+		globalParams.SoftMaxBlockSizeBytesPoS = maxBlockSizeHybrid
+		require.NoError(t, posFeeEstimator.UpdateGlobalParams(globalParams))
+
+		// And the hybrid estimator is just the max, but for completeness, we check it.
+		estimatedHybridFee, err = posFeeEstimator.EstimateFee(txn, 0)
+		require.NoError(t, err)
+		require.Equal(t, estimatedMempoolFee, estimatedHybridFee)
+		require.Equal(t, estimatedPastBlocksFee, estimatedHybridFee)
+	}
+	{
+		// Okay now make congestion factor 100% and make the max block size be 2x + 2 the
+		// total size of transactions we added. We should get the global min fee rate if
+		// we have less than 50% of the congestion threshold.
+		congestionFactor := uint64(100 * 100)
+		priorityPercentileBasisPoints := uint64(10000)
+		maxBlockSizeMempool := 2 * (numBytesMempool + 1)
+		maxBlockSizePastBlocks := 2 * (numBytesPastBlocks + 1)
 		// We use the max to determine which to pass to the hybrid estimator.
 		maxBlockSizeHybrid := maxBlockSizePastBlocks
 		if maxBlockSizeMempool > maxBlockSizePastBlocks {
@@ -318,6 +379,7 @@ func TestFeeEstimator(t *testing.T) {
 
 		// Update the global params
 		globalParams = _testGetDefaultGlobalParams()
+		globalParams.MinimumNetworkFeeNanosPerKB = 100
 		globalParams.MempoolCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPastBlocksCongestionFactorBasisPoints = congestionFactor
 		globalParams.MempoolPriorityPercentileBasisPoints = priorityPercentileBasisPoints
