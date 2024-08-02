@@ -582,7 +582,9 @@ func (posFeeEstimator *PoSFeeEstimator) estimateTxnFeeGivenTransactionRegister(
 //  1. Compute the maximum size of numPastBlocks blocks as maxBlockSize * numPastBlocks, called maxSizeOfNumBlocks.
 //  2. Iterate over all transactions in the transaction register in fee time order until the total size of
 //     the transactions is greater than maxSizeOfNumBlocks and append those transactions to a slice.
-//  3. If there are no transactions in the slice after step 2, return the minimum network fee.
+//  3. If there are no transactions in the slice after step 2 or if the total size of these transactions is
+//     less than 50% of the congestion threshold (congestionFactorBasisPoint * maxBlockSize) / (MaxBasisPoints * 2),
+//     return the minimum network fee.
 //  4. Compute the priority fee bucket for the transactions in the slice using the priorityPercentileBasisPoints param
 //     by calling getPriorityFeeBucketFromTxns on the slice.
 //  5. If the resulting priority fee bucket from step 4 is less than the global minimum network fee, return the global
@@ -675,8 +677,13 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		}
 	}
 	globalMinFeeRate, _ := txnRegister.minimumNetworkFeeNanosPerKB.Uint64()
-	if len(txns) == 0 {
-		// If there are no txns in the transaction register, we simply return the minimum network fee.
+	// Compute the congestion threshold. If our congestion factor is 100% (or 10,000 bps),
+	// then congestion threshold is simply max block size * numPastBlocks
+	congestionThreshold := (congestionFactorBasisPoints * maxSizeOfNumBlocks) / MaxBasisPoints
+	halfCongestionThreshold := congestionThreshold / 2
+	if len(txns) == 0 || totalTxnsSize < halfCongestionThreshold {
+		// If there are no txns in the transaction register or the total size of transactions
+		// is less than 50% of the congestion threshold, we simply return the minimum network fee.
 		return globalMinFeeRate
 	}
 
@@ -687,11 +694,8 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		txnRegister.feeBucketGrowthRateBasisPoints,
 	)
 
-	// Compute the congestion threshold. If our congestion factor is 100% (or 10,000 bps),
-	// then congestion threshold is simply max block size * numPastBlocks
-	congestionThreshold := (congestionFactorBasisPoints * maxSizeOfNumBlocks) / MaxBasisPoints
-	// If the total size of the txns in the transaction register is less than the computed congestion threshold,
-	// we return one bucket lower than the Priority fee.
+	// If the total size of the txns in the transaction register is less than the computed congestion threshold
+	// but greater than half the congestion threshold, we return one bucket lower than the Priority fee.
 	if totalTxnsSize <= congestionThreshold {
 		// When we're below the congestion threshold, we want to suggest one fee bucket *lower*
 		// than the Priority fee we got in the previous step. This mechanism allows fees to drop
