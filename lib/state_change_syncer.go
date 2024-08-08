@@ -297,9 +297,6 @@ type StateChangeSyncer struct {
 	BlocksyncCompleteEntriesFlushed bool
 
 	MempoolTxnSyncLimit uint64
-
-	PauseMempoolSync bool
-	PauseBlocksync   bool
 }
 
 // Open a file, create if it doesn't exist.
@@ -396,16 +393,6 @@ func (stateChangeSyncer *StateChangeSyncer) Reset() {
 // It also writes the offset of the entry in the file to a separate index file, such that a consumer can look up a
 // particular entry index in the state change file.
 func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *StateSyncerOperationEvent) {
-	for stateChangeSyncer.PauseBlocksync && !event.IsMempoolTxn {
-		time.Sleep(1 * time.Second)
-		fmt.Printf("Pausing blocksync\n")
-	}
-
-	for stateChangeSyncer.PauseMempoolSync && event.IsMempoolTxn {
-		time.Sleep(1 * time.Second)
-		fmt.Printf("Pausing mempool sync\n")
-	}
-
 	// If we're in blocksync mode, we only want to flush entries once the sync is complete.
 	if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 		return
@@ -461,22 +448,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		}
 
 		encoderType = encoder.GetEncoderType()
-
-		//if encoderType == EncoderTypeProfileEntry {
-		//	fmt.Printf("\nHandling profile entry\n")
-		//	// Decode the profile entry to get the public key.
-		//	profileEntry := &ProfileEntry{}
-		//	_, err := DecodeFromBytes(profileEntry, bytes.NewReader(event.StateChangeEntry.EncoderBytes))
-		//	if err != nil {
-		//		fmt.Printf("Error decoding profile entry: %v\n", err)
-		//		return
-		//	}
-		//	fmt.Printf("\n\nHere is the event: %+v\n", event)
-		//	fmt.Printf("Here is the profile entry: %v: %+v\n", string(profileEntry.Username[:]), profileEntry)
-		//	fmt.Printf("Here is the ancestral record: %+v\n", event.StateChangeEntry.AncestralRecord)
-		//	fmt.Printf("Here is the ancestral record bytes: %+v\n", event.StateChangeEntry.AncestralRecordBytes)
-		//}
-
+		
 	} else {
 		// If the value associated with the key is not an encoder, then we decode the encoder entirely from the key bytes.
 		// Examples of this are FollowEntry, LikeEntry, DeSoBalanceEntry, etc.
@@ -538,16 +510,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 // _handleStateSyncerFlush is called when a Badger db flush takes place. It calls a helper function that takes the bytes that
 // have been cached on the StateChangeSyncer and writes them to the state change file.
 func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *StateSyncerFlushedEvent) {
-	for stateChangeSyncer.PauseBlocksync && !event.IsMempoolFlush {
-		time.Sleep(1 * time.Second)
-		fmt.Printf("Pausing blocksync\n")
-	}
-
-	for stateChangeSyncer.PauseMempoolSync && event.IsMempoolFlush {
-		time.Sleep(1 * time.Second)
-		fmt.Printf("Pausing mempool sync\n")
-	}
-
 	stateChangeSyncer.StateSyncerMutex.Lock()
 	defer stateChangeSyncer.StateSyncerMutex.Unlock()
 
