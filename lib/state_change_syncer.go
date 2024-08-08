@@ -178,6 +178,9 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding ancestral record")
 	}
 
+	// Store the ancestral record bytes.
+	stateChangeEntry.AncestralRecordBytes = EncodeToBytes(blockHeight, ancestralRecord)
+
 	// Decode the flush UUID.
 	flushIdBytes := make([]byte, 16)
 	_, err = rr.Read(flushIdBytes)
@@ -415,7 +418,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 
 	if event.IsMempoolTxn {
 		// Set the flushId to the mempool flush ID.
-		//flushId = stateChangeSyncer.BlockSyncFlushI
+		//flushId = StateChangeSyncer.BlockSyncFlushI
 
 		// If the event flush ID is nil, then we need to use the global mempool flush ID.
 		if flushId == uuid.Nil {
@@ -445,6 +448,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		}
 
 		encoderType = encoder.GetEncoderType()
+
 	} else {
 		// If the value associated with the key is not an encoder, then we decode the encoder entirely from the key bytes.
 		// Examples of this are FollowEntry, LikeEntry, DeSoBalanceEntry, etc.
@@ -813,6 +817,12 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	// more than once in the mempool transactions.
 	txn := server.blockchain.db.NewTransaction(true)
 	defer txn.Discard()
+
+	// Create a read-only view of the badger DB prior to the mempool flush. This view will be used to get the ancestral
+	// records of entries that are being modified in the mempool.
+	mempoolEventManager.lastCommittedViewTxn = server.blockchain.db.NewTransaction(false)
+	defer mempoolEventManager.lastCommittedViewTxn.Discard()
+
 	glog.V(2).Infof("Time since mempool sync start: %v", time.Since(startTime))
 	startTime = time.Now()
 	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
@@ -1033,6 +1043,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			// Sleep for a short while to avoid a tight loop.
 			time.Sleep(100 * time.Millisecond)
 			var err error
+
 			// If the mempool is not empty, sync the mempool to the state syncer.
 			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
 			if err != nil {

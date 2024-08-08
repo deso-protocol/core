@@ -165,7 +165,7 @@ type Server struct {
 	// It can be used to find computational bottlenecks.
 	timer *Timer
 
-	stateChangeSyncer *StateChangeSyncer
+	StateChangeSyncer *StateChangeSyncer
 	// DbMutex protects the badger database from concurrent access when it's being closed & re-opened.
 	// This is necessary because the database is closed & re-opened when the node finishes hypersyncing in order
 	// to change the database options from Default options to Performance options.
@@ -484,7 +484,7 @@ func NewServer(
 	}
 
 	if stateChangeSyncer != nil {
-		srv.stateChangeSyncer = stateChangeSyncer
+		srv.StateChangeSyncer = stateChangeSyncer
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -556,8 +556,8 @@ func NewServer(
 		_connectIps, _targetOutboundPeers, _maxInboundPeers, _limitOneInboundConnectionPerIP,
 		_peerConnectionRefreshIntervalMillis, _minFeeRateNanosPerKB, nodeServices)
 
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
+	if srv.StateChangeSyncer != nil {
+		srv.StateChangeSyncer.BlockHeight = uint64(_chain.headerTip().Height)
 	}
 
 	// Create a mempool to store transactions until they're ready to be mined into
@@ -3292,8 +3292,8 @@ func (srv *Server) Start() {
 	}
 
 	// Initialize state syncer mempool job, if needed.
-	if srv.stateChangeSyncer != nil {
-		srv.stateChangeSyncer.StartMempoolSyncRoutine(srv)
+	if srv.StateChangeSyncer != nil {
+		srv.StateChangeSyncer.StartMempoolSyncRoutine(srv)
 	}
 
 	// Start the network manager's internal event loop to open and close connections to peers.
