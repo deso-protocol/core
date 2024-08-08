@@ -1107,12 +1107,23 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 	var ancestralValue []byte
 	var getError error
 
+	isCoreState := isCoreStateKey(key)
+
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
-	if isState {
-		// We check if we've already read this key and stored it in the cache.
-		// Otherwise, we fetch the current value of this record from the DB.
-		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+	if isState || (isCoreState && eventManager != nil && eventManager.isMempoolManager) {
+
+		// When we are syncing state from the mempool, we need to read the last committed view txn.
+		// This is because we will be querying the badger DB, and during the flush loop, every entry that is
+		// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
+		// initiated before the flush loop started.
+		if eventManager.isMempoolManager && eventManager.lastCommittedViewTxn != nil {
+			ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, snap, key)
+		} else {
+			// We check if we've already read this key and stored it in the cache.
+			// Otherwise, we fetch the current value of this record from the DB.
+			ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+		}
 
 		// If there is some error with the DB read, other than non-existent key, we return.
 		if getError != nil && getError != badger.ErrKeyNotFound {
@@ -1120,6 +1131,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 				"from DB with key: %v", key)
 		}
 	}
+	// TODO: Do the same thing for deletes.
 
 	// We update the DB record with the intended value.
 	err := txn.Set(key, value)
@@ -1183,6 +1195,8 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 		}
 	}
 
+	fmt.Printf("Key string: %v\n", string(key))
+
 	// If record doesn't exist in cache, we get it from the DB.
 	item, err := txn.Get(key)
 	if err != nil {
@@ -1203,15 +1217,25 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	var getError error
 	isState := snap != nil && snap.isState(key)
 
+	isCoreState := isCoreStateKey(key)
+
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
-	if isState {
-		// We check if we've already read this key and stored it in the cache.
-		// Otherwise, we fetch the current value of this record from the DB.
-		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
-		// If the key doesn't exist then there is no point in deleting this entry.
-		if getError == badger.ErrKeyNotFound {
-			return nil
+	if isState || (isCoreState && eventManager != nil && eventManager.isMempoolManager) {
+		// When we are syncing state from the mempool, we need to read the last committed view txn.
+		// This is because we will be querying the badger DB, and during the flush loop, every entry that is
+		// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
+		// initiated before the flush loop started.
+		if eventManager.isMempoolManager && eventManager.lastCommittedViewTxn != nil {
+			ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, snap, key)
+		} else {
+			// We check if we've already read this key and stored it in the cache.
+			// Otherwise, we fetch the current value of this record from the DB.
+			ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+			// If the key doesn't exist then there is no point in deleting this entry.
+			if getError == badger.ErrKeyNotFound {
+				return nil
+			}
 		}
 
 		// If there is some error with the DB read, other than non-existent key, we return.
@@ -5305,8 +5329,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                            // CumWork
+		genesisBlock.Header,                                                               // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
 	)
 
@@ -9489,7 +9513,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -9616,7 +9640,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
