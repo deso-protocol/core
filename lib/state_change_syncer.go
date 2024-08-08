@@ -448,7 +448,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		}
 
 		encoderType = encoder.GetEncoderType()
-		
+
 	} else {
 		// If the value associated with the key is not an encoder, then we decode the encoder entirely from the key bytes.
 		// Examples of this are FollowEntry, LikeEntry, DeSoBalanceEntry, etc.
