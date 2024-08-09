@@ -1243,7 +1243,10 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	}
 
 	err := txn.Delete(key)
-	if err != nil {
+	if err != nil && err == badger.ErrKeyNotFound && eventManager != nil && eventManager.isMempoolManager {
+		// If the key doesn't exist then there is no point in deleting this entry.
+		return nil
+	} else if err != nil {
 		return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record "+
 			"from DB with key: %v", key)
 	}
