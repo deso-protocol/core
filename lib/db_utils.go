@@ -1236,7 +1236,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 		}
 
 		// If there is some error with the DB read, other than non-existent key, we return.
-		if getError != nil {
+		if getError != nil && getError != badger.ErrKeyNotFound {
 			return errors.Wrapf(getError, "DBDeleteWithTxn: problem checking for DB record "+
 				"with key: %v", key)
 		}
