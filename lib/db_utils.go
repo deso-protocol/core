@@ -1118,7 +1118,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 		// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
 		// initiated before the flush loop started.
 		if eventManager != nil && eventManager.isMempoolManager && eventManager.lastCommittedViewTxn != nil {
-			ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, snap, key)
+			ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, nil, key)
 		} else {
 			// We check if we've already read this key and stored it in the cache.
 			// Otherwise, we fetch the current value of this record from the DB.

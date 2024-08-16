@@ -174,12 +174,12 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	ancestralRecord := stateChangeEntry.EncoderType.New()
 	if exist, err := DecodeFromBytes(ancestralRecord, rr); exist && err == nil {
 		stateChangeEntry.AncestralRecord = ancestralRecord
+		stateChangeEntry.AncestralRecordBytes = EncodeToBytes(blockHeight, ancestralRecord)
 	} else if err != nil {
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding ancestral record")
+	} else {
+		stateChangeEntry.AncestralRecordBytes = EncodeToBytes(blockHeight, nil)
 	}
-
-	// Store the ancestral record bytes.
-	stateChangeEntry.AncestralRecordBytes = EncodeToBytes(blockHeight, ancestralRecord)
 
 	// Decode the flush UUID.
 	flushIdBytes := make([]byte, 16)
@@ -459,8 +459,18 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		encoderType = keyEncoder.GetEncoderType()
 		stateChangeEntry.Encoder = keyEncoder
 		stateChangeEntry.EncoderBytes = nil
-	}
 
+		if stateChangeEntry.AncestralRecordBytes != nil && len(stateChangeEntry.AncestralRecordBytes) > 0 {
+			// Decode the ancestral record.
+			ancestralRecord, err := DecodeStateKey(stateChangeEntry.KeyBytes, stateChangeEntry.AncestralRecordBytes)
+			if err != nil {
+				glog.Fatalf("Server._handleStateSyncerOperation: Error decoding ancestral record: %v", err)
+			}
+			stateChangeEntry.AncestralRecord = ancestralRecord
+			stateChangeEntry.AncestralRecordBytes = nil
+		}
+	}
+	
 	// Set the encoder type.
 	stateChangeEntry.EncoderType = encoderType
 
