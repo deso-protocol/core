@@ -6072,7 +6072,7 @@ func (tsl *TransactionSpendingLimit) ToMetamaskString(params *DeSoParams) string
 	// GlobalDESOLimit
 	if tsl.GlobalDESOLimit > 0 {
 		str += _indt(indentationCounter) + "Total $DESO Limit: " + FormatScaledUint256AsDecimalString(
-			big.NewInt(0).SetUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit))) + " $DESO\n"
+			BigIntFromUint64(tsl.GlobalDESOLimit), big.NewInt(int64(NanosPerUnit))) + " $DESO\n"
 	}
 
 	// Sort an array of strings and add them to the spending limit string str. This will come in handy below,

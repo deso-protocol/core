@@ -466,7 +466,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
 				DeSoLockedNanos:         profile.DeSoLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
-				CoinsInCirculationNanos: *uint256.NewInt(0).SetUint64(profile.CoinsInCirculationNanos),
+				CoinsInCirculationNanos: *uint256.NewInt(profile.CoinsInCirculationNanos),
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
 				MintingDisabled:         profile.MintingDisabled,
 			},

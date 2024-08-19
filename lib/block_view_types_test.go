@@ -438,7 +438,7 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 func TestEncodingUint256s(t *testing.T) {
 	// Create three uint256.Ints.
 	num1 := uint256.NewInt(0)
-	num2 := uint256.NewInt(0).SetUint64(598128756)
+	num2 := uint256.NewInt(598128756)
 	num3 := MaxUint256
 
 	// Encode them to bytes using VariableEncodeUint256.

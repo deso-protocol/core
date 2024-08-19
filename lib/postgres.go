@@ -720,7 +720,7 @@ func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 		HODLerPKID:  balance.HolderPKID,
 		CreatorPKID: balance.CreatorPKID,
 		// FIXME: This will break if the value exceeds uint256
-		BalanceNanos: *uint256.NewInt(0).SetUint64(balance.BalanceNanos),
+		BalanceNanos: *uint256.NewInt(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }

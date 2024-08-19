@@ -1665,7 +1665,7 @@ func (bav *UtxoView) _helpConnectNFTSold(args HelpConnectNFTSoldStruct) (
 
 	totalDiff := big.NewInt(0).Add(sellerPlusBidderDiff, creatorPlusCoinDiff)
 	totalDiff = totalDiff.Add(totalDiff, totalAdditionalRoyaltiesDiff)
-	if totalDiff.Cmp(big.NewInt(0)) > 0 {
+	if totalDiff.Sign() > 0 {
 		return 0, 0, nil, fmt.Errorf(
 			"_helpConnectNFTSold: Sum of participant diffs is >0 (%d, %d, %d, %d, %d, %d)",
 			sellerDiff, bidderDiff, creatorDiff, coinDiff, additionalDESORoyaltiesDiff.Int64(),
