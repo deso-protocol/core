@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/gernest/mention"
 
 	"github.com/btcsuite/btcd/btcec/v2"
