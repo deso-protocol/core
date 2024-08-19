@@ -8056,7 +8056,7 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToMintBytes: %v", err)
 		}
-		ret.CoinsToMintNanos = *uint256.NewInt().SetBytes(coinsToMintBytes)
+		ret.CoinsToMintNanos = *uint256.NewInt(0).SetBytes(coinsToMintBytes)
 	}
 
 	{
@@ -8077,7 +8077,7 @@ func (txnData *DAOCoinMetadata) FromBytes(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("DAOCoinMetadata.FromBytes: Error reading coinsToBurnBytes: %v", err)
 		}
-		ret.CoinsToBurnNanos = *uint256.NewInt().SetBytes(coinsToBurnBytes)
+		ret.CoinsToBurnNanos = *uint256.NewInt(0).SetBytes(coinsToBurnBytes)
 	}
 
 	transferRestrictionStatus, err := rr.ReadByte()
@@ -8166,7 +8166,7 @@ func (txnData *DAOCoinTransferMetadata) FromBytes(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("DAOCoinTransferMetadata.FromBytes: Error reading coinsToTransferBytes: %v", err)
 		}
-		ret.DAOCoinToTransferNanos = *uint256.NewInt().SetBytes(coinsToTransferBytes)
+		ret.DAOCoinToTransferNanos = *uint256.NewInt(0).SetBytes(coinsToTransferBytes)
 	}
 
 	// ReceiverPublicKey

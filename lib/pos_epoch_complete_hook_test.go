@@ -286,8 +286,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, validatorEntries, 7)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m6PKID)
 		require.Equal(t, validatorEntries[6].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(700))
-		require.Equal(t, validatorEntries[6].TotalStakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(700))
+		require.Equal(t, validatorEntries[6].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
 
 		// Test SnapshotLeaderSchedule is populated.
 		for index := range validatorPKIDs {
@@ -303,8 +303,8 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		require.Len(t, stakeEntries, 7)
 		require.Equal(t, stakeEntries[0].StakerPKID, m6PKID)
 		require.Equal(t, stakeEntries[6].StakerPKID, m0PKID)
-		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(700))
-		require.Equal(t, stakeEntries[6].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(700))
+		require.Equal(t, stakeEntries[6].StakeAmountNanos, uint256.NewInt(0).SetUint64(100))
 	}
 	{
 		// Test snapshotting changing stake.
@@ -339,7 +339,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_sortStakeEntriesByStakeAmount(stakeEntries)
 		require.Len(t, stakeEntries, 7)
 		require.Equal(t, stakeEntries[1].StakerPKID, m5PKID)
-		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(600))
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt(0).SetUint64(600))
 
 		// Run OnEpochCompleteHook().
 		incrViewNumber()
@@ -356,7 +356,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 		_sortStakeEntriesByStakeAmount(stakeEntries)
 		require.Len(t, stakeEntries, 7)
 		require.Equal(t, stakeEntries[0].StakerPKID, m5PKID)
-		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(800))
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(800))
 	}
 	{
 		// Test snapshotting changing GlobalParams.
@@ -607,11 +607,11 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 		// Validator m0 has 500 nanos staked in total: 400 staked by itself and 100 delegated by m2.
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt().SetUint64(500))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(500))
 
 		// Validator m1 has 250 nanos staked in total: 200 staked by itself and 50 delegated by m3.
 		require.Equal(t, validatorEntries[1].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt().SetUint64(250))
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(250))
 	}
 
 	{
@@ -621,13 +621,13 @@ func TestStakingRewardDistribution(t *testing.T) {
 		require.Len(t, stakeEntries, 4)
 
 		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
-		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(400))
 		require.Equal(t, stakeEntries[1].StakerPKID, m1PKID)
-		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt(0).SetUint64(200))
 		require.Equal(t, stakeEntries[2].StakerPKID, m2PKID)
-		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt(0).SetUint64(100))
 		require.Equal(t, stakeEntries[3].StakerPKID, m3PKID)
-		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt(0).SetUint64(50))
 	}
 
 	{
@@ -648,13 +648,13 @@ func TestStakingRewardDistribution(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, stakeEntries, 4)
 		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
-		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(400))
 		require.Equal(t, stakeEntries[1].StakerPKID, m1PKID)
-		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt(0).SetUint64(200))
 		require.Equal(t, stakeEntries[2].StakerPKID, m2PKID)
-		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt(0).SetUint64(100))
 		require.Equal(t, stakeEntries[3].StakerPKID, m3PKID)
-		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt(0).SetUint64(50))
 
 		// Test that DESO wallet balances are unchanged.
 		m0Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m0PkBytes)
@@ -676,13 +676,13 @@ func TestStakingRewardDistribution(t *testing.T) {
 		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 4)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
-		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(400))
 		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m1PKID)
-		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt(0).SetUint64(200))
 		require.Equal(t, snapshotStakeEntries[2].StakerPKID, m2PKID)
-		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt(0).SetUint64(100))
 		require.Equal(t, snapshotStakeEntries[3].StakerPKID, m3PKID)
-		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt(0).SetUint64(50))
 	}
 
 	{
@@ -714,7 +714,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 		// Final stake amount:
 		// - m0's final stake is: 400 + 42 + 2 = 444 nanos
 		require.Equal(t, stakeEntries[0].StakerPKID, m0PKID)
-		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(444))
+		require.Equal(t, stakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(444))
 
 		// Test that m0's DESO wallet balance is unchanged.
 		m0Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m0PkBytes)
@@ -740,7 +740,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 		// Test that m1's stake is unchanged.
 		require.Equal(t, stakeEntries[1].StakerPKID, m1PKID)
-		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, stakeEntries[1].StakeAmountNanos, uint256.NewInt(0).SetUint64(200))
 
 		// Test reward computation and restaking for m2:
 		// - m2's original stake was 100 nanos
@@ -754,7 +754,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 		// Final stake amount:
 		// - m2's final stake is: 100 + 10 - 2 = 108 nanos
 		require.Equal(t, stakeEntries[2].StakerPKID, m2PKID)
-		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(108))
+		require.Equal(t, stakeEntries[2].StakeAmountNanos, uint256.NewInt(0).SetUint64(108))
 
 		// Test that m2's DESO wallet balance is unchanged.
 		m2Balance, err := _newUtxoView(testMeta).GetDeSoBalanceNanosForPublicKey(m2PkBytes)
@@ -779,7 +779,7 @@ func TestStakingRewardDistribution(t *testing.T) {
 
 		// Test that m3's stake is unchanged.
 		require.Equal(t, stakeEntries[3].StakerPKID, m3PKID)
-		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+		require.Equal(t, stakeEntries[3].StakeAmountNanos, uint256.NewInt(0).SetUint64(50))
 
 		// Make sure the validator's total stake amount is correct.
 		// M0's total stake amount nanos should be the sum of M0 and M2's stakes (444 + 108)
@@ -800,13 +800,13 @@ func TestStakingRewardDistribution(t *testing.T) {
 		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 4)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
-		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(400))
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(400))
 		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m1PKID)
-		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt(0).SetUint64(200))
 		require.Equal(t, snapshotStakeEntries[2].StakerPKID, m2PKID)
-		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(100))
+		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt(0).SetUint64(100))
 		require.Equal(t, snapshotStakeEntries[3].StakerPKID, m3PKID)
-		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt(0).SetUint64(50))
 	}
 
 	{
@@ -824,13 +824,13 @@ func TestStakingRewardDistribution(t *testing.T) {
 		_sortStakeEntriesByStakeAmount(snapshotStakeEntries)
 		require.Len(t, snapshotStakeEntries, 4)
 		require.Equal(t, snapshotStakeEntries[0].StakerPKID, m0PKID)
-		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt().SetUint64(444))
+		require.Equal(t, snapshotStakeEntries[0].StakeAmountNanos, uint256.NewInt(0).SetUint64(444))
 		require.Equal(t, snapshotStakeEntries[1].StakerPKID, m1PKID)
-		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt().SetUint64(200))
+		require.Equal(t, snapshotStakeEntries[1].StakeAmountNanos, uint256.NewInt(0).SetUint64(200))
 		require.Equal(t, snapshotStakeEntries[2].StakerPKID, m2PKID)
-		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt().SetUint64(108))
+		require.Equal(t, snapshotStakeEntries[2].StakeAmountNanos, uint256.NewInt(0).SetUint64(108))
 		require.Equal(t, snapshotStakeEntries[3].StakerPKID, m3PKID)
-		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt().SetUint64(50))
+		require.Equal(t, snapshotStakeEntries[3].StakeAmountNanos, uint256.NewInt(0).SetUint64(50))
 	}
 
 }
@@ -916,7 +916,7 @@ func _stakeToValidator(
 	stakeMetadata := &StakeMetadata{
 		ValidatorPublicKey: NewPublicKey(validatorPkBytes),
 		RewardMethod:       rewardMethod,
-		StakeAmountNanos:   uint256.NewInt().SetUint64(stakeAmountNanos),
+		StakeAmountNanos:   uint256.NewInt(0).SetUint64(stakeAmountNanos),
 	}
 	_, err = _submitStakeTxn(testMeta, stakerPubKey, stakerPrivKey, stakeMetadata, nil, true)
 	require.NoError(testMeta.t, err)
