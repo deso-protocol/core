@@ -3,6 +3,7 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"math"
 	"strings"
 	"sync"
@@ -14,7 +15,7 @@ import (
 
 	"github.com/deso-protocol/go-deadlock"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -89,7 +90,7 @@ func NewDeSoBlockProducer(
 			if err != nil {
 				return nil, fmt.Errorf("NewDeSoBlockProducer: Error decoding hex seed: %+v", err)
 			}
-			privKey, _ = btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+			privKey, _ = btcec.PrivKeyFromBytes(privKeyBytes)
 		} else {
 			seedBytes, err := bip39.NewSeedWithErrorChecking(blockProducerSeed, "")
 			if err != nil {
@@ -144,7 +145,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	lastNode := desoBlockProducer.chain.blockTip()
 
 	// Compute the public key to contribute the reward to.
-	rewardPk, err := btcec.ParsePubKey(publicKey, btcec.S256())
+	rewardPk, err := btcec.ParsePubKey(publicKey)
 	if err != nil {
 		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: ")
 	}
@@ -286,7 +287,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
 
 	// Parse the public key that should be used for the block reward.
-	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutput.PublicKey, btcec.S256())
+	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutput.PublicKey)
 	if err != nil {
 		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing block reward output public key: ")
 	}
@@ -306,7 +307,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		if blockRet.Header.Height >= uint64(desoBlockProducer.params.ForkHeights.BlockRewardPatchBlockHeight) {
 			if txnInBlock.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 				// Parse the transactor's public key to compare with the block reward output public key.
-				transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey, btcec.S256())
+				transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey)
 				if err != nil {
 					return nil, nil, nil,
 						errors.Wrapf(err,
@@ -466,7 +467,7 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
 	blockRewardOutputPublicKeyBytes []byte,
 	params *DeSoParams,
 ) (*MsgDeSoBlock, error) {
-	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutputPublicKeyBytes, btcec.S256())
+	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutputPublicKeyBytes)
 	if err != nil {
 		return nil, errors.Wrap(
 			fmt.Errorf("RecomputeBlockRewardWithBlockRewardOutpubPublicKey: Problem parsing block reward output public key: %v", err), "")
@@ -477,7 +478,7 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
 	totalFees := uint64(0)
 	for _, txn := range block.Txns[1:] {
 		if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-			transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+			transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey)
 			if err != nil {
 				glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", err)
 				continue
@@ -618,11 +619,7 @@ func (desoBlockProducer *DeSoBlockProducer) SignBlock(blockFound *MsgDeSoBlock) 
 			fmt.Errorf("Error computing block hash from header submitted: %v", err), "")
 	}
 
-	signature, err := desoBlockProducer.blockProducerPrivateKey.Sign(blockHash[:])
-	if err != nil {
-		return errors.Wrap(
-			fmt.Errorf("Error signing block: %v", err), "")
-	}
+	signature := ecdsa2.Sign(desoBlockProducer.blockProducerPrivateKey, blockHash[:])
 	// If we get here, we now have a valid signature for the block.
 
 	// Embed the signature into the block.

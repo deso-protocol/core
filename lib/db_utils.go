@@ -21,7 +21,7 @@ import (
 
 	"github.com/holiman/uint256"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -1137,7 +1137,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
-		snap.DatabaseCache.Add(keyString, value)
+		snap.DatabaseCache.Put(keyString, value)
 
 		if !snap.disableChecksum {
 			// We have to remove the previous value from the state checksum.
@@ -1178,8 +1178,8 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if val, exists := snap.DatabaseCache.Lookup(keyString); exists {
-			return val.([]byte), nil
+		if val, exists := snap.DatabaseCache.Get(keyString); exists {
+			return val, nil
 		}
 	}
 
@@ -2805,7 +2805,7 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if _, exists := snap.DatabaseCache.Lookup(keyString); exists {
+		if exists := snap.DatabaseCache.Exists(keyString); exists {
 			return true, nil
 		}
 	}

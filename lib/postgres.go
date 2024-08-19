@@ -1439,8 +1439,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 
 		if txn.Signature.Sign != nil {
-			transaction.R = BigintToHash(txn.Signature.Sign.R)
-			transaction.S = BigintToHash(txn.Signature.Sign.S)
+			r := txn.Signature.Sign.R()
+			s := txn.Signature.Sign.S()
+			rBytes := (&r).Bytes()
+			sBytes := (&s).Bytes()
+			transaction.R = NewBlockHash(rBytes[:])
+			transaction.S = NewBlockHash(sBytes[:])
 			transaction.RecoveryId = uint32(txn.Signature.RecoveryId)
 			transaction.IsRecoverable = txn.Signature.IsRecoverable
 		}

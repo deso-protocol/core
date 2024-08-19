@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -298,7 +298,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	if len(receiverPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorCoinTransferInvalidReceiverPubKeySize
 	}
-	if _, err = btcec.ParsePubKey(receiverPublicKey, btcec.S256()); err != nil {
+	if _, err = btcec.ParsePubKey(receiverPublicKey); err != nil {
 		return 0, 0, nil, errors.Wrap(
 			RuleErrorCoinTransferInvalidReceiverPubKey, err.Error())
 	}
@@ -313,7 +313,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	if len(profilePublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorCoinTransferInvalidProfilePubKeySize
 	}
-	if _, err = btcec.ParsePubKey(profilePublicKey, btcec.S256()); err != nil {
+	if _, err = btcec.ParsePubKey(profilePublicKey); err != nil {
 		return 0, 0, nil, errors.Wrap(
 			RuleErrorCoinTransferInvalidProfilePubKey, err.Error())
 	}

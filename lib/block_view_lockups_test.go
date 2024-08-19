@@ -5,7 +5,7 @@ import (
 
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -1284,7 +1284,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 	senderPrivBytes, _, err := Base58CheckDecode(m0Priv)
 	require.NoError(t, err)
-	m0PrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	m0PrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 
 	// Setup helper functions for creating m0 derived keys
 	newUtxoView := func() *UtxoView {

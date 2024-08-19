@@ -1900,12 +1900,7 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 }
 
 func (bc *Blockchain) getCachedBlockViewAndUtxoOps(blockHash BlockHash) (*BlockViewAndUtxoOps, error, bool) {
-	if viewAndUtxoOpsAtHashItem, exists := bc.blockViewCache.Lookup(blockHash); exists {
-		viewAndUtxoOpsAtHash, ok := viewAndUtxoOpsAtHashItem.(*BlockViewAndUtxoOps)
-		if !ok {
-			glog.Errorf("getCachedBlockViewAndUtxoOps: Problem casting to BlockViewAndUtxoOps")
-			return nil, fmt.Errorf("getCachedBlockViewAndUtxoOps: Problem casting to BlockViewAndUtxoOps"), false
-		}
+	if viewAndUtxoOpsAtHash, exists := bc.blockViewCache.Get(blockHash); exists {
 		return viewAndUtxoOpsAtHash, nil, true
 	}
 	return nil, nil, false
@@ -1995,7 +1990,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash) (
 	utxoView.TipHash = &blockHash
 	// Save a copy of the UtxoView to the cache.
 	copiedView := utxoView.CopyUtxoView()
-	bc.blockViewCache.Add(blockHash, &BlockViewAndUtxoOps{
+	bc.blockViewCache.Put(blockHash, &BlockViewAndUtxoOps{
 		UtxoView: copiedView,
 		UtxoOps:  utxoOps,
 		Block:    fullBlock,
