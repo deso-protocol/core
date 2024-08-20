@@ -10,7 +10,7 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/bxcodec/faker v2.0.1+incompatible
-	github.com/cloudflare/circl v1.3.9
+	github.com/cloudflare/circl v1.4.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/decred/dcrd/container/lru v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
@@ -18,13 +18,13 @@ require (
 	github.com/deso-protocol/go-merkle-tree v1.0.0
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/emirpasic/gods v1.18.1
-	github.com/ethereum/go-ethereum v1.13.5
+	github.com/ethereum/go-ethereum v1.14.8
 	github.com/fatih/color v1.17.0
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.13.0
 	github.com/golang/glog v1.2.2
 	github.com/google/uuid v1.6.0
-	github.com/holiman/uint256 v1.2.3
+	github.com/holiman/uint256 v1.3.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
 	github.com/onflow/crypto v0.25.2

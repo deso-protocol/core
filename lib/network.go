@@ -4264,6 +4264,7 @@ func EncryptBytesWithPublicKey(bytesToEncrypt []byte, pubkey *ecdsa.PublicKey) (
 	// for our curve even though it is functionally identical. So we just
 	// set the params here and everything works.
 	eciesPubkey.Params = ecies.ECIES_AES128_SHA256
+	eciesPubkey.Curve = ecies.DefaultCurve
 	return ecies.Encrypt(rand.Reader, eciesPubkey, bytesToEncrypt, nil, nil)
 }
 
@@ -4277,6 +4278,7 @@ func DecryptBytesWithPrivateKey(bytesToDecrypt []byte, privKey *ecdsa.PrivateKey
 	// for our curve even though it is functionally identical. So we just
 	// set the params here and everything works.
 	eciesKeypair.Params = ecies.ECIES_AES128_SHA256
+	eciesKeypair.Curve = ecies.DefaultCurve
 	return eciesKeypair.Decrypt(bytesToDecrypt, nil, nil)
 }
 
