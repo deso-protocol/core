@@ -9148,7 +9148,7 @@ func DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(txn *badger.Txn, snap *Sna
 		return &BalanceEntry{
 			HODLerPKID:   hodlerPKID.NewPKID(),
 			CreatorPKID:  creatorPKID.NewPKID(),
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 	balanceEntryObj := &BalanceEntry{}
@@ -9224,7 +9224,7 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 
 	// If the balance is zero, then there is no point in storing this entry.
 	// We already placeholder a "zero" balance entry in connect logic.
-	if balanceEntry.BalanceNanos.Eq(uint256.NewInt()) && !balanceEntry.HasPurchased {
+	if balanceEntry.BalanceNanos.Eq(uint256.NewInt(0)) && !balanceEntry.HasPurchased {
 		return nil
 	}
 
@@ -9306,7 +9306,7 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, snap *Snap
 		return &BalanceEntry{
 			HODLerPKID:   holder.NewPKID(),
 			CreatorPKID:  creator.NewPKID(),
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 

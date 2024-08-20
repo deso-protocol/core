@@ -452,10 +452,10 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 			var err error
 			daoCoinsInCirculationNanos, err = uint256.FromHex(profile.DAOCoinCoinsInCirculationNanos)
 			if err != nil {
-				daoCoinsInCirculationNanos = uint256.NewInt()
+				daoCoinsInCirculationNanos = uint256.NewInt(0)
 			}
 		} else {
-			daoCoinsInCirculationNanos = uint256.NewInt()
+			daoCoinsInCirculationNanos = uint256.NewInt(0)
 		}
 		profileEntry = &ProfileEntry{
 			PublicKey:   profile.PublicKey.ToBytes(),
@@ -466,7 +466,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
 				DeSoLockedNanos:         profile.DeSoLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
-				CoinsInCirculationNanos: *uint256.NewInt().SetUint64(profile.CoinsInCirculationNanos),
+				CoinsInCirculationNanos: *uint256.NewInt(0).SetUint64(profile.CoinsInCirculationNanos),
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
 				MintingDisabled:         profile.MintingDisabled,
 			},

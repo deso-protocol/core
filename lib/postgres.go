@@ -720,7 +720,7 @@ func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 		HODLerPKID:  balance.HolderPKID,
 		CreatorPKID: balance.CreatorPKID,
 		// FIXME: This will break if the value exceeds uint256
-		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
+		BalanceNanos: *uint256.NewInt(0).SetUint64(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -1093,14 +1093,14 @@ func (messageEntry *PGNewMessageGroupChatThreadEntry) ToAccessGroupId() AccessGr
 }
 
 func HexToUint256(input string) *uint256.Int {
-	output := uint256.NewInt()
+	output := uint256.NewInt(0)
 
 	if input != "" {
 		var err error
 		output, err = uint256.FromHex(input)
 
 		if err != nil {
-			output = uint256.NewInt()
+			output = uint256.NewInt(0)
 		}
 	}
 

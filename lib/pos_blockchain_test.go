@@ -911,21 +911,21 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 	validator1Entry := &ValidatorEntry{
 		ValidatorPKID:         m1PKID,
 		VotingPublicKey:       m1VotingPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(3),
+		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(3),
 	}
 	m2PKID := DBGetPKIDEntryForPublicKey(bc.db, nil, m2PkBytes).PKID
 	m2VotingPrivateKey := _generateRandomBLSPrivateKey(t)
 	validator2Entry := &ValidatorEntry{
 		ValidatorPKID:         m2PKID,
 		VotingPublicKey:       m2VotingPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(2),
+		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(2),
 	}
 	m3PKID := DBGetPKIDEntryForPublicKey(bc.db, nil, m3PkBytes).PKID
 	m3VotingPrivateKey := _generateRandomBLSPrivateKey(t)
 	validator3Entry := &ValidatorEntry{
 		ValidatorPKID:         m3PKID,
 		VotingPublicKey:       m3VotingPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(1),
+		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(1),
 	}
 
 	validatorSet := []*ValidatorEntry{validator1Entry, validator2Entry, validator3Entry}
@@ -970,7 +970,7 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 	// Malformed validators should fail
 	{
 		// Zero stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(0)
+		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt(0).SetUint64(0)
 		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
@@ -982,7 +982,7 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 		require.Equal(t, err, RuleErrorInvalidVoteQC)
 
 		// Reset stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(3)
+		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt(0).SetUint64(3)
 		// Nil voting public key
 		validatorSet[0].VotingPublicKey = nil
 		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
@@ -1175,7 +1175,7 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 	{
 		// Invalid validator set tests
 		// Zero stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(0)
+		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt(0).SetUint64(0)
 		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)
 		require.Error(t, err)
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
@@ -1187,7 +1187,7 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 		require.Equal(t, err, RuleErrorInvalidTimeoutQC)
 
 		// Reset stake amount
-		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt().SetUint64(3)
+		validatorSet[0].TotalStakeAmountNanos = uint256.NewInt(0).SetUint64(3)
 		// Nil voting public key
 		validatorSet[0].VotingPublicKey = nil
 		err = bc.isValidPoSQuorumCertificate(desoBlock, validatorSet)

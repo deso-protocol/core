@@ -4165,7 +4165,7 @@ func (bav *UtxoView) _connectSingleTxn(
 					"ConnectTransaction: TxnTypeUnlockStake must correspond to OperationTypeUnlockStake",
 				)
 			}
-			totalLockedAmountNanos := uint256.NewInt()
+			totalLockedAmountNanos := uint256.NewInt(0)
 			for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
 				totalLockedAmountNanos, err = SafeUint256().Add(
 					totalLockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
@@ -4192,7 +4192,7 @@ func (bav *UtxoView) _connectSingleTxn(
 						"ConnectTransaction: TxnTypeCoinUnlock must correspond to OperationTypeCoinUnlock",
 					)
 				}
-				totalLockedDESOAmountNanos := uint256.NewInt()
+				totalLockedDESOAmountNanos := uint256.NewInt(0)
 				for _, prevLockedBalanceEntry := range utxoOp.PrevLockedBalanceEntries {
 					totalLockedDESOAmountNanos, err = SafeUint256().Add(
 						totalLockedDESOAmountNanos, &prevLockedBalanceEntry.BalanceBaseUnits)
