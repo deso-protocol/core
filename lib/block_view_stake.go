@@ -2064,7 +2064,7 @@ func (bav *UtxoView) IsValidStakeMetadata(transactorPkBytes []byte, metadata *St
 	if err != nil {
 		return errors.Wrapf(err, "UtxoView.IsValidStakeMetadata: ")
 	}
-	if uint256.NewInt(0).SetUint64(transactorDeSoBalanceNanos).Cmp(metadata.StakeAmountNanos) < 0 {
+	if uint256.NewInt(transactorDeSoBalanceNanos).Cmp(metadata.StakeAmountNanos) < 0 {
 		return errors.Wrapf(RuleErrorInvalidStakeInsufficientBalance, "UtxoView.IsValidStakeMetadata: ")
 	}
 
@@ -2280,7 +2280,7 @@ func (bav *UtxoView) SanityCheckStakeTxn(
 	if err != nil {
 		return errors.Wrapf(err, "SanityCheckStakeTxn: error including fees in TransactorBalance decrease: ")
 	}
-	if !uint256.NewInt(0).SetUint64(transactorBalanceNanosDecrease).Eq(amountNanos) {
+	if !uint256.NewInt(transactorBalanceNanosDecrease).Eq(amountNanos) {
 		return errors.New("SanityCheckStakeTxn: TransactorBalance decrease does not match")
 	}
 
@@ -2423,7 +2423,7 @@ func (bav *UtxoView) SanityCheckUnlockStakeTxn(
 	if err != nil {
 		return errors.Wrapf(err, "SanityCheckStakeTxn: error including fees in TransactorBalance decrease: ")
 	}
-	if !uint256.NewInt(0).SetUint64(transactorBalanceNanosIncrease).Eq(amountNanos) {
+	if !uint256.NewInt(transactorBalanceNanosIncrease).Eq(amountNanos) {
 		return errors.New("SanityCheckUnlockStakeTxn: TransactorBalance increase does not match")
 	}
 

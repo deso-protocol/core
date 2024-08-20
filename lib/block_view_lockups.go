@@ -1251,8 +1251,8 @@ func (bav *UtxoView) _connectCoinLockup(
 		}
 
 		// Convert variables to a consistent uint256 representation. This is to use them in SafeUint256 math.
-		txnYieldBasisPoints256 := uint256.NewInt(0).SetUint64(txnYieldBasisPoints)
-		txnYieldEarningDurationNanoSecs256 := uint256.NewInt(0).SetUint64(uint64(txnYieldEarningDurationNanoSecs))
+		txnYieldBasisPoints256 := uint256.NewInt(txnYieldBasisPoints)
+		txnYieldEarningDurationNanoSecs256 := uint256.NewInt(uint64(txnYieldEarningDurationNanoSecs))
 
 		// Compute the yield associated with this operation, checking to ensure there's no overflow.
 		yieldFromTxn, err =
@@ -1803,12 +1803,12 @@ func CalculateLockupValueOverElapsedDuration(
 	}
 
 	// Convert the elapsedDuration to an uint256
-	numerator := uint256.NewInt(0).SetUint64(uint64(elapsedDuration))
+	numerator := uint256.NewInt(uint64(elapsedDuration))
 
 	// Compute the time that passes over the duration of the locked balance entry
 	denominator, err := SafeUint256().Sub(
-		uint256.NewInt(0).SetUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs)),
-		uint256.NewInt(0).SetUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs)))
+		uint256.NewInt(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs)),
+		uint256.NewInt(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs)))
 	if err != nil {
 		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
 			"(lockedBalanceEntry.UnlockTimestamp - lockedBalanceEntry.VestingEndTimestamp) underflow")
@@ -1858,8 +1858,8 @@ func CalculateLockupYield(
 
 	// Compute the denominators from the nanosecond to year conversion and the basis point computation.
 	denominators, err := SafeUint256().Mul(
-		uint256.NewInt(0).SetUint64(NanoSecsPerYear),
-		uint256.NewInt(0).SetUint64(10000))
+		uint256.NewInt(NanoSecsPerYear),
+		uint256.NewInt(10000))
 	if err != nil {
 		return nil,
 			errors.Wrap(RuleErrorCoinLockupCoinYieldOverflow, "CalculateLockupYield (nanoSecsPerYear * 10000)")

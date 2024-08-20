@@ -276,7 +276,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		txMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
 		receiverPublicKey = txMeta.ReceiverPublicKey
 		profilePublicKey = txMeta.ProfilePublicKey
-		coinToTransferNanos = uint256.NewInt(0).SetUint64(txMeta.CreatorCoinToTransferNanos)
+		coinToTransferNanos = uint256.NewInt(txMeta.CreatorCoinToTransferNanos)
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -434,7 +434,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	bav._deleteBalanceEntryMappings(receiverBalanceEntry, receiverPublicKey, profilePublicKey, isDAOCoin)
 
 	bav._setBalanceEntryMappings(receiverBalanceEntry, isDAOCoin)
-	if senderBalanceEntry.BalanceNanos.Gt(uint256.NewInt(0)) {
+	if senderBalanceEntry.BalanceNanos.Sign() > 0 {
 		bav._setBalanceEntryMappings(senderBalanceEntry, isDAOCoin)
 	}
 

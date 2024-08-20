@@ -39,7 +39,7 @@ func BuildProofOfStakeCutoverValidator() (consensus.Validator, error) {
 	}
 	validatorEntry := &ValidatorEntry{
 		VotingPublicKey:       blsPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(1e9),
+		TotalStakeAmountNanos: uint256.NewInt(1e9),
 	}
 	return validatorEntry, nil
 }

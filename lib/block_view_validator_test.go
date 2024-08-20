@@ -836,7 +836,7 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		// m3 stakes 100 DESO nanos with m0.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(100),
+			StakeAmountNanos:   uint256.NewInt(100),
 		}
 		_, err = _submitStakeTxn(testMeta, m3Pub, m3Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -844,7 +844,7 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		// m3 stakes 200 DESO nanos with m1.
 		stakeMetadata = &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(200),
+			StakeAmountNanos:   uint256.NewInt(200),
 		}
 		_, err = _submitStakeTxn(testMeta, m3Pub, m3Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -852,7 +852,7 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		// m3 stakes 300 DESO nanos with m2.
 		stakeMetadata = &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m2PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(300),
+			StakeAmountNanos:   uint256.NewInt(300),
 		}
 		_, err = _submitStakeTxn(testMeta, m3Pub, m3Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -862,17 +862,17 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(300))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(300))
 		require.Equal(t, validatorEntries[1].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(200))
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(200))
 		require.Equal(t, validatorEntries[2].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt(100))
 	}
 	{
 		// m3 unstakes from m1.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(0).SetUint64(150),
+			UnstakeAmountNanos: uint256.NewInt(150),
 		}
 		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
 
@@ -881,17 +881,17 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 3)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(300))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(300))
 		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(100))
 		require.Equal(t, validatorEntries[2].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(50))
+		require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt(50))
 	}
 	{
 		// m3 unstakes more from m1.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(0).SetUint64(50),
+			UnstakeAmountNanos: uint256.NewInt(50),
 		}
 		_, err = _submitUnstakeTxn(testMeta, m3Pub, m3Priv, unstakeMetadata, nil, flushToDB)
 
@@ -900,9 +900,9 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(300))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(300))
 		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(100))
 	}
 	{
 		// m2 unregisters as validator.
@@ -914,13 +914,13 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(100))
 	}
 	{
 		// m4 stakes with m1.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(150),
+			StakeAmountNanos:   uint256.NewInt(150),
 		}
 		_, err = _submitStakeTxn(testMeta, m4Pub, m4Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -930,15 +930,15 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(150))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(150))
 		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(100))
 	}
 	{
 		// m4 stakes more with m1.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m1PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(100),
+			StakeAmountNanos:   uint256.NewInt(100),
 		}
 		_, err = _submitStakeTxn(testMeta, m4Pub, m4Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -948,9 +948,9 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 2)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(250))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(250))
 		require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
-		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+		require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(100))
 	}
 	{
 		// Verify top validators with LIMIT.
@@ -958,7 +958,7 @@ func _testGetTopActiveValidatorsByStakeAmount(t *testing.T, flushToDB bool) {
 		require.NoError(t, err)
 		require.Len(t, validatorEntries, 1)
 		require.Equal(t, validatorEntries[0].ValidatorPKID, m1PKID)
-		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(250))
+		require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(250))
 	}
 
 	// Flush mempool to the db and test rollbacks.
@@ -992,7 +992,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	votingPublicKey, votingAuthorization := _generateVotingPublicKeyAndAuthorization(t, m0PkBytes)
 	validatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m0PKID,
-		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(100),
+		TotalStakeAmountNanos: uint256.NewInt(100),
 		VotingPublicKey:       votingPublicKey,
 		VotingAuthorization:   votingAuthorization,
 	}
@@ -1004,7 +1004,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m0PKID)
 	require.NoError(t, err)
 	require.NotNil(t, validatorEntry)
-	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(100))
 
 	// Verify m0 is not stored in the UtxoView.
 	require.Empty(t, utxoView.ValidatorPKIDToValidatorEntry)
@@ -1013,7 +1013,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	votingPublicKey, votingAuthorization = _generateVotingPublicKeyAndAuthorization(t, m1PkBytes)
 	validatorEntry = &ValidatorEntry{
 		ValidatorPKID:         m1PKID,
-		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(400),
+		TotalStakeAmountNanos: uint256.NewInt(400),
 		VotingPublicKey:       votingPublicKey,
 		VotingAuthorization:   votingAuthorization,
 		JailedAtEpochNumber:   1,
@@ -1025,14 +1025,14 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m1PKID)
 	require.NoError(t, err)
 	require.NotNil(t, validatorEntry)
-	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(400))
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(400))
 	require.Equal(t, validatorEntry.Status(), ValidatorStatusJailed)
 
 	// Store m2's ValidatorEntry in the db with TotalStake = 300 nanos.
 	votingPublicKey, votingAuthorization = _generateVotingPublicKeyAndAuthorization(t, m2PkBytes)
 	m2ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m2PKID,
-		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(300),
+		TotalStakeAmountNanos: uint256.NewInt(300),
 		VotingPublicKey:       votingPublicKey,
 		VotingAuthorization:   votingAuthorization,
 	}
@@ -1043,13 +1043,13 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m2PKID)
 	require.NoError(t, err)
 	require.NotNil(t, validatorEntry)
-	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(300))
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(300))
 
 	// Store m3's ValidatorEntry in the db with TotalStake = 600 nanos.
 	votingPublicKey, votingAuthorization = _generateVotingPublicKeyAndAuthorization(t, m3PkBytes)
 	m3ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m3PKID,
-		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(600),
+		TotalStakeAmountNanos: uint256.NewInt(600),
 		VotingPublicKey:       votingPublicKey,
 		VotingAuthorization:   votingAuthorization,
 	}
@@ -1060,7 +1060,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	validatorEntry, err = DBGetValidatorByPKID(db, chain.snapshot, m3PKID)
 	require.NoError(t, err)
 	require.NotNil(t, validatorEntry)
-	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(600))
+	require.Equal(t, validatorEntry.TotalStakeAmountNanos, uint256.NewInt(600))
 
 	// Fetch m2 so it is also cached in the UtxoView.
 	validatorEntry, err = utxoView.GetValidatorByPKID(m2PKID)
@@ -1073,7 +1073,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.Equal(
 		t,
 		utxoView.ValidatorPKIDToValidatorEntry[*m2ValidatorEntry.ValidatorPKID].TotalStakeAmountNanos,
-		uint256.NewInt(0).SetUint64(300),
+		uint256.NewInt(300),
 	)
 
 	// Store m3's ValidatorEntry in the UtxoView with isDeleted=true.
@@ -1087,7 +1087,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	votingPublicKey, votingAuthorization = _generateVotingPublicKeyAndAuthorization(t, m4PkBytes)
 	m4ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m4PKID,
-		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(50),
+		TotalStakeAmountNanos: uint256.NewInt(50),
 		VotingPublicKey:       votingPublicKey,
 		VotingAuthorization:   votingAuthorization,
 	}
@@ -1104,14 +1104,14 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.Equal(
 		t,
 		utxoView.ValidatorPKIDToValidatorEntry[*m4ValidatorEntry.ValidatorPKID].TotalStakeAmountNanos,
-		uint256.NewInt(0).SetUint64(50),
+		uint256.NewInt(50),
 	)
 
 	// Store m5's jailed ValidatorEntry in the UtxoView with TotalStake = 500 nanos.
 	votingPublicKey, votingAuthorization = _generateVotingPublicKeyAndAuthorization(t, m5PkBytes)
 	m5ValidatorEntry := &ValidatorEntry{
 		ValidatorPKID:         m5PKID,
-		TotalStakeAmountNanos: uint256.NewInt(0).SetUint64(500),
+		TotalStakeAmountNanos: uint256.NewInt(500),
 		VotingPublicKey:       votingPublicKey,
 		VotingAuthorization:   votingAuthorization,
 		JailedAtEpochNumber:   1,
@@ -1129,7 +1129,7 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.Equal(
 		t,
 		utxoView.ValidatorPKIDToValidatorEntry[*m5ValidatorEntry.ValidatorPKID].TotalStakeAmountNanos,
-		uint256.NewInt(0).SetUint64(500),
+		uint256.NewInt(500),
 	)
 	require.Equal(
 		t, utxoView.ValidatorPKIDToValidatorEntry[*m5ValidatorEntry.ValidatorPKID].Status(), ValidatorStatusJailed,
@@ -1140,11 +1140,11 @@ func TestGetTopActiveValidatorsByStakeMergingDbAndUtxoView(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, validatorEntries, 3)
 	require.Equal(t, validatorEntries[0].ValidatorPKID, m2PKID)
-	require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(300))
+	require.Equal(t, validatorEntries[0].TotalStakeAmountNanos, uint256.NewInt(300))
 	require.Equal(t, validatorEntries[1].ValidatorPKID, m0PKID)
-	require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(100))
+	require.Equal(t, validatorEntries[1].TotalStakeAmountNanos, uint256.NewInt(100))
 	require.Equal(t, validatorEntries[2].ValidatorPKID, m4PKID)
-	require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt(0).SetUint64(50))
+	require.Equal(t, validatorEntries[2].TotalStakeAmountNanos, uint256.NewInt(50))
 }
 
 func TestUpdatingValidatorDisableDelegatedStake(t *testing.T) {
@@ -1257,7 +1257,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m0 stakes with himself. This is allowed even though DisableDelegatedStake = TRUE.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(100),
+			StakeAmountNanos:   uint256.NewInt(100),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m0Pub, m0Priv, stakeMetadata, nil, flushToDB,
@@ -1273,7 +1273,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m1 tries to stake with m0. Errors.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(100),
+			StakeAmountNanos:   uint256.NewInt(100),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -1302,7 +1302,7 @@ func _testUpdatingValidatorDisableDelegatedStake(t *testing.T, flushToDB bool) {
 		// m1 stakes with m0. Succeeds.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(100),
+			StakeAmountNanos:   uint256.NewInt(100),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -1425,7 +1425,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		// m0 stakes with himself.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(600),
+			StakeAmountNanos:   uint256.NewInt(600),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m0Pub, m0Priv, stakeMetadata, nil, flushToDB,
@@ -1435,13 +1435,13 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m0PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(0).SetUint64(600))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(600))
 	}
 	{
 		// m1 stakes with m0.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(400),
+			StakeAmountNanos:   uint256.NewInt(400),
 		}
 		_, err = _submitStakeTxn(
 			testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB,
@@ -1451,13 +1451,13 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(0).SetUint64(400))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(400))
 	}
 	{
 		// m1 partially unstakes with m0.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(0).SetUint64(100),
+			UnstakeAmountNanos: uint256.NewInt(100),
 		}
 		_, err = _submitUnstakeTxn(
 			testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB,
@@ -1467,13 +1467,13 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		stakeEntry, err = utxoView().GetStakeEntry(m0PKID, m1PKID)
 		require.NoError(t, err)
 		require.NotNil(t, stakeEntry)
-		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(0).SetUint64(300))
+		require.Equal(t, stakeEntry.StakeAmountNanos, uint256.NewInt(300))
 
 		// m1 has a LockedStakeEntry created.
 		lockedStakeEntry, err = utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(0).SetUint64(100))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(100))
 	}
 	{
 		// m0 unregisters as a validator.
@@ -1494,7 +1494,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		lockedStakeEntry, err = utxoView().GetLockedStakeEntry(m0PKID, m0PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(0).SetUint64(600))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(600))
 
 		// m1 is unstaked.
 		// m1's StakeEntry is deleted.
@@ -1505,7 +1505,7 @@ func _testUnregisterAsValidator(t *testing.T, flushToDB bool) {
 		lockedStakeEntry, err = utxoView().GetLockedStakeEntry(m0PKID, m1PKID, currentEpochNumber)
 		require.NoError(t, err)
 		require.NotNil(t, lockedStakeEntry)
-		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(0).SetUint64(400))
+		require.Equal(t, lockedStakeEntry.LockedAmountNanos, uint256.NewInt(400))
 	}
 
 	// Flush mempool to the db and test rollbacks.
@@ -1636,7 +1636,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		// m1 stakes with m0. Succeeds. You can stake to a jailed validator.
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(100),
+			StakeAmountNanos:   uint256.NewInt(100),
 		}
 		_, err = _submitStakeTxn(testMeta, m1Pub, m1Priv, stakeMetadata, nil, flushToDB)
 		require.NoError(t, err)
@@ -1649,7 +1649,7 @@ func _testUnjailValidator(t *testing.T, flushToDB bool) {
 		// m1 unstakes from m0. Succeeds. You can unstake from a jailed validator.
 		unstakeMetadata := &UnstakeMetadata{
 			ValidatorPublicKey: NewPublicKey(m0PkBytes),
-			UnstakeAmountNanos: uint256.NewInt(0).SetUint64(100),
+			UnstakeAmountNanos: uint256.NewInt(100),
 		}
 		_, err = _submitUnstakeTxn(testMeta, m1Pub, m1Priv, unstakeMetadata, nil, flushToDB)
 		require.NoError(t, err)

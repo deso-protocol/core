@@ -68,7 +68,7 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		stakeTxnMeta := StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(transactorPubKey),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt(0).SetUint64(10 * 1e6),
+			StakeAmountNanos:   uint256.NewInt(10 * 1e6),
 		}
 
 		stakeTxn, _, _, _, err := srv.blockProducer.chain.CreateStakeTxn(

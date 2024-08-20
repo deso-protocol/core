@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"math/big"
 	"sort"
 	"strings"
@@ -21,7 +20,7 @@ func adjustBalance(
 	retBig := big.NewInt(0).Add(balanceBig, delta)
 	// If we're below zero, just return zero. The caller should generally
 	// prevent this from happening.
-	if retBig.Cmp(big.NewInt(0)) < 0 {
+	if retBig.Sign() < 0 {
 		return nil, fmt.Errorf("adjustBalance: Went below zero. This should never happen.")
 	}
 	if retBig.Cmp(MaxUint256.ToBig()) > 0 {
@@ -54,7 +53,7 @@ func (bav *UtxoView) getAdjustedDAOCoinBalanceForUserInBaseUnits(
 			return nil, err
 		}
 		return adjustBalance(
-			uint256.NewInt(0).SetUint64(transactorDESOBalanceNanos), delta)
+			uint256.NewInt(transactorDESOBalanceNanos), delta)
 	}
 
 	// If we get here, we know we're dealing with a DAO coin now.
@@ -187,7 +186,7 @@ func (bav *UtxoView) _sanityCheckLimitOrderMoneyPrinting(
 	// we did not print money.
 	for creatorPKID, deltaBalanceBaseUnits := range finalDeltasMap {
 		// If delta is > 0, throw an error.
-		if deltaBalanceBaseUnits.Cmp(big.NewInt(0)) > 0 {
+		if deltaBalanceBaseUnits.Sign() > 0 {
 			return fmt.Errorf(
 				"_connectDAOCoinLimitOrder: printing %v new coin base units for creatorPKID %v",
 				deltaBalanceBaseUnits, creatorPKID)
@@ -776,7 +775,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 		}
 	}
 	for creatorPKIDIter, balanceDelta := range balanceDeltaSanityCheckMap {
-		if balanceDelta.Cmp(big.NewInt(0)) != 0 {
+		if balanceDelta.Sign() != 0 {
 			return 0, 0, nil, errors.Wrapf(
 				RuleErrorDAOCoinLimitOrderBalanceDeltasNonZero,
 				"_connectDAOCoinLimitOrder: Balance for PKID %v is %v", creatorPKIDIter, balanceDelta.String(),
@@ -815,7 +814,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				pubKey := bav.GetPublicKeyForPKID(&userPKID)
 				desoSurplus := desoAllowedToSpendByPublicKey[*NewPublicKey(pubKey)]
 				newDESOSurplus := big.NewInt(0).Add(
-					delta, big.NewInt(0).SetUint64(desoSurplus))
+					delta, BigIntFromUint64(desoSurplus))
 
 				// If the current delta is for the transactor, we need
 				// to deduct the fees specified in the metadata from the output
@@ -824,11 +823,11 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				if blockHeight < bav.Params.ForkHeights.BalanceModelBlockHeight &&
 					transactorPKIDEntry.PKID.Eq(&userPKID) {
 
-					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, big.NewInt(0).SetUint64(txMeta.FeeNanos))
+					newDESOSurplus = big.NewInt(0).Sub(newDESOSurplus, BigIntFromUint64(txMeta.FeeNanos))
 				}
 
 				if blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-					cmpVal := newDESOSurplus.Cmp(big.NewInt(0))
+					cmpVal := newDESOSurplus.Sign()
 					if cmpVal == 0 {
 						continue
 					}
@@ -875,10 +874,10 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					// Note that if we ever go negative then that's an error because
 					// we already maxed out the DESO we're allowed to spend before
 					// entering this loop.
-					if newDESOSurplus.Cmp(big.NewInt(0)) < 0 {
+					if newDESOSurplus.Sign() < 0 {
 						return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverspendingDESO
 					}
-					if newDESOSurplus.Cmp(big.NewInt(0).SetUint64(math.MaxUint64)) > 0 {
+					if !newDESOSurplus.IsUint64() {
 						return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverflowsDESO
 					}
 
@@ -925,7 +924,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 				}
 				newBalance := big.NewInt(0).Add(newBalanceEntry.BalanceNanos.ToBig(), delta)
 
-				if newBalance.Cmp(big.NewInt(0)) < 0 {
+				if newBalance.Sign() < 0 {
 					return 0, 0, nil, RuleErrorDAOCoinLimitOrderOverspendingDAOCoin
 				}
 				if newBalance.Cmp(MaxUint256.ToBig()) > 0 {
@@ -1992,7 +1991,7 @@ func ScaleFloatFormatStringToUint256(floatStr string, scaleFactor *uint256.Int) 
 	}
 	newWholePart := big.NewInt(0).Mul(wholePart, scaleFactor.ToBig())
 	newDecimalPart := big.NewInt(0).Mul(decimalPart, big.NewInt(0).Exp(
-		big.NewInt(0).SetUint64(10), big.NewInt(0).SetUint64(uint64(decimalExponent)), nil))
+		big.NewInt(10), big.NewInt(int64(decimalExponent)), nil))
 
 	sumBig := big.NewInt(0).Add(newWholePart, newDecimalPart)
 	ret, overflow := uint256.FromBig(sumBig)

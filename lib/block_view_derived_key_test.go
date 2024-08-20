@@ -2720,7 +2720,7 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt(0).SetUint64(100 * NanosPerUnit),
+				CoinsToMintNanos: *uint256.NewInt(100 * NanosPerUnit),
 				CoinsToBurnNanos: *uint256.NewInt(0),
 			},
 			nil,
@@ -2738,7 +2738,7 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt(0).SetUint64(100 * NanosPerUnit),
+				CoinsToMintNanos: *uint256.NewInt(100 * NanosPerUnit),
 				CoinsToBurnNanos: *uint256.NewInt(0),
 			},
 			nil,
@@ -2761,7 +2761,7 @@ REPEAT:
 			&DAOCoinTransferMetadata{
 				ProfilePublicKey:       m1PkBytes,
 				ReceiverPublicKey:      m0PkBytes,
-				DAOCoinToTransferNanos: *uint256.NewInt(0).SetUint64(10 * NanosPerUnit),
+				DAOCoinToTransferNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -2778,7 +2778,7 @@ REPEAT:
 			&DAOCoinTransferMetadata{
 				ProfilePublicKey:       m1PkBytes,
 				ReceiverPublicKey:      m0PkBytes,
-				DAOCoinToTransferNanos: *uint256.NewInt(0).SetUint64(10 * NanosPerUnit),
+				DAOCoinToTransferNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -2853,7 +2853,7 @@ REPEAT:
 			&DAOCoinTransferMetadata{
 				ProfilePublicKey:       m1PkBytes,
 				ReceiverPublicKey:      m0PkBytes,
-				DAOCoinToTransferNanos: *uint256.NewInt(0).SetUint64(10 * NanosPerUnit),
+				DAOCoinToTransferNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -2878,7 +2878,7 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeMint,
-				CoinsToMintNanos: *uint256.NewInt(0).SetUint64(100 * NanosPerUnit),
+				CoinsToMintNanos: *uint256.NewInt(100 * NanosPerUnit),
 				CoinsToBurnNanos: *uint256.NewInt(0),
 			},
 			nil,
@@ -3010,7 +3010,7 @@ REPEAT:
 			&DAOCoinMetadata{
 				ProfilePublicKey: m1PkBytes,
 				OperationType:    DAOCoinOperationTypeBurn,
-				CoinsToBurnNanos: *uint256.NewInt(0).SetUint64(10 * NanosPerUnit),
+				CoinsToBurnNanos: *uint256.NewInt(10 * NanosPerUnit),
 			},
 			nil,
 			blockHeight+1,
@@ -3620,7 +3620,7 @@ REPEAT:
 			BuyingDAOCoinCreatorPublicKey:             NewPublicKey(m1PkBytes),
 			SellingDAOCoinCreatorPublicKey:            &ZeroPublicKey,
 			ScaledExchangeRateCoinsToSellPerCoinToBuy: exchangeRate,
-			QuantityToFillInBaseUnits:                 uint256.NewInt(0).SetUint64(100),
+			QuantityToFillInBaseUnits:                 uint256.NewInt(100),
 			OperationType:                             DAOCoinLimitOrderOperationTypeBID,
 			FillType:                                  DAOCoinLimitOrderFillTypeGoodTillCancelled,
 		}
