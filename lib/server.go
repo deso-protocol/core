@@ -23,7 +23,7 @@ import (
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
