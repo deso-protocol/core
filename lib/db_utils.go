@@ -10131,7 +10131,7 @@ const (
 // BadgerDB options that use much more RAM than the
 // default settings.
 func PerformanceBadgerOptions(dir string) badger.Options {
-	opts := badger.DefaultOptions(dir)
+	opts := DefaultBadgerOptions(dir)
 
 	// Use an extended table size for larger commits.
 	opts.MemTableSize = PerformanceMemTableSize
@@ -10142,7 +10142,7 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 
 func DefaultBadgerOptions(dir string) badger.Options {
 	opts := badger.DefaultOptions(dir)
-	opts.Logger = nil
+	opts.WithLoggingLevel(badger.WARNING)
 	return opts
 }
 
