@@ -10141,8 +10141,7 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 }
 
 func DefaultBadgerOptions(dir string) badger.Options {
-	opts := badger.DefaultOptions(dir)
-	opts.WithLoggingLevel(badger.WARNING)
+	opts := badger.DefaultOptions(dir).WithLoggingLevel(badger.WARNING)
 	return opts
 }
 
