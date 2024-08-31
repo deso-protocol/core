@@ -164,6 +164,10 @@ func (blockStatus BlockStatus) String() string {
 		statuses = append(statuses, "BLOCK_VALIDATE_FAILED")
 		blockStatus ^= StatusBlockValidateFailed
 	}
+	if blockStatus&StatusBlockCommitted != 0 {
+		statuses = append(statuses, "BLOCK_COMMITTED")
+		blockStatus ^= StatusBlockCommitted
+	}
 
 	// If at this point the blockStatus isn't zeroed out then
 	// we have an unknown status remaining.
@@ -1403,13 +1407,10 @@ func (bc *Blockchain) GetBlockAtHeight(height uint32) *MsgDeSoBlock {
 
 // GetBlockNodeWithHash looks for a block node in the bestChain list that matches the hash.
 func (bc *Blockchain) GetBlockNodeWithHash(hash *BlockHash) *BlockNode {
-	for _, blockNode := range bc.bestChain {
-		if blockNode.Hash.IsEqual(hash) {
-			return blockNode
-		}
+	if hash == nil {
+		return nil
 	}
-
-	return nil
+	return bc.bestChainMap[*hash]
 }
 
 // isTipMaxed compares the tip height to the MaxSyncBlockHeight height.
