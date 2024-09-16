@@ -454,10 +454,19 @@ func NewServer(
 	// Setup snapshot
 	var _snapshot *Snapshot
 	shouldRestart := false
+	isChecksumIssue := false
 	archivalMode := false
 	if _hyperSync {
-		_snapshot, err, shouldRestart = NewSnapshot(_db, _snapshotBlockHeightPeriod, false, false, _params,
-			_disableEncoderMigrations, _hypersyncMaxQueueSize, eventManager)
+		_snapshot, err, shouldRestart, isChecksumIssue = NewSnapshot(
+			_db,
+			_snapshotBlockHeightPeriod,
+			false,
+			false,
+			_params,
+			_disableEncoderMigrations,
+			_hypersyncMaxQueueSize,
+			eventManager,
+		)
 		if err != nil {
 			panic(err)
 		}
@@ -709,9 +718,14 @@ func NewServer(
 		if stateChangeSyncer != nil {
 			stateChangeSyncer.Reset()
 		}
-		glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
-			"properly last time"))
-		return nil, errors.Wrapf(err, "NewServer: Restart required"), true
+		if !_forceChecksum && isChecksumIssue {
+			glog.Warningf(CLog(Yellow, "NewServer: Not forcing a rollback to the last snapshot epoch even though the"+
+				"node was not closed properly last time."))
+		} else {
+			glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
+				"properly last time"))
+			return nil, errors.Wrapf(err, "NewServer: Restart required"), true
+		}
 	}
 
 	return srv, nil, shouldRestart
