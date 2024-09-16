@@ -2352,7 +2352,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// In this case go ahead and return early. If its parents are truly legitimate then we
 	// should re-request it and its parents from a node and reprocess it
 	// once it is no longer an orphan.
-	parentNode, parentNodeExists := bc.blockIndexByHash[*blockHeader.PrevBlockHash]
+	parentNode, parentNodeExists := bc.blockIndexByHash.Get(*blockHeader.PrevBlockHash)
 	if !parentNodeExists || (parentNode.Status&StatusBlockProcessed) == 0 {
 		return false, true, nil
 	}
