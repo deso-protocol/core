@@ -174,7 +174,7 @@ func TestBlockNodePutGet(t *testing.T) {
 	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 
-	require.Len(blockIndex, 4)
+	require.Equal(blockIndex.Count(), 4)
 	b1Ret, exists := blockIndex.Get(*b1.Hash)
 	require.True(exists, "b1 not found")
 
@@ -226,7 +226,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	// Check the block index.
 	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
-	require.Len(blockIndex, 1)
+	require.Equal(blockIndex.Count(), 1)
 	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
 	genesis, exists := blockIndex.Get(genesisHash)
 	require.True(exists, "genesis block not found in index")
