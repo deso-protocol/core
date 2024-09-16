@@ -175,16 +175,16 @@ func TestBlockNodePutGet(t *testing.T) {
 	require.NoError(err)
 
 	require.Len(blockIndex, 4)
-	b1Ret, exists := blockIndex[*b1.Hash]
+	b1Ret, exists := blockIndex.Get(*b1.Hash)
 	require.True(exists, "b1 not found")
 
-	b2Ret, exists := blockIndex[*b2.Hash]
+	b2Ret, exists := blockIndex.Get(*b2.Hash)
 	require.True(exists, "b2 not found")
 
-	b3Ret, exists := blockIndex[*b3.Hash]
+	b3Ret, exists := blockIndex.Get(*b3.Hash)
 	require.True(exists, "b3 not found")
 
-	b4Ret, exists := blockIndex[*b4.Hash]
+	b4Ret, exists := blockIndex.Get(*b4.Hash)
 	require.True(exists, "b4 not found")
 
 	// Make sure the hashes all line up.
@@ -228,7 +228,7 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	require.NoError(err)
 	require.Len(blockIndex, 1)
 	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
-	genesis, exists := blockIndex[genesisHash]
+	genesis, exists := blockIndex.Get(genesisHash)
 	require.True(exists, "genesis block not found in index")
 	require.NotNil(genesis)
 	require.Equal(&genesisHash, genesis.Hash)
