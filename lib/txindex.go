@@ -225,8 +225,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	// The only thing we can really do in this case is rebuild the entire index
 	// from scratch. To do that, we return all the blocks in the index to detach
 	// and all the blocks in the real chain to attach.
-	blockIndexByHashCopy, _ := txi.TXIndexChain.CopyBlockIndexes()
-	txindexTipNode, _ := blockIndexByHashCopy.Get(*txindexTipHash.Hash)
+	txindexTipNode, _ := txi.TXIndexChain.blockIndexByHash.Get(*txindexTipHash.Hash)
 
 	// Get the committed tip.
 	committedTip, _ := txi.CoreChain.GetCommittedTip()
@@ -239,9 +238,11 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 		return txindexTipNode, committedTip, nil, newTxIndexBestChain, newBlockchainBestChain
 	}
 
+	derefedTxindexTipNode := *txindexTipNode
+
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(txindexTipNode, committedTip)
+	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(&derefedTxindexTipNode, committedTip)
 
 	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
 }
