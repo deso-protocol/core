@@ -445,15 +445,16 @@ func NewSnapshot(
 	//   in the previous bullet.
 	shouldRestart := false
 	isChecksumIssue := false
-	// @diamondhands - I think the only operations tracked by the state semaphore are (1) checksum add, (2) checksum
+	// The only operations tracked by the state semaphore are (1) checksum add, (2) checksum
 	// remove, (3) ProcessChunk, (4) ChecksumPrint, (5) Exit. So the only one operation that isn't checksum related
-	// is the ProcessChunk operation. However, I think we can get away with this being considered a "checksum" issue
-	// and not restarting the node (which causes a panic). If you have a node that didn't finish processing chunks,
-	// just start over again.
+	// is the ProcessChunk operation. However, it is okay to consider it a "checksum" issue as it only happens during
+	// the initial sync. isChecksumIssue will not restart the node if force checksum is false. If you have a node that
+	// didn't finish processing chunks, just start over again.
 	if operationChannel.StateSemaphore > 0 {
 		operationChannel.StateSemaphore = 0
 		glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Node didn't shut down properly last time. Entering a "+
-			"recovery mode. The node will roll back to last snapshot epoch block height (%v) and hash (%v), then restart.",
+			"recovery mode if force checksum is true. In recovery mode, the node will roll back to last snapshot "+
+			"epoch block height (%v) and hash (%v), then restart.",
 			metadata.SnapshotBlockHeight, metadata.CurrentEpochBlockHash)))
 		shouldRestart = true
 		isChecksumIssue = true
@@ -461,9 +462,8 @@ func NewSnapshot(
 
 	if !shouldRestart {
 		if err := migrations.StartMigrations(); err != nil {
-			// @diamondhands - If we hit this error, it means that the migration failed. Should we
-			// consider this a "checksum" issue or not? I believe the migrations are only necessary
-			// for checksums, but I'm unsure.
+			// If we hit this error, it means that some encoder migration failed. Migrations are only needed to
+			// guarantee that checksums match.
 			glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Migration failed: Error (%v)", err)))
 			shouldRestart = true
 			isChecksumIssue = true
