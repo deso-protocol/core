@@ -721,6 +721,7 @@ func NewServer(
 		if !_forceChecksum && isChecksumIssue {
 			glog.Warningf(CLog(Yellow, "NewServer: Not forcing a rollback to the last snapshot epoch even though the"+
 				"node was not closed properly last time."))
+			shouldRestart = false
 		} else {
 			glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 				"properly last time"))
