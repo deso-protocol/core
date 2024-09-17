@@ -333,6 +333,11 @@ func setupTestDeSoEncoder(t *testing.T) {
 		{
 			for ii := 0; ii < testDeSoEncoderRetries; ii++ {
 				newVersionByte := encoder.GetVersionByte(blockHeight)
+				// If the version byte changes, we can't compare the encoding as we know that a
+				// fork height was changed underneath us.
+				if newVersionByte != versionByte {
+					continue
+				}
 				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 				if !bytes.Equal(encodingBytes, reEncodingBytes) {
 					t.Fatalf("EncodeToBytes: Found non-deterministic encoding for a DeSoEncoder. Attempted "+

@@ -226,7 +226,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	// from scratch. To do that, we return all the blocks in the index to detach
 	// and all the blocks in the real chain to attach.
 	blockIndexByHashCopy, _ := txi.TXIndexChain.CopyBlockIndexes()
-	txindexTipNode := blockIndexByHashCopy[*txindexTipHash.Hash]
+	txindexTipNode, _ := blockIndexByHashCopy.Get(*txindexTipHash.Hash)
 
 	// Get the committed tip.
 	committedTip, _ := txi.CoreChain.GetCommittedTip()
@@ -371,7 +371,7 @@ func (txi *TXIndex) Update() error {
 		newBestChain, newBestChainMap := txi.TXIndexChain.CopyBestChain()
 		newBestChain = newBestChain[:len(newBestChain)-1]
 		delete(newBestChainMap, *(blockToDetach.Hash))
-		delete(newBlockIndexByHash, *(blockToDetach.Hash))
+		newBlockIndexByHash.Remove(*(blockToDetach.Hash))
 
 		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndexByHash, newBlockIndexByHeight)
 

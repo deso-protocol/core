@@ -382,6 +382,7 @@ func NewSnapshot(
 	_snap *Snapshot,
 	_err error,
 	_shouldRestart bool,
+	_isChecksumIssue bool, // Specifies whether the issue is a checksum issue or not.
 ) {
 	var snapshotDbMutex sync.Mutex
 
@@ -393,26 +394,26 @@ func NewSnapshot(
 	// Retrieve and initialize the checksum.
 	checksum := &StateChecksum{}
 	if err := checksum.Initialize(mainDb, &snapshotDbMutex); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading Checksum"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading Checksum"), true, true
 	}
 
 	// Retrieve the snapshot epoch metadata from the snapshot db.
 	metadata := &SnapshotEpochMetadata{}
 	if err := metadata.Initialize(mainDb, &snapshotDbMutex); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotEpochMetadata"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotEpochMetadata"), true, false
 	}
 
 	operationChannel := &SnapshotOperationChannel{}
 	// Initialize the SnapshotOperationChannel. We don't set any of the handlers yet because we don't have a
 	// snapshot instance yet.
 	if err := operationChannel.Initialize(mainDb, &snapshotDbMutex, nil, nil); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true, false
 	}
 
 	// Retrieve and initialize the snapshot status.
 	status := &SnapshotStatus{}
 	if err := status.Initialize(mainDb, &snapshotDbMutex); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"), true, false
 	}
 
 	// Retrieve and initialize snapshot migrations.
@@ -424,7 +425,7 @@ func NewSnapshot(
 		params,
 		disableMigrations,
 	); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"), true, false
 	}
 
 	// If this condition is true, the snapshot is broken and we need to start the recovery process.
@@ -443,18 +444,29 @@ func NewSnapshot(
 	//   Either way, it means our snapshot was compromised and we need to recompute it as described
 	//   in the previous bullet.
 	shouldRestart := false
+	isChecksumIssue := false
+	// The only operations tracked by the state semaphore are (1) checksum add, (2) checksum
+	// remove, (3) ProcessChunk, (4) ChecksumPrint, (5) Exit. So the only one operation that isn't checksum related
+	// is the ProcessChunk operation. However, it is okay to consider it a "checksum" issue as it only happens during
+	// the initial sync. isChecksumIssue will not restart the node if force checksum is false. If you have a node that
+	// didn't finish processing chunks, just start over again.
 	if operationChannel.StateSemaphore > 0 {
 		operationChannel.StateSemaphore = 0
 		glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Node didn't shut down properly last time. Entering a "+
-			"recovery mode. The node will roll back to last snapshot epoch block height (%v) and hash (%v), then restart.",
+			"recovery mode if force checksum is true. In recovery mode, the node will roll back to last snapshot "+
+			"epoch block height (%v) and hash (%v), then restart.",
 			metadata.SnapshotBlockHeight, metadata.CurrentEpochBlockHash)))
 		shouldRestart = true
+		isChecksumIssue = true
 	}
 
 	if !shouldRestart {
 		if err := migrations.StartMigrations(); err != nil {
+			// If we hit this error, it means that some encoder migration failed. Migrations are only needed to
+			// guarantee that checksums match.
 			glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Migration failed: Error (%v)", err)))
 			shouldRestart = true
+			isChecksumIssue = true
 		}
 	}
 
@@ -497,7 +509,7 @@ func NewSnapshot(
 	// Run the snapshot main loop.
 	go snap.Run()
 
-	return snap, nil, shouldRestart
+	return snap, nil, shouldRestart, isChecksumIssue
 }
 
 // Run is the snapshot main loop. It handles the operations from the OperationChannel.

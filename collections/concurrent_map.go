@@ -13,6 +13,12 @@ func NewConcurrentMap[Key comparable, Value any]() *ConcurrentMap[Key, Value] {
 	}
 }
 
+func NewConcurrentMapFromMap[Key comparable, Value any](input map[Key]Value) *ConcurrentMap[Key, Value] {
+	return &ConcurrentMap[Key, Value]{
+		m: input,
+	}
+}
+
 func (cm *ConcurrentMap[Key, Value]) Set(key Key, val Value) {
 	cm.mtx.Lock()
 	defer cm.mtx.Unlock()
@@ -77,4 +83,13 @@ func (cm *ConcurrentMap[Key, Value]) Count() int {
 	defer cm.mtx.RUnlock()
 
 	return len(cm.m)
+}
+
+func (cm *ConcurrentMap[Key, Value]) Iterate(fn func(Key, Value)) {
+	cm.mtx.RLock()
+	defer cm.mtx.RUnlock()
+
+	for key, val := range cm.m {
+		fn(key, val)
+	}
 }
