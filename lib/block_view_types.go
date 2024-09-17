@@ -6507,10 +6507,11 @@ type DeleteUserAssociationTxindexMetadata struct {
 }
 
 type CreatePostAssociationTxindexMetadata struct {
-	PostHashHex             string
-	AppPublicKeyBase58Check string
-	AssociationType         string
-	AssociationValue        string
+	PostHashHex                string
+	AppPublicKeyBase58Check    string
+	AssociationType            string
+	AssociationValue           string
+	PosterPublicKeyBase58Check string
 }
 
 type DeletePostAssociationTxindexMetadata struct {
