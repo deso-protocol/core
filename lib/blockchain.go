@@ -562,8 +562,10 @@ type Blockchain struct {
 	blockIndexByHeight map[uint64]map[BlockHash]*BlockNode
 	// An in-memory slice of the blocks on the main chain only. The end of
 	// this slice is the best known tip that we have at any given time.
-	bestChain    []*BlockNode
-	bestChainMap map[BlockHash]*BlockNode
+	bestChain                       []*BlockNode
+	bestChainMap                    map[BlockHash]*BlockNode
+	bestChainFullyStoredIndex       int
+	bestChainCheckArchivalModeIndex int
 
 	bestHeaderChain    []*BlockNode
 	bestHeaderChainMap map[BlockHash]*BlockNode
@@ -778,10 +780,11 @@ func (bc *Blockchain) CopyBestHeaderChain() ([]*BlockNode, map[BlockHash]*BlockN
 // IsFullyStored determines if there are block nodes that haven't been fully stored or processed in the best block chain.
 func (bc *Blockchain) IsFullyStored() bool {
 	if bc.ChainState() == SyncStateFullyCurrent {
-		for _, blockNode := range bc.bestChain {
+		for _, blockNode := range bc.bestChain[bc.bestChainFullyStoredIndex:] {
 			if !blockNode.Status.IsFullyProcessed() {
 				return false
 			}
+			bc.bestChainFullyStoredIndex++
 		}
 		return true
 	}
@@ -1576,7 +1579,7 @@ func (bc *Blockchain) checkArchivalMode() bool {
 	}
 
 	firstSnapshotHeight := bc.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight
-	for _, blockNode := range bc.bestChain {
+	for _, blockNode := range bc.bestChain[bc.bestChainCheckArchivalModeIndex:] {
 		if uint64(blockNode.Height) > firstSnapshotHeight {
 			return false
 		}
@@ -1589,6 +1592,7 @@ func (bc *Blockchain) checkArchivalMode() bool {
 
 			return true
 		}
+		bc.bestChainCheckArchivalModeIndex++
 	}
 
 	// If we get here, it means that all blocks have been processed and stored, so there is nothing to do.
