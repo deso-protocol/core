@@ -1827,6 +1827,7 @@ const (
 	CreatorRevsharePercentageBasisPointsKey = "CreatorRevsharePercentageBasisPoints"
 	DisableCreatorRevshareUpdateKey         = "DisableCreatorRevshareUpdateKey"
 	CoinCategoryExtraDataKey                = "CoinCategoryExtraDataKey"
+	DeSoTokenWhitelistAssociationKey        = "DeSoTokenWhitelistAssociationKey"
 
 	// Used to distinguish v3 messages from previous iterations
 	MessagesVersionString = "V"
