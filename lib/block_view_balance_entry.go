@@ -134,7 +134,9 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool, isDAOCoin bool)
 	return entriesYouHold, profilesYouHold, nil
 }
 
-func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) (
+// We introduce fetchProfiles and fetchLockedBalances for efficiency. If set to false, we
+// save a lot of processing time by skipping these operations.
+func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, fetchLockedBalances bool, isDAOCoin bool) (
 	_unlockedBalanceEntrys []*BalanceEntry, _unlockedProfiles []*ProfileEntry,
 	_lockedBalanceEntrymap map[PKID][]*LockedBalanceEntry, _lockedBalances map[PKID]*uint256.Int,
 	_err error) {
@@ -170,7 +172,7 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) 
 	// Fetch all the locked entries if we're dealing with a dao coin
 	lockedBalanceEntrysByPkid := make(map[PKID][]*LockedBalanceEntry)
 	lockedBalancesByPkid := make(map[PKID]*uint256.Int)
-	if isDAOCoin {
+	if isDAOCoin && fetchLockedBalances {
 		allLockedBalanceEntrys, err := bav.GetAllLockedBalanceEntriesForHodlerPKID(pkid)
 		if err != nil {
 			return nil, nil, nil, nil, err

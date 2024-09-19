@@ -21,7 +21,8 @@ func (bav *UtxoView) GetDAOCoinHoldings(pkid *PKID, fetchProfiles bool) (
 
 func (bav *UtxoView) GetDAOCoinHolders(pkid *PKID, fetchProfiles bool) (
 	[]*BalanceEntry, []*ProfileEntry, error) {
-	unlockedBalanceEntrys, profiles, _, _, err := bav.GetHolders(pkid, fetchProfiles, true)
+	unlockedBalanceEntrys, profiles, _, _, err := bav.GetHolders(
+		pkid, fetchProfiles, false, true)
 	return unlockedBalanceEntrys, profiles, err
 }
 
