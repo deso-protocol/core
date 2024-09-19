@@ -1822,7 +1822,12 @@ const (
 	// key represents who to pay the fee to and the value indicates how many basis points to charge. All fees are
 	// charged as "taker fees" and are paid to the pkid in the map in the *quote currency* of the market (typically
 	// DESO, USDC, or FOCUS).
-	TokenTradingFeesByPkidMapKey = "TokenTradingFeesByPkidMap"
+	TokenTradingFeesByPkidMapKey            = "TokenTradingFeesByPkidMap"
+	DisableTradingFeeUpdateKey              = "DisableTradingFeeUpdateKey"
+	CreatorRevsharePercentageBasisPointsKey = "CreatorRevsharePercentageBasisPoints"
+	DisableCreatorRevshareUpdateKey         = "DisableCreatorRevshareUpdateKey"
+	CoinCategoryExtraDataKey                = "CoinCategoryExtraDataKey"
+	DeSoTokenWhitelistAssociationKey        = "DeSoTokenWhitelistAssociationKey"
 
 	// Used to distinguish v3 messages from previous iterations
 	MessagesVersionString = "V"

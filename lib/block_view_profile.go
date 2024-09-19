@@ -583,7 +583,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		profilePublicKey = txMeta.ProfilePublicKey
 
 		if blockHeight > bav.Params.ForkHeights.UpdateProfileFixBlockHeight {
-			// Make sure that either (1) the profile pub key is the txn signer's  public key or
+			// Make sure that either (1) the profile pub key is the txn signer's public key or
 			// (2) the signer is a param updater
 			if !reflect.DeepEqual(txn.PublicKey, txMeta.ProfilePublicKey) && !updaterIsParamUpdater {
 

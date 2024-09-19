@@ -134,15 +134,19 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool, isDAOCoin bool)
 	return entriesYouHold, profilesYouHold, nil
 }
 
-func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) (
-	[]*BalanceEntry, []*ProfileEntry, error) {
+// We introduce fetchProfiles and fetchLockedBalances for efficiency. If set to false, we
+// save a lot of processing time by skipping these operations.
+func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, fetchLockedBalances bool, isDAOCoin bool) (
+	_unlockedBalanceEntrys []*BalanceEntry, _unlockedProfiles []*ProfileEntry,
+	_lockedBalanceEntrymap map[PKID][]*LockedBalanceEntry, _lockedBalances map[PKID]*uint256.Int,
+	_err error) {
 	var holderEntries []*BalanceEntry
 	if bav.Postgres != nil {
 		holderEntries = bav.GetBalanceEntryHolders(pkid, isDAOCoin)
 	} else {
 		holders, err := DbGetBalanceEntriesHodlingYou(bav.Handle, bav.Snapshot, pkid, true, isDAOCoin)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		holderEntries = holders
 	}
@@ -165,17 +169,38 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) 
 		}
 	}
 
+	// Fetch all the locked entries if we're dealing with a dao coin
+	lockedBalanceEntrysByPkid := make(map[PKID][]*LockedBalanceEntry)
+	lockedBalancesByPkid := make(map[PKID]*uint256.Int)
+	if isDAOCoin && fetchLockedBalances {
+		allLockedBalanceEntrys, err := bav.GetAllLockedBalanceEntriesForHodlerPKID(pkid)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		for _, lockedBalanceEntry := range allLockedBalanceEntrys {
+			lockedBalanceEntrysByPkid[*lockedBalanceEntry.HODLerPKID] = append(
+				lockedBalanceEntrysByPkid[*lockedBalanceEntry.HODLerPKID], lockedBalanceEntry)
+
+			if _, ok := lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID]; !ok {
+				lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt()
+			}
+			lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt().Add(
+				lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID],
+				&lockedBalanceEntry.BalanceBaseUnits)
+		}
+	}
+
 	// Optionally fetch all the profile entries as well.
-	var profilesYouHold []*ProfileEntry
+	var profilesHodlingYou []*ProfileEntry
 	if fetchProfiles {
 		for _, balanceEntry := range holderEntries {
 			// In this case you're the hodler so the creator is the one whose profile we need to fetch.
 			currentProfileEntry := bav.GetProfileEntryForPKID(balanceEntry.CreatorPKID)
-			profilesYouHold = append(profilesYouHold, currentProfileEntry)
+			profilesHodlingYou = append(profilesHodlingYou, currentProfileEntry)
 		}
 	}
 
-	return holderEntries, profilesYouHold, nil
+	return holderEntries, profilesHodlingYou, lockedBalanceEntrysByPkid, lockedBalancesByPkid, nil
 }
 
 func (bav *UtxoView) GetHODLerPKIDCreatorPKIDToBalanceEntryMap(isDAOCoin bool) map[BalanceEntryMapKey]*BalanceEntry {
