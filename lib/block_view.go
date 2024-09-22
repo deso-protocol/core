@@ -17,7 +17,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
@@ -1854,7 +1854,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	}
 	// If we got a derived key then try parsing it.
 	if isDerived {
-		derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
+		derivedPk, err = btcec.ParsePubKey(derivedPkBytes)
 		if err != nil {
 			return nil, fmt.Errorf("%v %v", RuleErrorDerivedKeyInvalidExtraData, RuleErrorDerivedKeyInvalidRecoveryId)
 		}
@@ -1862,7 +1862,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 
 	// Get the owner public key and attempt turning it into *btcec.PublicKey.
 	ownerPkBytes := txn.PublicKey
-	ownerPk, err := btcec.ParsePubKey(ownerPkBytes, btcec.S256())
+	ownerPk, err := btcec.ParsePubKey(ownerPkBytes)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
 	}
@@ -4365,7 +4365,7 @@ func (bav *UtxoView) ConnectBlock(
 		}
 		var err error
 		blockRewardOutputPublicKey, err =
-			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey, btcec.S256())
+			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
 		}
@@ -4405,7 +4405,7 @@ func (bav *UtxoView) ConnectBlock(
 		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
 			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 			txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey)
 			if err != nil {
 				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
 			}

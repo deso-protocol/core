@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/require"
 )
@@ -801,7 +801,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 	require.NoError(t, err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(t, err)
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 	senderPKID := DBGetPKIDEntryForPublicKey(db, chain.snapshot, senderPkBytes).PKID
 
 	newUtxoView := func() *UtxoView {

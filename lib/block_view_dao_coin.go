@@ -2,7 +2,7 @@ package lib
 
 import (
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"reflect"
@@ -333,7 +333,7 @@ func (bav *UtxoView) HelpConnectDAOCoinInitialization(txn *MsgDeSoTxn, txHash *B
 		return 0, 0, nil, nil, RuleErrorDAOCoinInvalidPubKeySize
 	}
 
-	if _, err = btcec.ParsePubKey(txMeta.ProfilePublicKey, btcec.S256()); err != nil {
+	if _, err = btcec.ParsePubKey(txMeta.ProfilePublicKey); err != nil {
 		return 0, 0, nil, nil, errors.Wrap(RuleErrorDAOCoinInvalidPubKey, err.Error())
 	}
 
