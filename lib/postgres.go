@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
+	lru2 "github.com/decred/dcrd/container/lru"
 	"net/url"
 	"regexp"
 	"strings"
@@ -1305,16 +1305,16 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash, *BlockNode], error) {
+func (postgres *Postgres) GetBlockIndex() (*lru2.Map[BlockHash, *BlockNode], error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap := collections.NewConcurrentMap[BlockHash, *BlockNode]()
+	blockMap := lru2.NewMap[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	for _, block := range blocks {
-		blockMap.Set(*block.Hash, &BlockNode{
+		blockMap.Put(*block.Hash, &BlockNode{
 			Hash:             block.Hash,
 			Height:           uint32(block.Height),
 			DifficultyTarget: block.DifficultyTarget,
@@ -1333,7 +1333,8 @@ func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash,
 	}
 
 	// Setup parent pointers
-	blockMap.Iterate(func(key BlockHash, blockNode *BlockNode) {
+	for _, key := range blockMap.Keys() {
+		blockNode, _ := blockMap.Get(key)
 		// Genesis block has nil parent
 		parentHash := blockNode.Header.PrevBlockHash
 		if parentHash != nil {
@@ -1343,7 +1344,7 @@ func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash,
 			}
 			blockNode.Parent = parent
 		}
-	})
+	}
 
 	return blockMap, nil
 }

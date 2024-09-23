@@ -5188,6 +5188,13 @@ func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
 	return prefix
 }
 
+func _heightHashToNodePrefixByHeight(height uint32, bitcoinNodes bool) []byte {
+	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
+	heightBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(heightBytes[:], height)
+	return append(prefix, heightBytes[:]...)
+}
+
 func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool) []byte {
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
 

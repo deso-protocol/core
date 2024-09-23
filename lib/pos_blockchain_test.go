@@ -252,7 +252,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
 	bc.bestChain = []*BlockNode{genesisBlock}
-	bc.blockIndexByHash.Set(*genesisBlock.Hash, genesisBlock)
+	bc.blockIndex.blockIndexByHash.Put(*genesisBlock.Hash, genesisBlock)
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
@@ -301,7 +301,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
 
 	block.Header.Height = 2
-	bc.blockIndexByHash = collections.NewConcurrentMap[BlockHash, *BlockNode]()
+	bc.blockIndex = NewBlockIndex(bc.db, bc.snapshot, nil)
 	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
@@ -329,7 +329,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndexByHash = collections.NewConcurrentMapFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.blockIndexByHash = newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -377,17 +377,16 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	newHash, err := block.Hash()
 	require.NoError(t, err)
 	// Check the block index by hash
-	blockNodeFromIndex, exists := bc.blockIndexByHash.Get(*newHash)
+	blockNodeFromIndex, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(newHash, uint64(blockNode.Height))
 	require.True(t, exists)
 	require.True(t, blockNodeFromIndex.Hash.IsEqual(blockNode.Hash))
 	require.Equal(t, blockNodeFromIndex.Height, uint32(2))
 	require.True(t, blockNodeFromIndex.IsStored())
 	require.False(t, blockNodeFromIndex.IsValidated())
 	// Check the block index by height
-	byHeightBlockNodes, exists := bc.blockIndexByHeight[2]
-	require.True(t, exists)
+	byHeightBlockNodes := bc.blockIndex.GetBlockNodesByHeight(2)
 	require.Len(t, byHeightBlockNodes, 1)
-	require.True(t, byHeightBlockNodes[*newHash].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
 	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
 	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 1)
 	// Check the DB for the block
@@ -401,18 +400,17 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	// Okay now we update the status of the block to include validated.
 	blockNode, err = bc.storeValidatedBlockInBlockIndex(block)
 	require.NoError(t, err)
-	blockNodeFromIndex, exists = bc.blockIndexByHash.Get(*newHash)
+	blockNodeFromIndex, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(newHash, uncommittedBlock.Header.Height)
 	require.True(t, exists)
 	require.True(t, blockNodeFromIndex.Hash.IsEqual(blockNode.Hash))
 	require.Equal(t, blockNodeFromIndex.Height, uint32(2))
 	require.True(t, blockNodeFromIndex.IsStored())
 	require.True(t, blockNodeFromIndex.IsValidated())
 	// Check the block index by height.
-	byHeightBlockNodes, exists = bc.blockIndexByHeight[2]
-	require.True(t, exists)
+	byHeightBlockNodes = bc.blockIndex.GetBlockNodesByHeight(2)
 	require.Len(t, byHeightBlockNodes, 1)
-	require.True(t, byHeightBlockNodes[*newHash].Hash.IsEqual(newHash))
-	require.True(t, byHeightBlockNodes[*newHash].IsValidated())
+	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[0].IsValidated())
 	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
 	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 1)
 
@@ -428,18 +426,18 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	blockNode, err = bc.storeBlockInBlockIndex(block)
 	require.NoError(t, err)
 	// Make sure the blockIndexByHash is correct.
-	updatedBlockNode, exists := bc.blockIndexByHash.Get(*updatedBlockHash)
+	updatedBlockNode, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(updatedBlockHash, uint64(blockNode.Height))
 	require.True(t, exists)
 	require.True(t, updatedBlockNode.Hash.IsEqual(updatedBlockHash))
 	require.Equal(t, updatedBlockNode.Height, uint32(2))
 	require.True(t, updatedBlockNode.IsStored())
 	require.False(t, updatedBlockNode.IsValidated())
 	// Make sure the blockIndexByHeight is correct
-	byHeightBlockNodes, exists = bc.blockIndexByHeight[2]
+	byHeightBlockNodes = bc.blockIndex.GetBlockNodesByHeight(2)
 	require.True(t, exists)
 	require.Len(t, byHeightBlockNodes, 2)
-	require.True(t, byHeightBlockNodes[*newHash].Hash.IsEqual(newHash))
-	require.True(t, byHeightBlockNodes[*updatedBlockHash].Hash.IsEqual(updatedBlockHash))
+	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(newHash) || byHeightBlockNodes[1].Hash.IsEqual(newHash))
+	require.True(t, byHeightBlockNodes[0].Hash.IsEqual(updatedBlockHash) || byHeightBlockNodes[1].Hash.IsEqual(updatedBlockHash))
 	require.True(t, bc.hasBlockNodesIndexedAtHeight(2))
 	require.Len(t, bc.getAllBlockNodesIndexedAtHeight(2), 2)
 
@@ -477,7 +475,7 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 		genesisNode,
 		block2,
 	}
-	bc.blockIndexByHash = collections.NewConcurrentMapFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.blockIndexByHash = newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -810,7 +808,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = []*BlockNode{genesisNode}
-	bc.blockIndexByHash = collections.NewConcurrentMapFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.blockIndexByHash = newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	})
 	block := &MsgDeSoBlock{
@@ -847,7 +845,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		PrevBlockHash:  hash1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain = append(bc.bestChain, block2)
-	bc.blockIndexByHash.Set(*hash2, block2)
+	bc.blockIndex.blockIndexByHash.Put(*hash2, block2)
 	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
@@ -1319,9 +1317,9 @@ func TestTryApplyNewTip(t *testing.T) {
 	bc.addTipBlockToBestChain(bn1)
 	bc.addTipBlockToBestChain(bn2)
 	bc.addTipBlockToBestChain(bn3)
-	bc.blockIndexByHash.Set(*hash1, bn1)
-	bc.blockIndexByHash.Set(*hash2, bn2)
-	bc.blockIndexByHash.Set(*hash3, bn3)
+	bc.blockIndex.blockIndexByHash.Put(*hash1, bn1)
+	bc.blockIndex.blockIndexByHash.Put(*hash2, bn2)
+	bc.blockIndex.blockIndexByHash.Put(*hash3, bn3)
 
 	// Simple reorg. Just replacing the uncommitted tip.
 	newBlock := &MsgDeSoBlock{
@@ -1403,8 +1401,8 @@ func TestTryApplyNewTip(t *testing.T) {
 			Height:         6,
 		},
 	}
-	bc.blockIndexByHash.Set(*hash4, bn4)
-	bc.blockIndexByHash.Set(*hash5, bn5)
+	bc.blockIndex.blockIndexByHash.Put(*hash4, bn4)
+	bc.blockIndex.blockIndexByHash.Put(*hash5, bn5)
 
 	// Set new block's parent to hash5
 	newBlockNode.Header.PrevBlockHash = hash5
@@ -1839,7 +1837,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		futureBlockHash, err = futureBlock.Hash()
 		require.NoError(t, err)
 
-		futureBlockNode, exists := testMeta.chain.blockIndexByHash.Get(*futureBlockHash)
+		futureBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(futureBlockHash, futureBlock.Header.Height)
 		require.True(t, exists)
 		require.False(t, futureBlockNode.IsCommitted())
 		require.True(t, futureBlockNode.IsStored())
@@ -1848,10 +1846,12 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	}
 
 	var timeoutBlockHash *BlockHash
+	var timeoutBlockHeight uint64
 	{
 		// Okay let's timeout view 15
 		var timeoutBlock *MsgDeSoBlock
 		timeoutBlock = _generateRealBlock(testMeta, 15, 16, 381, blockHash3, true)
+		timeoutBlockHeight = timeoutBlock.Header.Height
 		success, _, _, err := testMeta.chain.ProcessBlockPoS(timeoutBlock, 15, true)
 		fmt.Println(err)
 		require.True(t, success)
@@ -1877,7 +1877,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		_, exists := testMeta.chain.bestChainMap[*timeoutBlockHash]
 		require.False(t, exists)
 
-		timeoutBlockNode, exists := testMeta.chain.blockIndexByHash.Get(*timeoutBlockHash)
+		timeoutBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(timeoutBlockHash, timeoutBlockHeight)
 		require.True(t, exists)
 		require.False(t, timeoutBlockNode.IsCommitted())
 	}
@@ -1905,7 +1905,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.Len(t, missingBlockHashes, 1)
 		require.True(t, missingBlockHashes[0].IsEqual(dummyParentBlockHash))
 		require.NoError(t, err)
-		orphanBlockInIndex, orphanBlockExists := testMeta.chain.blockIndexByHash.Get(*orphanBlockHash)
+		orphanBlockInIndex, orphanBlockExists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(orphanBlockHash, orphanBlock.Header.Height)
 		require.True(t, orphanBlockExists)
 		require.NotNil(t, orphanBlockInIndex)
 		require.True(t, orphanBlockInIndex.IsStored())
@@ -1918,7 +1918,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.Len(t, missingBlockHashes, 0)
 		require.NoError(t, err)
 
-		orphanBlockInIndex, orphanBlockExists = testMeta.chain.blockIndexByHash.Get(*orphanBlockHash)
+		orphanBlockInIndex, orphanBlockExists = testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(orphanBlockHash, orphanBlock.Header.Height)
 		require.True(t, orphanBlockExists)
 		require.NotNil(t, orphanBlockInIndex)
 		require.True(t, orphanBlockInIndex.IsStored())
@@ -1944,7 +1944,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.True(t, missingBlockHashes[0].IsEqual(randomHash))
 		require.NoError(t, err)
 
-		malformedOrphanBlockInIndex, malformedOrphanBlockExists := testMeta.chain.blockIndexByHash.Get(*malformedOrphanBlockHash)
+		malformedOrphanBlockInIndex, malformedOrphanBlockExists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(malformedOrphanBlockHash, malformedOrphanBlock.Header.Height)
 		require.True(t, malformedOrphanBlockExists)
 		require.True(t, malformedOrphanBlockInIndex.IsValidateFailed())
 		require.True(t, malformedOrphanBlockInIndex.IsStored())
@@ -2067,7 +2067,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
-		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		blockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, realBlock.Header.Height)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
 		require.False(t, blockNode.IsValidateFailed())
@@ -2088,7 +2088,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
-		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		blockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, realBlock.Header.Height)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
 		require.True(t, blockNode.IsValidateFailed())
@@ -2115,7 +2115,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
-		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, realBlock.Header.Height)
 		require.False(t, exists)
 	}
 
@@ -2167,7 +2167,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
-		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, realBlock.Header.Height)
 		require.False(t, exists)
 	}
 	{
@@ -2185,7 +2185,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
 		require.NoError(t, err)
-		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		blockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, nextEpochBlock.Header.Height)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
 		require.False(t, blockNode.IsValidateFailed())
@@ -2210,7 +2210,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
 		require.NoError(t, err)
-		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, nextEpochBlock.Header.Height)
 		require.False(t, exists)
 	}
 	{
@@ -2261,7 +2261,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
 		require.NoError(t, err)
-		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, nextEpochBlock.Header.Height)
 		require.False(t, exists)
 	}
 	{
@@ -2290,7 +2290,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// The block shouldn't be in the block index.
 		blockHash, err := twoEpochsInFutureBlock.Hash()
 		require.NoError(t, err)
-		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, twoEpochsInFutureBlock.Header.Height)
 		require.False(t, exists)
 	}
 	{
@@ -2307,7 +2307,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// The block should be in the block index.
 		blockHash, err := prevEpochBlock.Hash()
 		require.NoError(t, err)
-		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
+		blockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockHash, prevEpochBlock.Header.Height)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
 		require.False(t, blockNode.IsValidateFailed())
@@ -2375,7 +2375,7 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	require.NoError(t, err)
 	realBlockHash, err := realBlock.Hash()
 	require.NoError(t, err)
-	realBlockNode, exists := testMeta.chain.blockIndexByHash.Get(*realBlockHash)
+	realBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(realBlockHash, realBlock.Header.Height)
 	require.True(t, exists)
 	require.True(t, realBlockNode.IsStored())
 	require.False(t, realBlockNode.IsValidateFailed())
@@ -2461,13 +2461,13 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	}
 
 	// TODO: Get real seed signature.
-	prevBlock, exists := testMeta.chain.blockIndexByHash.Get(*prevBlockHash)
+	prevBlock, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(prevBlockHash, blockHeight-1)
 	require.True(testMeta.t, exists)
 	// Always update the testMeta latestBlockView
-	latestBlockViewAndUtxoOps, err := testMeta.chain.getUtxoViewAndUtxoOpsAtBlockHash(*prevBlockHash)
+	latestBlockViewAndUtxoOps, err := testMeta.chain.getUtxoViewAndUtxoOpsAtBlockHash(*prevBlockHash, blockHeight-1)
 	require.NoError(testMeta.t, err)
 	latestBlockView := latestBlockViewAndUtxoOps.UtxoView
-	latestBlockNode, latestBlockNodeExists := testMeta.chain.blockIndexByHash.Get(*prevBlockHash)
+	latestBlockNode, latestBlockNodeExists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(prevBlockHash, blockHeight-1)
 	require.True(testMeta.t, latestBlockNodeExists)
 	latestBlockHeight := latestBlockNode.Height
 	testMeta.posMempool.UpdateLatestBlock(latestBlockView, uint64(latestBlockHeight))
@@ -2524,7 +2524,7 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	blockNode, err := testMeta.chain.storeBlockInBlockIndex(msgDesoBlock)
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
-	_, exists := testMeta.chain.blockIndexByHash.Get(*newBlockHash)
+	_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(newBlockHash, msgDesoBlock.Header.Height)
 	require.True(testMeta.t, exists)
 	// Remove the transactions from this block from the mempool.
 	// This prevents nonce reuse issues when trying to make failing blocks.
@@ -2547,7 +2547,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
 	require.True(testMeta.t, blockNode.IsValidated())
-	newBlockNode, exists := testMeta.chain.blockIndexByHash.Get(*newBlockHash)
+	newBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(newBlockHash, msgDesoBlock.Header.Height)
 	require.True(testMeta.t, exists)
 	testMeta.chain.addTipBlockToBestChain(newBlockNode)
 	// Update the latest block view
@@ -2678,7 +2678,7 @@ func _getFullRealBlockTemplate(
 	// Get leader voting private key.
 	leaderVotingPrivateKey := testMeta.pubKeyToBLSKeyMap[leaderPublicKey]
 	// Get hash of last block
-	chainTip, _ := testMeta.chain.blockIndexByHash.Get(*blockTemplate.Header.PrevBlockHash)
+	chainTip, _ := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(blockTemplate.Header.PrevBlockHash, blockTemplate.Header.Height-1)
 	chainTipHash := chainTip.Hash
 	// Get the vote signature payload
 	// Hack to get view numbers working properly w/ PoW blocks.

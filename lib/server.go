@@ -1086,7 +1086,13 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// have this issue. Hitting duplicates after we're done syncing is
 		// fine and can happen in certain cases.
 		headerHash, _ := headerReceived.Hash()
-		if srv.blockchain.HasHeader(headerHash) {
+		hasHeader, err := srv.blockchain.HasHeader(headerHash)
+		// TODO: what should we really do here?
+		if err != nil {
+			glog.Errorf("Server._handleHeaderBundle: Error checking if header %v exists: %v", headerHash, err)
+			return
+		}
+		if hasHeader {
 			if srv.blockchain.isSyncing() {
 
 				glog.Warningf("Server._handleHeaderBundle: Duplicate header %v received from peer %v "+
@@ -1309,7 +1315,12 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// we're either not aware of or that we don't think is the best chain.
 			// Doing things this way makes it so that when we request blocks we
 			// are 100% positive the peer has them.
-			if !srv.blockchain.HasHeader(msg.TipHash) {
+			hasHeader, err := srv.blockchain.HasHeader(msg.TipHash)
+			if err != nil {
+				glog.Errorf("Server._handleHeaderBundle: Error checking if header %v exists: %v", msg.TipHash, err)
+				return
+			}
+			if !hasHeader {
 				glog.V(1).Infof("Server._handleHeaderBundle: Peer's tip is not in our "+
 					"blockchain so not requesting anything else from them. Our block "+
 					"tip %v, their tip %v:%d, peer: %v",
