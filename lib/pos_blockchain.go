@@ -55,7 +55,10 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 
 	// If the incoming header is already part of the best header chain, then we can exit early.
 	// The header is not part of a fork, and is already an ancestor of the current header chain tip.
-	if _, isInBestHeaderChain := bc.bestHeaderChain.GetBlockByHashAndHeight(headerHash, header.Height); isInBestHeaderChain {
+	// Here we explicitly check the bestHeaderChain.ChainMap to make sure the in-memory struct is properly
+	// updated. This is necessary because the block index may have been updated with the header but the
+	// bestHeaderChain.ChainMap may not have been updated yet.
+	if _, isInBestHeaderChain := bc.bestHeaderChain.ChainMap.Get(*headerHash); isInBestHeaderChain {
 		return true, false, nil
 	}
 
