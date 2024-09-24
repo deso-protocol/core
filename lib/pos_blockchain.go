@@ -55,7 +55,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 
 	// If the incoming header is already part of the best header chain, then we can exit early.
 	// The header is not part of a fork, and is already an ancestor of the current header chain tip.
-	if _, isInBestHeaderChain := bc.bestHeaderChainMap[*headerHash]; isInBestHeaderChain {
+	if _, isInBestHeaderChain := bc.bestHeaderChain.GetBlockByHashAndHeight(headerHash, header.Height); isInBestHeaderChain {
 		return true, false, nil
 	}
 
@@ -91,9 +91,9 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 	// The header is not an orphan and has a higher view than the current tip. We reorg the header chain
 	// and apply the incoming header as the new tip.
 	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentTip, blockNode)
-	bc.bestHeaderChain, bc.bestHeaderChainMap = updateBestChainInMemory(
-		bc.bestHeaderChain,
-		bc.bestHeaderChainMap,
+	bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap = updateBestChainInMemory(
+		bc.bestHeaderChain.Chain,
+		bc.bestHeaderChain.ChainMap,
 		blocksToDetach,
 		blocksToAttach,
 	)
@@ -1639,8 +1639,7 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 
 // addTipBlockToBestChain adds the block as the new tip of the best chain.
 func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
-	bc.bestChain = append(bc.bestChain, blockNode)
-	bc.bestChainMap[*blockNode.Hash] = blockNode
+	bc.bestChain.PushNewTip(blockNode)
 }
 
 // removeTipBlockFromBestChain removes the current tip from the best chain. It
@@ -1649,9 +1648,9 @@ func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 // the bestChain slice and bestChainMap map.
 func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	// Remove the last block from the best chain.
-	lastBlock := bc.bestChain[len(bc.bestChain)-1]
-	delete(bc.bestChainMap, *lastBlock.Hash)
-	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
+	lastBlock := bc.bestChain.Chain[len(bc.bestChain.Chain)-1]
+	bc.bestChain.ChainMap.Delete(*lastBlock.Hash)
+	bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-1]
 	return lastBlock
 }
 
@@ -1674,9 +1673,9 @@ func (bc *Blockchain) runCommitRuleOnBestChain(verifySignatures bool) error {
 		return errors.New("runCommitRuleOnBestChain: No committed blocks found")
 	}
 	uncommittedAncestors := []*BlockNode{}
-	for ii := idx + 1; ii < len(bc.bestChain); ii++ {
-		uncommittedAncestors = append(uncommittedAncestors, bc.bestChain[ii])
-		if bc.bestChain[ii].Hash.IsEqual(blockToCommit) {
+	for ii := idx + 1; ii < len(bc.bestChain.Chain); ii++ {
+		uncommittedAncestors = append(uncommittedAncestors, bc.bestChain.Chain[ii])
+		if bc.bestChain.Chain[ii].Hash.IsEqual(blockToCommit) {
 			break
 		}
 	}
@@ -1698,8 +1697,16 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 ) {
 	// TODO: Is it sufficient that the current block's header points to the parent
 	// or does it need to have something to do with the QC?
-	parent := bc.bestChainMap[*currentBlock.Header.PrevBlockHash]
-	grandParent := bc.bestChainMap[*parent.Header.PrevBlockHash]
+	parent, exists := bc.bestChain.GetBlockByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
+	if !exists {
+		glog.Errorf("canCommitGrandparent: Parent block %v not found in best chain map", currentBlock.Header.PrevBlockHash.String())
+		return nil, false
+	}
+	grandParent, exists := bc.bestChain.GetBlockByHashAndHeight(parent.Header.PrevBlockHash, uint64(parent.Height-1))
+	if !exists {
+		glog.Errorf("canCommitGrandparent: Grandparent block %v not found in best chain map", parent.Header.PrevBlockHash.String())
+		return nil, false
+	}
 	if grandParent.IsCommitted() {
 		return nil, false
 	}
@@ -1715,7 +1722,7 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (_grandparen
 // to the DB and updates relevant badger indexes with info about the block.
 func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, blockHeight uint64, verifySignatures bool) error {
 	// block must be in the best chain. we grab the block node from there.
-	blockNode, exists := bc.bestChainMap[*blockHash]
+	blockNode, exists := bc.bestChain.GetBlockByHashAndHeight(blockHash, blockHeight)
 	if !exists {
 		return errors.Errorf("commitBlockPoS: Block %v not found in best chain map", blockHash.String())
 	}
@@ -1844,7 +1851,10 @@ func (bc *Blockchain) GetUncommittedBlocks(tipHash *BlockHash) ([]*BlockNode, er
 	}
 	bc.ChainLock.RLock()
 	defer bc.ChainLock.RUnlock()
-	tipBlock, exists := bc.bestChainMap[*tipHash]
+	tipBlock, exists, err := bc.bestChain.GetBlockByHash(tipHash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "GetUncommittedBlocks: Problem getting block %v", tipHash.String())
+	}
 	if !exists {
 		return nil, errors.Errorf("GetUncommittedBlocks: Block %v not found in best chain map", tipHash.String())
 	}
@@ -2015,9 +2025,9 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 
 // GetCommittedTip returns the highest committed block and its index in the best chain.
 func (bc *Blockchain) GetCommittedTip() (*BlockNode, int) {
-	for ii := len(bc.bestChain) - 1; ii >= 0; ii-- {
-		if bc.bestChain[ii].IsCommitted() {
-			return bc.bestChain[ii], ii
+	for ii := len(bc.bestChain.Chain) - 1; ii >= 0; ii-- {
+		if bc.bestChain.Chain[ii].IsCommitted() {
+			return bc.bestChain.Chain[ii], ii
 		}
 	}
 	return nil, -1

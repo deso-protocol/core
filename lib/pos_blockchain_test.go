@@ -251,7 +251,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.bestChain = []*BlockNode{genesisBlock}
+	bc.bestChain.Chain = []*BlockNode{genesisBlock}
 	bc.blockIndex.blockIndexByHash.Put(*genesisBlock.Hash, genesisBlock)
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
@@ -301,7 +301,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
 
 	block.Header.Height = 2
-	bc.blockIndex = NewBlockIndex(bc.db, bc.snapshot, nil)
+	bc.blockIndex = NewBlockIndex(bc.db, bc.snapshot)
 	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
@@ -471,7 +471,7 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.bestChain = []*BlockNode{
+	bc.bestChain.Chain = []*BlockNode{
 		genesisNode,
 		block2,
 	}
@@ -807,7 +807,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
-	bc.bestChain = []*BlockNode{genesisNode}
+	bc.bestChain.Chain = []*BlockNode{genesisNode}
 	bc.blockIndex.blockIndexByHash = newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	})
@@ -844,7 +844,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		ProposedInView: 2,
 		PrevBlockHash:  hash1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
-	bc.bestChain = append(bc.bestChain, block2)
+	bc.bestChain.Chain = append(bc.bestChain.Chain, block2)
 	bc.blockIndex.blockIndexByHash.Put(*hash2, block2)
 	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
@@ -1235,7 +1235,7 @@ func TestShouldReorg(t *testing.T) {
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
 	hash3 := NewBlockHash(RandomBytes(32))
-	bc.bestChain = []*BlockNode{
+	bc.bestChain.Chain = []*BlockNode{
 		{
 			Hash:   hash1,
 			Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
@@ -1249,7 +1249,7 @@ func TestShouldReorg(t *testing.T) {
 	newBlock := &BlockNode{
 		Header: &MsgDeSoHeader{
 			ProposedInView: 2,
-			PrevBlockHash:  bc.bestChain[1].Hash,
+			PrevBlockHash:  bc.bestChain.Chain[1].Hash,
 		},
 	}
 
@@ -1335,7 +1335,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	ancestors, _, err := bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 	checkBestChainForHash := func(hash *BlockHash) bool {
-		return collections.Any(bc.bestChain, func(bn *BlockNode) bool {
+		return collections.Any(bc.bestChain.Chain, func(bn *BlockNode) bool {
 			return bn.Hash.IsEqual(hash)
 		})
 	}
@@ -1349,30 +1349,30 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// hash 3 should no longer be in the best chain or best chain map
-	_, hash3ExistsInBestChainMap := bc.bestChainMap[*hash3]
+	_, hash3ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash3)
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
 	require.Len(t, connectedBlockHashes, 1)
 	require.Len(t, disconnectedBlockHashes, 1)
 
 	// newBlock should be in the best chain and the best chain map and should be the tip.
-	_, newBlockExistsInBestChainMap := bc.bestChainMap[*newBlockHash]
+	_, newBlockExistsInBestChainMap := bc.bestChain.ChainMap.Get(*newBlockHash)
 	require.True(t, newBlockExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(newBlockHash))
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 
 	// Make sure block 2 and block 1 are still in the best chain.
-	_, hash2ExistsInBestChainMap := bc.bestChainMap[*hash2]
+	_, hash2ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash2)
 	require.True(t, hash2ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash2))
 
-	_, hash1ExistsInBestChainMap := bc.bestChainMap[*hash1]
+	_, hash1ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash1)
 	require.True(t, hash1ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash1))
 
 	// Remove newBlock from the best chain and block index to reset the state.
-	bc.bestChain = bc.bestChain[:len(bc.bestChain)-1]
-	delete(bc.bestChainMap, *newBlockHash)
+	bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-1]
+	bc.bestChain.ChainMap.Delete(*newBlockHash)
 	// Add block 3 back
 	bc.addTipBlockToBestChain(bn3)
 
@@ -1420,19 +1420,19 @@ func TestTryApplyNewTip(t *testing.T) {
 	// newBlockHash should be tip.
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 	// hash 3 should no longer be in the best chain or best chain map
-	_, hash3ExistsInBestChainMap = bc.bestChainMap[*hash3]
+	_, hash3ExistsInBestChainMap = bc.bestChain.ChainMap.Get(*hash3)
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
 	// hash 2 should no longer be in the best chain or best chain map
-	_, hash2ExistsInBestChainMap = bc.bestChainMap[*hash2]
+	_, hash2ExistsInBestChainMap = bc.bestChain.ChainMap.Get(*hash2)
 	require.False(t, hash2ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash2))
 	// hash 4 should be in the best chain and the best chain map
-	_, hash4ExistsInBestChainMap := bc.bestChainMap[*hash4]
+	_, hash4ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash4)
 	require.True(t, hash4ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash4))
 	// hash 5 should be in the best chain and the best chain map
-	_, hash5ExistsInBestChainMap := bc.bestChainMap[*hash5]
+	_, hash5ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash5)
 	require.True(t, hash5ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash5))
 
@@ -1441,10 +1441,10 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.Len(t, disconnectedBlockHashes, 2)
 
 	// Reset the state of the best chain.
-	delete(bc.bestChainMap, *hash4)
-	delete(bc.bestChainMap, *hash5)
-	delete(bc.bestChainMap, *newBlockHash)
-	bc.bestChain = bc.bestChain[:len(bc.bestChain)-3]
+	bc.bestChain.ChainMap.Delete(*hash4)
+	bc.bestChain.ChainMap.Delete(*hash5)
+	bc.bestChain.ChainMap.Delete(*newBlockHash)
+	bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-3]
 
 	// Add block 2 and 3 back.
 	bc.addTipBlockToBestChain(bn2)
@@ -1514,8 +1514,8 @@ func TestCanCommitGrandparent(t *testing.T) {
 			PrevBlockHash:  hash1,
 		},
 	}
-	bc.bestChainMap[*hash1] = bn1
-	bc.bestChainMap[*hash2] = bn2
+	bc.bestChain.ChainMap.Put(*hash1, bn1)
+	bc.bestChain.ChainMap.Put(*hash2, bn2)
 
 	// define incoming block
 	hash3 := NewBlockHash(RandomBytes(32))
@@ -1657,7 +1657,7 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 	for _, committedHash := range committedBlocks {
 		// Okay so let's make sure the block is committed.
-		blockNode, exists := testMeta.chain.bestChainMap[*committedHash]
+		blockNode, exists := testMeta.chain.bestChain.ChainMap.Get(*committedHash)
 		require.True(testMeta.t, exists)
 		require.True(testMeta.t, blockNode.IsCommitted())
 
@@ -1682,7 +1682,7 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 	for _, uncommittedBlockHash := range uncommittedBlocks {
 		// Okay so let's make sure the block is uncommitted.
-		blockNode, exists := testMeta.chain.bestChainMap[*uncommittedBlockHash]
+		blockNode, exists := testMeta.chain.bestChain.ChainMap.Get(*uncommittedBlockHash)
 		require.True(testMeta.t, exists)
 		require.False(testMeta.t, blockNode.IsCommitted())
 		// TODO: Verify DB results?? Kinda silly to make sure everything is missing.
@@ -1874,7 +1874,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Timeout block will no longer be in best chain, and will still be in an uncommitted state in the block index
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, reorgBlockHash}, blockHash2)
 		_verifyRandomSeedHashHelper(testMeta, reorgBlock)
-		_, exists := testMeta.chain.bestChainMap[*timeoutBlockHash]
+		_, exists := testMeta.chain.bestChain.ChainMap.Get(*timeoutBlockHash)
 		require.False(t, exists)
 
 		timeoutBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(timeoutBlockHash, timeoutBlockHeight)

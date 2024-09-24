@@ -371,8 +371,8 @@ func (txi *TXIndex) Update() error {
 		newBlockIndex := txi.TXIndexChain.CopyBlockIndexes()
 		newBestChain, newBestChainMap := txi.TXIndexChain.CopyBestChain()
 		newBestChain = newBestChain[:len(newBestChain)-1]
-		delete(newBestChainMap, *(blockToDetach.Hash))
-		newBlockIndex.Delete(*(blockToDetach.Hash))
+		newBestChainMap.Delete(*blockToDetach.Hash)
+		newBlockIndex.Delete(*blockToDetach.Hash)
 
 		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndex)
 

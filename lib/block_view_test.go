@@ -702,8 +702,8 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	require.NoError(err)
 	// sanity-check that the last block hash is the same as the last header hash.
 	require.Equal(true, bytes.Equal(
-		tm.chain.bestChain[len(tm.chain.bestChain)-1].Hash.ToBytes(),
-		tm.chain.bestHeaderChain[len(tm.chain.bestHeaderChain)-1].Hash.ToBytes()))
+		tm.chain.bestChain.GetTip().Hash.ToBytes(),
+		tm.chain.bestHeaderChain.GetTip().Hash.ToBytes()))
 	// Last block shouldn't be nil, and the number of expectedTxns should be the same as in the testVectorBlock + 1,
 	// because of the additional block reward.
 	require.NotNil(lastBlock)
@@ -791,10 +791,10 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// TODO: if ever needed we can call tm.chain.eventManager.blockDisconnected() here.
 
 	// Update the block and header metadata chains.
-	tm.chain.bestChain = tm.chain.bestChain[:len(tm.chain.bestChain)-1]
-	tm.chain.bestHeaderChain = tm.chain.bestHeaderChain[:len(tm.chain.bestHeaderChain)-1]
-	delete(tm.chain.bestChainMap, *lastBlockHash)
-	delete(tm.chain.bestHeaderChainMap, *lastBlockHash)
+	tm.chain.bestChain.Chain = tm.chain.bestChain.Chain[:len(tm.chain.bestChain.Chain)-1]
+	tm.chain.bestHeaderChain.Chain = tm.chain.bestHeaderChain.Chain[:len(tm.chain.bestHeaderChain.Chain)-1]
+	tm.chain.bestChain.ChainMap.Delete(*lastBlockHash)
+	tm.chain.bestHeaderChain.ChainMap.Delete(*lastBlockHash)
 
 	// We don't pass the chain's snapshot above to prevent certain concurrency issues. As a
 	// result, we need to reset the snapshot's db cache to get rid of stale data.
