@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -363,6 +364,16 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
+func RunBlockIndexMigrationOnce(db *badger.DB, dataDir string) error {
+	glog.V(0).Info("Running block index migration")
+	blockIndexMigrationFileName := filepath.Join(dataDir, BlockIndexMigrationFileName)
+	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
+	if err == nil && hasRunMigration {
+		return nil
+	}
+	return RunBlockIndexMigration(db, nil, nil)
+}
+
 // NewServer initializes all of the internal data structures. Right now this basically
 // looks as follows:
 //   - ConnectionManager starts and keeps track of peers.
@@ -438,6 +449,10 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
+
+	if err := RunBlockIndexMigrationOnce(_db, _dataDir); err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem running block index migration"), true
+	}
 
 	var err error
 

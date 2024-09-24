@@ -1955,3 +1955,5 @@ const DefaultMainnetCheckpointProvider = "https://node.deso.org"
 const DefaultTestnetCheckpointProvider = "https://test.deso.org"
 
 const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
+
+const BlockIndexMigrationFileName = "block_index_migration.txt"

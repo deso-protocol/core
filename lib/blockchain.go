@@ -61,7 +61,7 @@ const (
 	// have room for multiple forks each an entire history's length with this value). If
 	// each node takes up 100 bytes of space this amounts to around 500MB, which also seems
 	// like a reasonable size.
-	MaxBlockIndexNodes = 5000000
+	MaxBlockIndexNodes = 50000000 // TODO: trim this down somehow...
 )
 
 type BlockStatus uint32
@@ -533,7 +533,6 @@ type BlockIndex struct {
 	db               *badger.DB
 	snapshot         *Snapshot
 	blockIndexByHash *lru2.Map[BlockHash, *BlockNode]
-	tipNode          *BlockNode
 }
 
 func NewBlockIndex(db *badger.DB, snapshot *Snapshot) *BlockIndex {
@@ -552,10 +551,6 @@ func newBlockIndexByHashFromMap(input map[BlockHash]*BlockNode) *lru2.Map[BlockH
 	return newMap
 }
 
-func (bi *BlockIndex) setTipNode(tipNode *BlockNode) {
-	bi.tipNode = tipNode
-}
-
 func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 	bi.blockIndexByHash.Put(*blockNode.Hash, blockNode)
 }
@@ -572,6 +567,7 @@ func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, 
 		}
 		return nil, false, errors.Wrapf(err, "GetBlockNodeByHashOnly: Problem getting height for hash")
 	}
+	// TODO: cache current height to exit early?
 	blockNode := GetHeightHashToNodeInfo(bi.db, bi.snapshot, uint32(height), blockHash, false)
 	if blockNode == nil {
 		return nil, false, nil
@@ -588,6 +584,7 @@ func (bi *BlockIndex) GetBlockNodeByHashAndHeight(blockHash *BlockHash, height u
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodeByHashAndHeight: Height %d is greater than math.MaxUint32", height)
 	}
+	// TODO: cache current height to exit early?
 	bn := GetHeightHashToNodeInfo(bi.db, bi.snapshot, uint32(height), blockHash, false)
 	if bn == nil {
 		return nil, false
@@ -600,6 +597,7 @@ func (bi *BlockIndex) GetBlockNodesByHeight(height uint64) []*BlockNode {
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodesByHeight: Height %d is greater than math.MaxUint32", height)
 	}
+	// TODO: cache current height to exit early?
 	prefixKey := _heightHashToNodePrefixByHeight(uint32(height), false)
 	_, valsFound := EnumerateKeysForPrefix(bi.db, prefixKey, false)
 	blockNodes := []*BlockNode{}
@@ -650,6 +648,33 @@ func (bestChain *BestChain) GetBlockByHeight(height uint64) (*BlockNode, bool, e
 		return nil, false, fmt.Errorf("GetBlockByHeight: Height %d is greater than math.MaxUint32", height)
 	}
 
+	if height > uint64(bestChain.GetTip().Height) {
+		return nil, false, nil
+	}
+
+	currTip := bestChain.GetTip()
+	if currTip != nil {
+		currNode := &BlockNode{}
+		*currNode = *currTip
+		if currNode.Height == uint32(height) {
+			return currNode, true, nil
+		}
+		for currNode != nil && !currNode.IsCommitted() {
+			if currNode.Height < uint32(height) {
+				break
+			}
+			if currNode.Height == uint32(height) {
+				return currNode, true, nil
+			}
+			var currNodeExists bool
+			currNode, currNodeExists = bestChain.GetBlockByHashAndHeight(
+				currNode.Header.PrevBlockHash, uint64(currNode.Height-1))
+			if !currNodeExists {
+				break
+			}
+		}
+	}
+
 	prefixKey := _heightHashToNodePrefixByHeight(uint32(height), false)
 	_, valsFound := EnumerateKeysForPrefix(bestChain.db, prefixKey, false)
 	if len(valsFound) == 0 {
@@ -678,6 +703,9 @@ func (bestChain *BestChain) GetBlockByHashAndHeight(blockHash *BlockHash, height
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodeByHashAndHeight: Height %d is greater than math.MaxUint32", height)
 	}
+	if height > uint64(bestChain.GetTip().Height) {
+		return nil, false
+	}
 	bn := GetHeightHashToNodeInfo(bestChain.db, bestChain.snapshot, uint32(height), blockHash, false)
 	if bn == nil {
 		return nil, false
@@ -699,8 +727,14 @@ func (bestChain *BestChain) GetBlockByHash(blockHash *BlockHash) (*BlockNode, bo
 		}
 		return nil, false, errors.Wrapf(err, "GetBlockByHash: Problem getting height for hash")
 	}
+	if height > uint64(bestChain.GetTip().Height) {
+		return nil, false, nil
+	}
 	bn := GetHeightHashToNodeInfo(bestChain.db, bestChain.snapshot, uint32(height), blockHash, false)
 	if bn == nil {
+		return nil, false, nil
+	}
+	if !bn.IsCommitted() {
 		return nil, false, nil
 	}
 	bestChain.ChainMap.Put(*blockHash, bn)
@@ -1465,9 +1499,14 @@ func (bc *Blockchain) LatestLocator(tip *BlockNode) []*BlockHash {
 		}
 		if exists {
 			var innerExists bool
-			tip, innerExists = bc.bestHeaderChain.GetBlockByHashAndHeight(tip.Hash, uint64(height))
+			tip, innerExists, err = bc.bestHeaderChain.GetBlockByHeight(uint64(height))
+			if err != nil {
+				glog.Errorf("LatestLocator: Problem getting block by height: %v", err)
+				break
+			}
 			if !innerExists {
-				glog.Errorf("LatestLocator: Block %v not found in best header chain", tip.Hash)
+				glog.Errorf("LatestLocator: Block %v not found in best header chain", height)
+				break
 			}
 		} else {
 			tip = tip.Ancestor(uint32(height))
@@ -1894,6 +1933,14 @@ func (bc *Blockchain) BlockTip() *BlockNode {
 
 func (bc *Blockchain) BestChain() []*BlockNode {
 	return bc.bestChain.Chain
+}
+
+func (bc *Blockchain) GetBlockFromBestChainByHash(blockHash *BlockHash) (*BlockNode, bool, error) {
+	return bc.bestChain.GetBlockByHash(blockHash)
+}
+
+func (bc *Blockchain) GetBlockFromBestChainByHeight(height uint64) (*BlockNode, bool, error) {
+	return bc.bestChain.GetBlockByHeight(height)
 }
 
 func (bc *Blockchain) SetBestChain(bestChain []*BlockNode) {
