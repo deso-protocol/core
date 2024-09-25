@@ -365,13 +365,21 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 }
 
 func RunBlockIndexMigrationOnce(db *badger.DB, dataDir string) error {
-	glog.V(0).Info("Running block index migration")
 	blockIndexMigrationFileName := filepath.Join(dataDir, BlockIndexMigrationFileName)
+	glog.V(0).Info("FileName: ", blockIndexMigrationFileName)
 	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
 	if err == nil && hasRunMigration {
+		glog.V(0).Info("Block index migration has already been run")
 		return nil
 	}
-	return RunBlockIndexMigration(db, nil, nil)
+	glog.V(0).Info("Running block index migration")
+	if err = RunBlockIndexMigration(db, nil, nil); err != nil {
+		return errors.Wrapf(err, "Problem running block index migration")
+	}
+	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
+		return errors.Wrapf(err, "Problem saving block index migration file")
+	}
+	return nil
 }
 
 // NewServer initializes all of the internal data structures. Right now this basically
@@ -1405,6 +1413,8 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
 		"header tip %v out of %d from peer %v",
 		headerTip.Header, msg.TipHeight, pp)
+	glog.V(0).Infof("Server._handleHeaderBundle: Num Headers in header chain: (chain map: %v) - (chain: %v) ",
+		srv.blockchain.bestHeaderChain.ChainMap.Len(), len(srv.blockchain.bestHeaderChain.Chain))
 }
 
 func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
@@ -1682,12 +1692,12 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		return
 	}
 	if !exists {
-		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist")
-		return
+		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist: (%v)", msg.SnapshotMetadata.SnapshotBlockHeight)
+		//return
+	} else {
+		glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
+			blockNode, srv.blockchain.bestChain.Chain)))
 	}
-	glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
-		blockNode, srv.blockchain.bestChain.Chain)))
-
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
 	checksumBytes, err := srv.snapshot.Checksum.ToBytes()

@@ -467,6 +467,7 @@ func CalcNextDifficultyTarget(
 	maxRetargetTimeSecs := targetSecs * params.MaxDifficultyRetargetFactor
 
 	firstNodeHeight := lastNode.Height - blocksPerRetarget
+	// TODO: this needs to be replaced with a call to GetBlockNodeByHeight
 	firstNode := lastNode.Ancestor(firstNodeHeight)
 	if firstNode == nil {
 		return nil, fmt.Errorf("CalcNextDifficultyTarget: Problem getting block at "+
@@ -619,15 +620,17 @@ type BestChain struct {
 	IsHeaderChain bool
 	Chain         []*BlockNode // Ugh we can't really have a cache here. I mean maybe, but it complicates things quite a lot.
 	ChainMap      *lru2.Map[BlockHash, *BlockNode]
+	params        *DeSoParams
 }
 
-func NewBestChain(db *badger.DB, snapshot *Snapshot, isHeaderChain bool) *BestChain {
+func NewBestChain(db *badger.DB, snapshot *Snapshot, isHeaderChain bool, params *DeSoParams) *BestChain {
 	return &BestChain{
 		db:            db,
 		snapshot:      snapshot,
 		IsHeaderChain: isHeaderChain,
 		Chain:         []*BlockNode{},
 		ChainMap:      lru2.NewMap[BlockHash, *BlockNode](MaxBlockIndexNodes),
+		params:        params,
 	}
 }
 
@@ -648,31 +651,42 @@ func (bestChain *BestChain) GetBlockByHeight(height uint64) (*BlockNode, bool, e
 		return nil, false, fmt.Errorf("GetBlockByHeight: Height %d is greater than math.MaxUint32", height)
 	}
 
-	if height > uint64(bestChain.GetTip().Height) {
+	currTip := bestChain.GetTip()
+	if currTip != nil && height > uint64(currTip.Height) {
 		return nil, false, nil
 	}
 
-	currTip := bestChain.GetTip()
 	if currTip != nil {
-		currNode := &BlockNode{}
-		*currNode = *currTip
-		if currNode.Height == uint32(height) {
-			return currNode, true, nil
-		}
-		for currNode != nil && !currNode.IsCommitted() {
-			if currNode.Height < uint32(height) {
-				break
-			}
-			if currNode.Height == uint32(height) {
-				return currNode, true, nil
-			}
-			var currNodeExists bool
-			currNode, currNodeExists = bestChain.GetBlockByHashAndHeight(
-				currNode.Header.PrevBlockHash, uint64(currNode.Height-1))
-			if !currNodeExists {
-				break
+		currTipHeight := currTip.Height
+		delta := currTipHeight - uint32(height)
+		if delta < uint32(len(bestChain.Chain)) {
+			targetNode := bestChain.Chain[uint32(len(bestChain.Chain)-1)-delta]
+			if uint64(targetNode.Height) == height {
+				return targetNode, true, nil
 			}
 		}
+		//targetIndex := (len(bestChain.Chain)-1)
+		//// We can probably do some binary search thing here instead.
+		//currNode := &BlockNode{}
+		//*currNode = *currTip
+		//if currNode.Height == uint32(height) {
+		//	return currNode, true, nil
+		//}
+		//// During syncing, we don't write to the DB, so we need to iterate backwards through the best chain.
+		//for currNode != nil && !currNode.IsStored() {
+		//	if currNode.Height < uint32(height) {
+		//		break
+		//	}
+		//	if currNode.Height == uint32(height) {
+		//		return currNode, true, nil
+		//	}
+		//	var currNodeExists bool
+		//	currNode, currNodeExists = bestChain.GetBlockByHashAndHeight(
+		//		currNode.Header.PrevBlockHash, uint64(currNode.Height-1))
+		//	if !currNodeExists {
+		//		break
+		//	}
+		//}
 	}
 
 	prefixKey := _heightHashToNodePrefixByHeight(uint32(height), false)
@@ -1160,7 +1174,7 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 
 	////////////////////////// Update the bestHeaderChain in-memory data structures //////////////////////////
 	currentHeaderTip := bc.headerTip()
-	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentHeaderTip, uncommittedTipBlockNode)
+	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentHeaderTip, uncommittedTipBlockNode, bc.blockIndex)
 	bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap = updateBestChainInMemory(
 		bc.bestHeaderChain.Chain,
 		bc.bestHeaderChain.ChainMap,
@@ -1219,9 +1233,9 @@ func NewBlockchain(
 		//blockIndexByHash:   collections.NewConcurrentMap[BlockHash, *BlockNode](),
 		//blockIndexByHeight: make(map[uint64]map[BlockHash]*BlockNode),
 		//bestChainMap: make(map[BlockHash]*BlockNode),
-		bestChain: NewBestChain(db, snapshot, false),
+		bestChain: NewBestChain(db, snapshot, false, params),
 		//bestHeaderChainMap: make(map[BlockHash]*BlockNode),
-		bestHeaderChain: NewBestChain(db, snapshot, true),
+		bestHeaderChain: NewBestChain(db, snapshot, true, params),
 		blockViewCache:  lru.NewKVCache(100), // TODO: parameterize
 		snapshotCache:   NewSnapshotCache(),
 
@@ -1509,6 +1523,7 @@ func (bc *Blockchain) LatestLocator(tip *BlockNode) []*BlockHash {
 				break
 			}
 		} else {
+			// TODO: this needs to be replaced with a read-through cache call.
 			tip = tip.Ancestor(uint32(height))
 		}
 
@@ -2099,7 +2114,8 @@ func (bc *Blockchain) MarkBlockInvalid(node *BlockNode, errOccurred RuleError) {
 	//}
 }
 
-func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
+// node1 is the current tip and node2 is a new node.
+func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode, blockIndex *BlockIndex) *BlockNode {
 	if node1 == nil || node2 == nil {
 		// If either node is nil then there can't be a common ancestor.
 		return nil
@@ -2107,18 +2123,33 @@ func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 
 	// Get the two nodes to be at the same height.
 	if node1.Height > node2.Height {
-		node1 = node1.Ancestor(node2.Height)
+		node1Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node1.Header.PrevBlockHash, uint64(node1.Height-1))
+		if !exists {
+			return nil
+		}
+		return _FindCommonAncestor(node1Parent, node2, blockIndex)
 	} else if node1.Height < node2.Height {
-		node2 = node2.Ancestor(node1.Height)
+		node2Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node2.Header.PrevBlockHash, uint64(node2.Height-1))
+		if !exists {
+			return nil
+		}
+		return _FindCommonAncestor(node1, node2Parent, blockIndex)
 	}
 
 	// Iterate the nodes backward until they're either the same or we
 	// reach the end of the lists. We only need to check node1 for nil
 	// since they're the same height and we are iterating both back
 	// in tandem.
-	for node1 != nil && !node1.Hash.IsEqual(node2.Hash) {
-		node1 = node1.Parent
-		node2 = node2.Parent
+	if !node1.Hash.IsEqual(node2.Hash) {
+		node1Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node1.Header.PrevBlockHash, uint64(node1.Height-1))
+		if !exists {
+			return nil
+		}
+		node2Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node2.Header.PrevBlockHash, uint64(node2.Height-1))
+		if !exists {
+			return nil
+		}
+		return _FindCommonAncestor(node1Parent, node2Parent, blockIndex)
 	}
 
 	// By now either node1 == node2 and we found the common ancestor or
@@ -2198,9 +2229,10 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoPar
 	return nil
 }
 
-func GetReorgBlocks(tip *BlockNode, newNode *BlockNode) (_commonAncestor *BlockNode, _detachNodes []*BlockNode, _attachNodes []*BlockNode) {
+func GetReorgBlocks(tip *BlockNode, newNode *BlockNode, blockIndex *BlockIndex) (
+	_commonAncestor *BlockNode, _detachNodes []*BlockNode, _attachNodes []*BlockNode) {
 	// Find the common ancestor of this block and the main header chain.
-	commonAncestor := _FindCommonAncestor(tip, newNode)
+	commonAncestor := _FindCommonAncestor(tip, newNode, blockIndex)
 
 	// Log a warning if the reorg is going to be a big one.
 	numBlocks := tip.Height - commonAncestor.Height
@@ -2229,8 +2261,16 @@ func GetReorgBlocks(tip *BlockNode, newNode *BlockNode) (_commonAncestor *BlockN
 	// attachNodes will have the new node as its first element and work back to
 	// the node right after the common ancestor as its last element.
 	attachBlocks := []*BlockNode{}
-	for currentBlock := newNode; *currentBlock.Hash != *commonAncestor.Hash; currentBlock = currentBlock.Parent {
+	currentBlock := &BlockNode{}
+	*currentBlock = *newNode
+	for *currentBlock.Hash != *commonAncestor.Hash {
 		attachBlocks = append(attachBlocks, currentBlock)
+		var exists bool
+		currentBlock, exists = blockIndex.GetBlockNodeByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
+		if !exists {
+			// TODO: what should we do here?
+			glog.Fatal("GetReorgBlocks: Failed to find parent of block")
+		}
 	}
 	// Reverse attachBlocks so that the node right after the common ancestor
 	// will be the first element and the node at the end of the list will be
@@ -2438,7 +2478,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	if headerTip.CumWork.Cmp(newNode.CumWork) < 0 {
 		isMainChain = true
 
-		_, detachBlocks, attachBlocks := GetReorgBlocks(headerTip, newNode)
+		_, detachBlocks, attachBlocks := GetReorgBlocks(headerTip, newNode, bc.blockIndex)
 		bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap = updateBestChainInMemory(
 			bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap, detachBlocks, attachBlocks)
 
@@ -3003,7 +3043,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 
 		// Find the common ancestor of this block and the main chain.
 		// TODO: Reorgs with postgres?
-		commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(currentTip, nodeToValidate)
+		commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(currentTip, nodeToValidate, bc.blockIndex)
 		// Log a warning if the reorg is going to be a big one.
 		numBlocks := currentTip.Height - commonAncestor.Height
 		if numBlocks > 10 {

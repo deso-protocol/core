@@ -5284,7 +5284,7 @@ func GetHeightForHash(db *badger.DB, snap *Snapshot, hash *BlockHash) (uint64, e
 		if err != nil {
 			return err
 		}
-		height = DecodeUint64(heightBytes)
+		height, _ = Uvarint(heightBytes)
 		return nil
 	})
 	if err != nil {
