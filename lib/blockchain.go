@@ -606,9 +606,6 @@ func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, 
 		}
 		return nil, false, errors.Wrapf(err, "GetBlockNodeByHashOnly: Problem getting height for hash")
 	}
-	if height > bi.maxHeightSeen {
-		return nil, false, nil
-	}
 	blockNode := GetHeightHashToNodeInfo(bi.db, bi.snapshot, uint32(height), blockHash, false)
 	if blockNode == nil {
 		return nil, false, nil
