@@ -329,7 +329,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.blockIndexByHash = newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -475,7 +475,7 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 		genesisNode,
 		block2,
 	}
-	bc.blockIndex.blockIndexByHash = newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -808,7 +808,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.bestChain.Chain = []*BlockNode{genesisNode}
-	bc.blockIndex.blockIndexByHash = newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	})
 	block := &MsgDeSoBlock{

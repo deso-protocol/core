@@ -5596,6 +5596,69 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 	return blockIndex, nil
 }
 
+func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams) error {
+	prefix := _heightHashToNodePrefixByHeight(height, false)
+
+	return bi.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			var blockNode *BlockNode
+
+			// Don't bother checking the key. We assume that the key lines up
+			// with what we've stored in the value in terms of (height, block hash).
+			item := nodeIterator.Item()
+			err := item.Value(func(blockNodeBytes []byte) error {
+				// Deserialize the block node.
+				var err error
+				// TODO: There is room for optimization here by pre-allocating a
+				// contiguous list of block nodes and then populating that list
+				// rather than having each blockNode be a stand-alone allocation.
+				blockNode, err = DeserializeBlockNode(blockNodeBytes)
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+
+			// If we got here it means we read a blockNode successfully. Store it
+			// into our node index.
+			bi.addNewBlockNodeToBlockIndex(blockNode)
+
+			// Find the parent of this block, which should already have been read
+			// in and connect it. Skip the genesis block, which has height 0. Also
+			// skip the block if its PrevBlockHash is empty, which will be true for
+			// the BitcoinStartBlockNode.
+			//
+			// TODO: There is room for optimization here by keeping a reference to
+			// the last node we've iterated over and checking if that node is the
+			// parent. Doing this would avoid an expensive hashmap check to get
+			// the parent by its block hash.
+			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
+				continue
+			}
+			if parent, ok := bi.GetBlockNodeByHashAndHeight(blockNode.Header.PrevBlockHash, uint64(blockNode.Height)); ok {
+				// We found the parent node so connect it.
+				blockNode.Parent = parent
+			} else {
+				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
+				// be orphan blocks in the block index. In this case, we don't throw an error.
+				if params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+					continue
+				}
+				// In this case we didn't find the parent so error. There shouldn't
+				// be any unconnectedTxns in our block index.
+				return fmt.Errorf("GetBlockIndex: Could not find parent for blockNode: %+v", blockNode)
+			}
+		}
+		return nil
+	})
+}
+
 func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager) error {
 	return handle.View(func(txn *badger.Txn) error {
 		prefix := _heightHashToNodeIndexPrefix(false)

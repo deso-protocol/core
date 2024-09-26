@@ -102,6 +102,11 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 	currentView := blockHeader.ValidatorsVoteQC.GetView() + 1
 	nextView := currentView + 1
 
+	blockIndex := NewBlockIndex(nil, nil)
+	blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+		*blockHash: {Header: blockHeader},
+	})
+
 	// Create a mock consensus
 	fastHotStuffConsensus := FastHotStuffConsensus{
 		lock:           sync.RWMutex{},
@@ -111,13 +116,9 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 		},
 		params: &DeSoTestnetParams,
 		blockchain: &Blockchain{
-			ChainLock: deadlock.RWMutex{},
-			blockIndex: &BlockIndex{
-				blockIndexByHash: newBlockIndexByHashFromMap(map[BlockHash]*BlockNode{
-					*blockHash: {Header: blockHeader},
-				}),
-			},
-			params: &DeSoTestnetParams,
+			ChainLock:  deadlock.RWMutex{},
+			blockIndex: blockIndex,
+			params:     &DeSoTestnetParams,
 		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{
 			OnIsInitialized: alwaysReturnTrue,

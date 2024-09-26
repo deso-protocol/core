@@ -544,29 +544,54 @@ type CheckpointBlockInfoAndError struct {
 }
 
 type BlockIndex struct {
-	db               *badger.DB
-	snapshot         *Snapshot
-	blockIndexByHash *lru2.Map[BlockHash, *BlockNode]
+	db                 *badger.DB
+	snapshot           *Snapshot
+	blockIndexByHash   *lru2.Map[BlockHash, *BlockNode]
+	blockIndexByHeight *lru2.Map[uint64, []*BlockNode]
+	maxHeightSeen      uint64
 }
 
 func NewBlockIndex(db *badger.DB, snapshot *Snapshot) *BlockIndex {
 	return &BlockIndex{
-		db:               db,
-		snapshot:         snapshot,
-		blockIndexByHash: lru2.NewMap[BlockHash, *BlockNode](MaxBlockIndexNodes), // TODO: parameterize this?
+		db:                 db,
+		snapshot:           snapshot,
+		blockIndexByHash:   lru2.NewMap[BlockHash, *BlockNode](MaxBlockIndexNodes), // TODO: parameterize this?
+		blockIndexByHeight: lru2.NewMap[uint64, []*BlockNode](MaxBlockIndexNodes),  // TODO: parameterize this?
+		maxHeightSeen:      0,
 	}
 }
 
-func newBlockIndexByHashFromMap(input map[BlockHash]*BlockNode) *lru2.Map[BlockHash, *BlockNode] {
-	newMap := lru2.NewMap[BlockHash, *BlockNode](MaxBlockIndexNodes)
+func (bi *BlockIndex) SetBlockIndexFromMap(input map[BlockHash]*BlockNode) {
+	newHashToBlockNodeMap := lru2.NewMap[BlockHash, *BlockNode](MaxBlockIndexNodes)
+	newHeightToBlockNodeMap := lru2.NewMap[uint64, []*BlockNode](MaxBlockIndexNodes)
+	maxHeight := uint64(0)
 	for key, val := range input {
-		newMap.Put(key, val)
+		newHashToBlockNodeMap.Put(key, val)
+		blocksAtHeight, exists := newHeightToBlockNodeMap.Get(uint64(val.Height))
+		if !exists {
+			blocksAtHeight = []*BlockNode{}
+		}
+		blocksAtHeight = append(blocksAtHeight, val)
+		newHeightToBlockNodeMap.Put(uint64(val.Height), append(blocksAtHeight, val))
+		if uint64(val.Height) > maxHeight {
+			maxHeight = uint64(val.Height)
+		}
 	}
-	return newMap
+	bi.blockIndexByHash = newHashToBlockNodeMap
+	bi.blockIndexByHeight = newHeightToBlockNodeMap
+	bi.maxHeightSeen = maxHeight
 }
 
 func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 	bi.blockIndexByHash.Put(*blockNode.Hash, blockNode)
+	blocksAtHeight, exists := bi.blockIndexByHeight.Get(uint64(blockNode.Height))
+	if !exists {
+		blocksAtHeight = []*BlockNode{}
+	}
+	bi.blockIndexByHeight.Put(uint64(blockNode.Height), append(blocksAtHeight, blockNode))
+	if uint64(blockNode.Height) > bi.maxHeightSeen {
+		bi.maxHeightSeen = uint64(blockNode.Height)
+	}
 }
 
 func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, bool, error) {
@@ -581,7 +606,9 @@ func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, 
 		}
 		return nil, false, errors.Wrapf(err, "GetBlockNodeByHashOnly: Problem getting height for hash")
 	}
-	// TODO: cache current height to exit early?
+	if height > bi.maxHeightSeen {
+		return nil, false, nil
+	}
 	blockNode := GetHeightHashToNodeInfo(bi.db, bi.snapshot, uint32(height), blockHash, false)
 	if blockNode == nil {
 		return nil, false, nil
@@ -598,7 +625,9 @@ func (bi *BlockIndex) GetBlockNodeByHashAndHeight(blockHash *BlockHash, height u
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodeByHashAndHeight: Height %d is greater than math.MaxUint32", height)
 	}
-	// TODO: cache current height to exit early?
+	if height > bi.maxHeightSeen {
+		return nil, false
+	}
 	bn := GetHeightHashToNodeInfo(bi.db, bi.snapshot, uint32(height), blockHash, false)
 	if bn == nil {
 		return nil, false
@@ -610,6 +639,13 @@ func (bi *BlockIndex) GetBlockNodeByHashAndHeight(blockHash *BlockHash, height u
 func (bi *BlockIndex) GetBlockNodesByHeight(height uint64) []*BlockNode {
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodesByHeight: Height %d is greater than math.MaxUint32", height)
+	}
+	if height > bi.maxHeightSeen {
+		return []*BlockNode{}
+	}
+	blockNodesAtHeight, exists := bi.blockIndexByHeight.Get(height)
+	if exists {
+		return blockNodesAtHeight
 	}
 	// TODO: cache current height to exit early?
 	prefixKey := _heightHashToNodePrefixByHeight(uint32(height), false)
@@ -1113,6 +1149,10 @@ func (bc *Blockchain) _initChain() error {
 				currBlockCounter++
 			}
 		}
+		if err = bc.blockIndex.LoadBlockIndexFromHeight(tipNode.Height, bc.params); err != nil {
+			return errors.Wrapf(err, "_initChain: Problem loading block index from db")
+		}
+
 	}
 
 	// At this point the blockIndexByHash should contain a full node tree with all
