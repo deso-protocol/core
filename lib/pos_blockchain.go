@@ -93,7 +93,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 
 	// The header is not an orphan and has a higher view than the current tip. We reorg the header chain
 	// and apply the incoming header as the new tip.
-	_, blocksToDetach, blocksToAttach := bc.GetReorgBlocks(currentTip, blockNode, true)
+	_, blocksToDetach, blocksToAttach := bc.GetReorgBlocks(currentTip, blockNode)
 	bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap = updateBestChainInMemory(
 		bc.bestHeaderChain.Chain,
 		bc.bestHeaderChain.ChainMap,

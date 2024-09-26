@@ -243,7 +243,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	commonAncestor, detachBlocks, attachBlocks := txi.CoreChain.GetReorgBlocks(&derefedTxindexTipNode, committedTip, false)
+	commonAncestor, detachBlocks, attachBlocks := txi.CoreChain.GetReorgBlocks(&derefedTxindexTipNode, committedTip)
 
 	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
 }
