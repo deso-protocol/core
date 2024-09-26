@@ -171,7 +171,8 @@ func (txi *TXIndex) Start() {
 				txi.updateWaitGroup.Done()
 				return
 			default:
-				if txi.CoreChain.ChainState() == SyncStateFullyCurrent {
+				chainState := txi.CoreChain.ChainState()
+				if chainState == SyncStateFullyCurrent || (chainState == SyncStateNeedBlocksss && txi.CoreChain.headerTip().Height-txi.CoreChain.blockTip().Height < 10) {
 					if !txi.CoreChain.IsFullyStored() {
 						glog.V(1).Infof("TXIndex: Waiting, blockchain is not fully stored")
 						break
@@ -242,7 +243,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(&derefedTxindexTipNode, committedTip, txi.TXIndexChain.blockIndex)
+	commonAncestor, detachBlocks, attachBlocks := txi.CoreChain.GetReorgBlocks(&derefedTxindexTipNode, committedTip, false)
 
 	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
 }

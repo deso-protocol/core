@@ -1174,7 +1174,7 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 
 	////////////////////////// Update the bestHeaderChain in-memory data structures //////////////////////////
 	currentHeaderTip := bc.headerTip()
-	_, blocksToDetach, blocksToAttach := GetReorgBlocks(currentHeaderTip, uncommittedTipBlockNode, bc.blockIndex)
+	_, blocksToDetach, blocksToAttach := bc.GetReorgBlocks(currentHeaderTip, uncommittedTipBlockNode, true)
 	bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap = updateBestChainInMemory(
 		bc.bestHeaderChain.Chain,
 		bc.bestHeaderChain.ChainMap,
@@ -1642,6 +1642,14 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 func (bc *Blockchain) HasHeader(headerHash *BlockHash) (bool, error) {
 	_, exists, err := bc.blockIndex.GetBlockNodeByHashOnly(headerHash)
 	return exists, errors.Wrap(err, "Blockchain.HasHeader: ")
+}
+
+func (bc *Blockchain) HasHeaderByHashAndHeight(headerHash *BlockHash, height uint64) bool {
+	if height > uint64(bc.headerTip().Height) {
+		return false
+	}
+	_, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(headerHash, height)
+	return exists
 }
 
 // TODO: delete me?
@@ -2114,42 +2122,62 @@ func (bc *Blockchain) MarkBlockInvalid(node *BlockNode, errOccurred RuleError) {
 	//}
 }
 
-// node1 is the current tip and node2 is a new node.
-func _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode, blockIndex *BlockIndex) *BlockNode {
+// Note: we make some assumptions that we only care about ancestors in the best chain.
+func (bc *Blockchain) _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode, isHeaderChain bool) *BlockNode {
 	if node1 == nil || node2 == nil {
 		// If either node is nil then there can't be a common ancestor.
 		return nil
 	}
+	chainToUse := &BestChain{}
+	if isHeaderChain {
+		chainToUse = bc.bestHeaderChain
+	} else {
+		chainToUse = bc.bestChain
+	}
 
-	// Get the two nodes to be at the same height.
-	if node1.Height > node2.Height {
-		node1Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node1.Header.PrevBlockHash, uint64(node1.Height-1))
+	committedTip, _ := bc.GetCommittedTip()
+	// If both nodes are at a height greater than the committed tip, then we know the
+	// committed tip is a common ancestor.
+	// TODO: this isn't necessarily the GREATEST common ancestor. It's just a common ancestor.
+	if node1.Height > committedTip.Height && node2.Height > committedTip.Height {
+		// If both nodes are at a height greater than the committed tip, then we know that
+		// we have valid parent pointers and can use the Ancestor function to get use to the right place.
+		if node1.Height > node2.Height {
+			node1 = node1.Ancestor(node2.Height)
+		} else if node2.Height > node1.Height {
+			node2 = node2.Ancestor(node1.Height)
+		}
+	} else {
+		var exists bool
+		var err error
+		// Get the two nodes to be at the same height.
+		if node1.Height > node2.Height {
+			node1, exists, err = chainToUse.GetBlockByHeight(uint64(node2.Height))
+		} else if node1.Height < node2.Height {
+			node2, exists, err = chainToUse.GetBlockByHeight(uint64(node1.Height))
+		}
+		if err != nil {
+			return nil
+		}
 		if !exists {
 			return nil
 		}
-		return _FindCommonAncestor(node1Parent, node2, blockIndex)
-	} else if node1.Height < node2.Height {
-		node2Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node2.Header.PrevBlockHash, uint64(node2.Height-1))
-		if !exists {
-			return nil
-		}
-		return _FindCommonAncestor(node1, node2Parent, blockIndex)
 	}
 
 	// Iterate the nodes backward until they're either the same or we
 	// reach the end of the lists. We only need to check node1 for nil
 	// since they're the same height and we are iterating both back
 	// in tandem.
+	var exists bool
 	if !node1.Hash.IsEqual(node2.Hash) {
-		node1Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node1.Header.PrevBlockHash, uint64(node1.Height-1))
+		node1, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(node1.Header.PrevBlockHash, uint64(node1.Height-1))
 		if !exists {
 			return nil
 		}
-		node2Parent, exists := blockIndex.GetBlockNodeByHashAndHeight(node2.Header.PrevBlockHash, uint64(node2.Height-1))
+		node2, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(node2.Header.PrevBlockHash, uint64(node2.Height-1))
 		if !exists {
 			return nil
 		}
-		return _FindCommonAncestor(node1Parent, node2Parent, blockIndex)
 	}
 
 	// By now either node1 == node2 and we found the common ancestor or
@@ -2229,17 +2257,24 @@ func CheckTransactionSanity(txn *MsgDeSoTxn, blockHeight uint32, params *DeSoPar
 	return nil
 }
 
-func GetReorgBlocks(tip *BlockNode, newNode *BlockNode, blockIndex *BlockIndex) (
+func (bc *Blockchain) GetReorgBlocks(tip *BlockNode, newNode *BlockNode, isHeaderChain bool) (
 	_commonAncestor *BlockNode, _detachNodes []*BlockNode, _attachNodes []*BlockNode) {
 	// Find the common ancestor of this block and the main header chain.
-	commonAncestor := _FindCommonAncestor(tip, newNode, blockIndex)
+	commonAncestor := bc._FindCommonAncestor(tip, newNode, isHeaderChain)
+
+	if commonAncestor == nil {
+		glog.Fatalf("No common ancestor found between tip and new node: tip hash (%v), newNode hash (%v)", tip.Hash, newNode.Hash)
+		return
+	}
 
 	// Log a warning if the reorg is going to be a big one.
-	numBlocks := tip.Height - commonAncestor.Height
-	if numBlocks > 10 {
-		glog.Warningf("GetReorgBlocks: Proceeding with reorg of (%d) blocks from "+
-			"block (%v) at height (%d) to block (%v) at height of (%d)",
-			numBlocks, tip, tip.Height, newNode, newNode.Height)
+	if tip != nil && commonAncestor != nil {
+		numBlocks := tip.Height - commonAncestor.Height
+		if numBlocks > 10 {
+			glog.Warningf("GetReorgBlocks: Proceeding with reorg of (%d) blocks from "+
+				"block (%v) at height (%d) to block (%v) at height of (%d)",
+				numBlocks, tip, tip.Height, newNode, newNode.Height)
+		}
 	}
 
 	// Get the blocks to detach. Start at the tip and work backwards to the
@@ -2249,7 +2284,14 @@ func GetReorgBlocks(tip *BlockNode, newNode *BlockNode, blockIndex *BlockIndex) 
 	// detachBlocks will have the current tip as its first element and parents
 	// of the tip thereafter.
 	detachBlocks := []*BlockNode{}
-	for currentBlock := tip; *currentBlock.Hash != *commonAncestor.Hash; currentBlock = currentBlock.Parent {
+	currentBlock := &BlockNode{}
+	*currentBlock = *tip
+	for currentBlock != nil && *currentBlock.Hash != *commonAncestor.Hash {
+		var exists bool
+		currentBlock, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
+		if !exists {
+			glog.Fatalf("GetReorgBlocks: Failed to find parent of block. Parent hash %v", currentBlock.Header.PrevBlockHash)
+		}
 		detachBlocks = append(detachBlocks, currentBlock)
 	}
 
@@ -2261,12 +2303,12 @@ func GetReorgBlocks(tip *BlockNode, newNode *BlockNode, blockIndex *BlockIndex) 
 	// attachNodes will have the new node as its first element and work back to
 	// the node right after the common ancestor as its last element.
 	attachBlocks := []*BlockNode{}
-	currentBlock := &BlockNode{}
+	currentBlock = &BlockNode{}
 	*currentBlock = *newNode
 	for *currentBlock.Hash != *commonAncestor.Hash {
 		attachBlocks = append(attachBlocks, currentBlock)
 		var exists bool
-		currentBlock, exists = blockIndex.GetBlockNodeByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
+		currentBlock, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
 		if !exists {
 			// TODO: what should we do here?
 			glog.Fatal("GetReorgBlocks: Failed to find parent of block")
@@ -2478,7 +2520,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	if headerTip.CumWork.Cmp(newNode.CumWork) < 0 {
 		isMainChain = true
 
-		_, detachBlocks, attachBlocks := GetReorgBlocks(headerTip, newNode, bc.blockIndex)
+		_, detachBlocks, attachBlocks := bc.GetReorgBlocks(headerTip, newNode, true)
 		bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap = updateBestChainInMemory(
 			bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap, detachBlocks, attachBlocks)
 
@@ -3043,7 +3085,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 
 		// Find the common ancestor of this block and the main chain.
 		// TODO: Reorgs with postgres?
-		commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(currentTip, nodeToValidate, bc.blockIndex)
+		commonAncestor, detachBlocks, attachBlocks := bc.GetReorgBlocks(currentTip, nodeToValidate, false)
 		// Log a warning if the reorg is going to be a big one.
 		numBlocks := currentTip.Height - commonAncestor.Height
 		if numBlocks > 10 {
