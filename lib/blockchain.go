@@ -548,7 +548,7 @@ type BlockIndex struct {
 	snapshot           *Snapshot
 	blockIndexByHash   *lru2.Cache[BlockHash, *BlockNode]
 	blockIndexByHeight *lru2.Cache[uint64, []*BlockNode]
-	maxHeightSeen      uint64
+	//maxHeightSeen      uint64
 }
 
 func NewBlockIndex(db *badger.DB, snapshot *Snapshot) *BlockIndex {
@@ -559,29 +559,18 @@ func NewBlockIndex(db *badger.DB, snapshot *Snapshot) *BlockIndex {
 		snapshot:           snapshot,
 		blockIndexByHash:   blockIndexByHash,   // TODO: parameterize this?
 		blockIndexByHeight: blockIndexByHeight, // TODO: parameterize this?
-		maxHeightSeen:      0,
+		//maxHeightSeen:      0,
 	}
 }
 
 func (bi *BlockIndex) SetBlockIndexFromMap(input map[BlockHash]*BlockNode) {
 	newHashToBlockNodeMap, _ := lru2.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	newHeightToBlockNodeMap, _ := lru2.New[uint64, []*BlockNode](MaxBlockIndexNodes)
-	maxHeight := uint64(0)
-	for key, val := range input {
-		newHashToBlockNodeMap.Add(key, val)
-		blocksAtHeight, exists := newHeightToBlockNodeMap.Get(uint64(val.Height))
-		if !exists {
-			blocksAtHeight = []*BlockNode{}
-		}
-		blocksAtHeight = append(blocksAtHeight, val)
-		newHeightToBlockNodeMap.Add(uint64(val.Height), append(blocksAtHeight, val))
-		if uint64(val.Height) > maxHeight {
-			maxHeight = uint64(val.Height)
-		}
-	}
 	bi.blockIndexByHash = newHashToBlockNodeMap
 	bi.blockIndexByHeight = newHeightToBlockNodeMap
-	bi.maxHeightSeen = maxHeight
+	for _, val := range input {
+		bi.addNewBlockNodeToBlockIndex(val)
+	}
 }
 
 func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
@@ -589,11 +578,15 @@ func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 	blocksAtHeight, exists := bi.blockIndexByHeight.Get(uint64(blockNode.Height))
 	if !exists {
 		blocksAtHeight = []*BlockNode{}
+	} else {
+		// Make sure we don't add the same block node twice.
+		for _, blockAtHeight := range blocksAtHeight {
+			if blockAtHeight.Hash.IsEqual(blockNode.Hash) {
+				return
+			}
+		}
 	}
 	bi.blockIndexByHeight.Add(uint64(blockNode.Height), append(blocksAtHeight, blockNode))
-	if uint64(blockNode.Height) > bi.maxHeightSeen {
-		bi.maxHeightSeen = uint64(blockNode.Height)
-	}
 }
 
 func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, bool, error) {
@@ -617,9 +610,6 @@ func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, 
 }
 
 func (bi *BlockIndex) GetBlockNodeByHashAndHeight(blockHash *BlockHash, height uint64) (*BlockNode, bool) {
-	if height > bi.maxHeightSeen {
-		return nil, false
-	}
 	val, exists := bi.blockIndexByHash.Get(*blockHash)
 	if exists {
 		return val, true
@@ -639,9 +629,9 @@ func (bi *BlockIndex) GetBlockNodesByHeight(height uint64) []*BlockNode {
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodesByHeight: Height %d is greater than math.MaxUint32", height)
 	}
-	if height > bi.maxHeightSeen {
-		return []*BlockNode{}
-	}
+	//if height > bi.maxHeightSeen {
+	//	return []*BlockNode{}
+	//}
 	blockNodesAtHeight, exists := bi.blockIndexByHeight.Get(height)
 	if exists {
 		return blockNodesAtHeight
@@ -2679,19 +2669,14 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	bc.timer.End("Blockchain.ProcessBlock: Initial")
 	bc.timer.Start("Blockchain.ProcessBlock: BlockNode")
 
-	now := time.Now()
 	// See if a node for the block exists in our node index.
 	// TODO: validate that current height - 1 > 0
 	nodeToValidate, nodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(blockHash, blockHeader.Height)
 	// If no node exists for this block at all, then process the header
 	// first before we do anything. This should create a node and set
 	// the header validation status for it.
-	glog.V(0).Infof("ProcessBlock: time to check if node exists: %v", time.Since(now))
-	now = time.Now()
 	if !nodeExists {
 		_, isOrphan, err := bc.processHeaderPoW(blockHeader, blockHash)
-		glog.V(0).Infof("ProcessBlock: time to process header: %v", time.Since(now))
-		now = time.Now()
 		if err != nil {
 			// If an error occurred processing the header, then the header
 			// should be marked as invalid, which should be sufficient.
@@ -2709,9 +2694,6 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// block index.
 		// TODO: validate that current height - 1 > 0
 		nodeToValidate, nodeExists = bc.blockIndex.GetBlockNodeByHashAndHeight(blockHash, blockHeader.Height)
-
-		glog.V(0).Infof("ProcessBlock: time to get node after processing header: %v", time.Since(now))
-		now = time.Now()
 	}
 	// At this point if the node still doesn't exist or if the header's validation
 	// failed then we should return an error for the block. Note that at this point

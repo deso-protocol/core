@@ -317,14 +317,14 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
-	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
+	genesisNode := NewBlockNode(nil, hash1, 0, nil, nil, &MsgDeSoHeader{
 		Version:        2,
-		Height:         1,
+		Height:         0,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated)
-	block2 := NewBlockNode(genesisNode, hash2, 2, nil, nil, &MsgDeSoHeader{
+	block2 := NewBlockNode(genesisNode, hash2, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
-		Height:                       2,
+		Height:                       1,
 		ProposedInView:               2,
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
@@ -1880,6 +1880,11 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		timeoutBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(timeoutBlockHash, timeoutBlockHeight)
 		require.True(t, exists)
 		require.False(t, timeoutBlockNode.IsCommitted())
+
+		// The reorg block hash should be in the block index now.
+		reorgBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(reorgBlockHash, reorgBlock.Header.Height)
+		require.True(t, exists)
+		require.True(t, reorgBlockNode.IsStored())
 	}
 	var dummyParentBlockHash, orphanBlockHash *BlockHash
 	{

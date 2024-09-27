@@ -1244,7 +1244,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1254,6 +1254,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1281,7 +1282,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1291,6 +1292,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1344,7 +1346,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1354,6 +1356,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1381,7 +1384,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1391,6 +1394,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1444,7 +1448,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1454,7 +1458,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1502,7 +1506,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1512,7 +1516,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1561,7 +1565,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1571,7 +1575,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1598,7 +1602,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1608,7 +1612,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 

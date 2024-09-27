@@ -104,7 +104,7 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 
 	blockIndex := NewBlockIndex(nil, nil)
 	blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
-		*blockHash: {Header: blockHeader},
+		*blockHash: {Header: blockHeader, Height: uint32(blockHeader.Height), Hash: blockHash},
 	})
 
 	// Create a mock consensus
