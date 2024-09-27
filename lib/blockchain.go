@@ -473,14 +473,19 @@ func (bc *Blockchain) CalcNextDifficultyTarget(
 	maxRetargetTimeSecs := targetSecs * bc.params.MaxDifficultyRetargetFactor
 
 	firstNodeHeight := lastNode.Height - blocksPerRetarget
-	firstNode := lastNode.Ancestor(firstNodeHeight, bc.blockIndex)
-	if firstNode == nil {
+	firstNode, exists, err := bc.bestHeaderChain.GetBlockByHeight(uint64(firstNodeHeight))
+	if err != nil {
+		return nil, errors.Wrapf(err, "CalcNextDifficultyTarget: Problem getting block at "+
+			"beginning of retarget interval at height %d during retarget from height %d",
+			firstNodeHeight, lastNode.Height)
+	}
+	if firstNode == nil || !exists {
 		return nil, fmt.Errorf("CalcNextDifficultyTarget: Problem getting block at "+
 			"beginning of retarget interval at height %d during retarget from height %d",
 			firstNodeHeight, lastNode.Height)
 	}
 
-	actualTimeDiffSecs := int64(lastNode.Header.GetTstampSecs() - firstNode.Header.GetTstampSecs())
+	actualTimeDiffSecs := lastNode.Header.GetTstampSecs() - firstNode.Header.GetTstampSecs()
 	clippedTimeDiffSecs := actualTimeDiffSecs
 	if actualTimeDiffSecs < minRetargetTimeSecs {
 		clippedTimeDiffSecs = minRetargetTimeSecs
