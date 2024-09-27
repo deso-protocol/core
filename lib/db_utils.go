@@ -1241,7 +1241,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 			return errors.Wrapf(err, "DBDeleteWithTxn: Problem preparing ancestral record")
 		}
 		// Now delete the past record from the cache.
-		snap.DatabaseCache.Delete(keyString)
+		snap.DatabaseCache.Remove(keyString)
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		if !snap.disableChecksum {
