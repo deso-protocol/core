@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	lru2 "github.com/decred/dcrd/container/lru"
+	lru2 "github.com/hashicorp/golang-lru/v2"
 	"net/url"
 	"regexp"
 	"strings"
@@ -1305,16 +1305,16 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (*lru2.Map[BlockHash, *BlockNode], error) {
+func (postgres *Postgres) GetBlockIndex() (*lru2.Cache[BlockHash, *BlockNode], error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap := lru2.NewMap[BlockHash, *BlockNode](MaxBlockIndexNodes)
+	blockMap, _ := lru2.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	for _, block := range blocks {
-		blockMap.Put(*block.Hash, &BlockNode{
+		blockMap.Add(*block.Hash, &BlockNode{
 			Hash:             block.Hash,
 			Height:           uint32(block.Height),
 			DifficultyTarget: block.DifficultyTarget,

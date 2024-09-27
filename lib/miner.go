@@ -113,6 +113,7 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 		//
 		// TODO(miner): Replace with a call to GetBlockTemplate
 		publicKey := desoMiner._getRandomPublicKey()
+		now := time.Now()
 		blockID, headerBytes, extraNonces, diffTarget, err := desoMiner.BlockProducer.GetHeadersAndExtraDatas(
 			publicKey, 1 /*numHeaders*/, CurrentHeaderVersion)
 		if err != nil {
@@ -121,6 +122,8 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 			time.Sleep(1 * time.Second)
 			continue
 		}
+		glog.V(0).Infof("Time to get headers and extra data: %v", time.Since(now))
+		now = time.Now()
 		header := &MsgDeSoHeader{}
 		if err := header.FromBytes(headerBytes[0]); err != nil {
 			glog.Errorf("DeSoMiner._startThread: Error parsing header to " +
@@ -138,6 +141,8 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 			glog.Error(errors.Wrapf(err, "DeSoMiner._startThread: Problem while mining: "))
 			break
 		}
+		glog.V(0).Infof("Time to header to bytes and find lowest hash: %v", time.Since(now))
+		now = time.Now()
 
 		if atomic.LoadInt32(&desoMiner.stopping) == 1 {
 			glog.V(1).Infof("DeSoMiner._startThread: Stopping thread %d", threadIndex)
@@ -161,6 +166,8 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 			time.Sleep(1 * time.Second)
 			continue
 		}
+		glog.V(0).Infof("Time to get copy of recent block: %v", time.Since(now))
+		now = time.Now()
 
 		// Swap in the public key and extraNonce. This should make the block consistent with
 		// the header we were just mining on.
@@ -178,6 +185,8 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 
 		// Use the nonce we computed
 		blockToMine.Header.Nonce = bestNonce
+		glog.V(0).Infof("Time to recompute rewards and whatnot: %v", time.Since(now))
+		now = time.Now()
 
 		return diffTarget, blockToMine
 	}
@@ -187,16 +196,21 @@ func (desoMiner *DeSoMiner) _mineSingleBlock(threadIndex uint32) (_diffTarget *B
 
 func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoolToUpdate *DeSoMempool) (_block *MsgDeSoBlock, _err error) {
 	// Add a call to update the BlockProducer.
+	now := time.Now()
 	// TODO(performance): We shouldn't have to do this, it just makes tests pass right now.
 	if err := desoMiner.BlockProducer.UpdateLatestBlockTemplate(); err != nil {
 		// Error if we can't update the template but don't stop the show.
 		glog.Error(err)
 	}
+	glog.V(0).Infof("Time to update block template: %v", time.Since(now))
+	now = time.Now()
 
 	diffTarget, blockToMine := desoMiner._mineSingleBlock(threadIndex)
 	if blockToMine == nil {
 		return nil, fmt.Errorf("DeSoMiner._startThread: _mineSingleBlock returned nil; should only happen if we're stopping")
 	}
+	glog.V(0).Infof("Time to update mine single block: %v", time.Since(now))
+	now = time.Now()
 
 	// Log information on the block we just mined.
 	bestHash, _ := blockToMine.Hash()
@@ -208,6 +222,8 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		desoMiner.BlockProducer.chain.blockTip().Header)
 	scs := spew.ConfigState{DisableMethods: true, Indent: "  ", DisablePointerAddresses: true}
 	glog.V(1).Infof(scs.Sdump(blockToMine))
+	//glog.V(0).Infof("Time to print a bunch of stuff: %v", time.Since(now))
+	now = time.Now()
 	// Sanitize the block for the comparison we're about to do. We need to do
 	// this because the comparison function below will think they're different
 	// if one has nil and one has an empty list. Annoying, but this solves the
@@ -242,6 +258,8 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	if err := desoMiner.BlockProducer.SignBlock(blockToMine); err != nil {
 		return nil, fmt.Errorf("Error signing block: %v", err)
 	}
+	//glog.V(0).Infof("Time to sign block: %v", time.Since(now))
+	now = time.Now()
 
 	// Process the block. If the block is connected and/or accepted, the Server
 	// will be informed about it. This will cause it to be relayed appropriately.
@@ -259,6 +277,8 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		return blockToMine, fmt.Errorf("ERROR calling ProcessBlock: isMainChain=(%v), isOrphan=(%v), err=(%v)",
 			isMainChain, isOrphan, err)
 	}
+	glog.V(0).Infof("Time to process block: %v", time.Since(now))
+	now = time.Now()
 
 	// If a mempool object is passed then update it. Normally this isn't necessary because
 	// ProcessBlock will trigger it because the backendServer will be set on the blockchain
@@ -266,6 +286,8 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	if mempoolToUpdate != nil {
 		mempoolToUpdate.UpdateAfterConnectBlock(blockToMine)
 	}
+	//glog.V(0).Infof("Time to update mempool after connect block: %v", time.Since(now))
+	now = time.Now()
 
 	decimalPlaces := int64(1000)
 	diffTargetBaseline, _ := hex.DecodeString(desoMiner.params.MinDifficultyTargetHex)
@@ -278,6 +300,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 	if atomic.LoadInt32(&desoMiner.stopping) == 1 {
 		return nil, fmt.Errorf("DeSoMiner._startThread: Stopping thread %d", threadIndex)
 	}
+	//glog.V(0).Infof("Time to update everything else: %v", time.Since(now))
 
 	return blockToMine, nil
 }

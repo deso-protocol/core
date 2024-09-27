@@ -793,8 +793,8 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// Update the block and header metadata chains.
 	tm.chain.bestChain.Chain = tm.chain.bestChain.Chain[:len(tm.chain.bestChain.Chain)-1]
 	tm.chain.bestHeaderChain.Chain = tm.chain.bestHeaderChain.Chain[:len(tm.chain.bestHeaderChain.Chain)-1]
-	tm.chain.bestChain.ChainMap.Delete(*lastBlockHash)
-	tm.chain.bestHeaderChain.ChainMap.Delete(*lastBlockHash)
+	tm.chain.bestChain.ChainMap.Remove(*lastBlockHash)
+	tm.chain.bestHeaderChain.ChainMap.Remove(*lastBlockHash)
 
 	// We don't pass the chain's snapshot above to prevent certain concurrency issues. As a
 	// result, we need to reset the snapshot's db cache to get rid of stale data.

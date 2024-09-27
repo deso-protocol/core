@@ -1652,7 +1652,7 @@ func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	// Remove the last block from the best chain.
 	lastBlock := bc.bestChain.Chain[len(bc.bestChain.Chain)-1]
-	bc.bestChain.ChainMap.Delete(*lastBlock.Hash)
+	bc.bestChain.ChainMap.Remove(*lastBlock.Hash)
 	bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-1]
 	return lastBlock
 }
