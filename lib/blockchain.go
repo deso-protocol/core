@@ -473,7 +473,6 @@ func (bc *Blockchain) CalcNextDifficultyTarget(
 	maxRetargetTimeSecs := targetSecs * bc.params.MaxDifficultyRetargetFactor
 
 	firstNodeHeight := lastNode.Height - blocksPerRetarget
-	// TODO: this needs to be replaced with a call to GetBlockNodeByHeight
 	firstNode := lastNode.Ancestor(firstNodeHeight, bc.blockIndex)
 	if firstNode == nil {
 		return nil, fmt.Errorf("CalcNextDifficultyTarget: Problem getting block at "+
