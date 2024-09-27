@@ -474,13 +474,8 @@ func (bc *Blockchain) CalcNextDifficultyTarget(
 
 	firstNodeHeight := lastNode.Height - blocksPerRetarget
 	// TODO: this needs to be replaced with a call to GetBlockNodeByHeight
-	firstNode, exists, err := bc.bestChain.GetBlockByHeight(uint64(firstNodeHeight))
-	if err != nil {
-		return nil, errors.Wrapf(err, "CalcNextDifficultyTarget: Problem getting block at "+
-			"beginning of retarget interval at height %d during retarget from height %d",
-			firstNodeHeight, lastNode.Height)
-	}
-	if !exists || firstNode == nil {
+	firstNode := lastNode.Ancestor(firstNodeHeight, bc.blockIndex)
+	if firstNode == nil {
 		return nil, fmt.Errorf("CalcNextDifficultyTarget: Problem getting block at "+
 			"beginning of retarget interval at height %d during retarget from height %d",
 			firstNodeHeight, lastNode.Height)
