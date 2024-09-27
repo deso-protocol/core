@@ -13,10 +13,10 @@ import (
 	"github.com/deso-protocol/core/bls"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/decred/dcrd/lru"
 	"github.com/dgraph-io/badger/v3"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -799,7 +799,8 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// We don't pass the chain's snapshot above to prevent certain concurrency issues. As a
 	// result, we need to reset the snapshot's db cache to get rid of stale data.
 	if tm.chain.snapshot != nil {
-		tm.chain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+		tm.chain.snapshot.DatabaseCache, err = lru.New[string, []byte](int(DatabaseCacheSize))
+		require.NoError(err)
 	}
 
 	// Note that unlike connecting test vectors, when disconnecting, we don't need to verify db entries.

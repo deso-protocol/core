@@ -1183,8 +1183,8 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if val, exists := snap.DatabaseCache.Lookup(keyString); exists {
-			return val.([]byte), nil
+		if val, exists := snap.DatabaseCache.Get(keyString); exists {
+			return val, nil
 		}
 	}
 
@@ -2810,7 +2810,7 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if _, exists := snap.DatabaseCache.Lookup(keyString); exists {
+		if exists := snap.DatabaseCache.Contains(keyString); exists {
 			return true, nil
 		}
 	}
