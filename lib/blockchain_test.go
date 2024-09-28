@@ -1222,12 +1222,16 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1236,11 +1240,11 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1250,6 +1254,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1273,11 +1278,11 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 30; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1287,6 +1292,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1318,12 +1324,16 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1332,11 +1342,11 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1346,6 +1356,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1369,11 +1380,11 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 30; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1383,6 +1394,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			},
 			StatusNone,
 		))
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1414,12 +1426,16 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1428,11 +1444,11 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1442,7 +1458,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1469,12 +1485,15 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    3,
 	}
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1483,11 +1502,11 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1497,7 +1516,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1524,12 +1543,16 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1538,11 +1561,11 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1552,7 +1575,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1575,11 +1598,11 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 34; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
 			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
 			nil,
@@ -1589,7 +1612,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			},
 			StatusNone,
 		))
-
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 

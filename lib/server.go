@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
@@ -363,6 +364,24 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
+func RunBlockIndexMigrationOnce(db *badger.DB, dataDir string) error {
+	blockIndexMigrationFileName := filepath.Join(dataDir, BlockIndexMigrationFileName)
+	glog.V(0).Info("FileName: ", blockIndexMigrationFileName)
+	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
+	if err == nil && hasRunMigration {
+		glog.V(0).Info("Block index migration has already been run")
+		return nil
+	}
+	glog.V(0).Info("Running block index migration")
+	if err = RunBlockIndexMigration(db, nil, nil); err != nil {
+		return errors.Wrapf(err, "Problem running block index migration")
+	}
+	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
+		return errors.Wrapf(err, "Problem saving block index migration file")
+	}
+	return nil
+}
+
 // NewServer initializes all of the internal data structures. Right now this basically
 // looks as follows:
 //   - ConnectionManager starts and keeps track of peers.
@@ -438,6 +457,10 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
+
+	if err := RunBlockIndexMigrationOnce(_db, _dataDir); err != nil {
+		return nil, errors.Wrapf(err, "NewServer: Problem running block index migration"), true
+	}
 
 	var err error
 
@@ -861,7 +884,8 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 	}
 
 	// Go through the block nodes in the blockchain and download the blocks if they're not stored.
-	for _, blockNode := range srv.blockchain.bestChain {
+	// TODO: need to figure out a way to get all the blocks in the best chain so we can download historical blocks.
+	for _, blockNode := range srv.blockchain.bestChain.Chain {
 		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
 			maxBlocksInFlight := MaxBlocksInFlight
@@ -876,8 +900,8 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 			blockNodesToFetch := []*BlockNode{}
 			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
 			var heightLimit int
-			for heightLimit = len(srv.blockchain.bestChain) - 1; heightLimit >= 0; heightLimit-- {
-				if !srv.blockchain.bestChain[heightLimit].Status.IsFullyProcessed() {
+			for heightLimit = len(srv.blockchain.bestChain.Chain) - 1; heightLimit >= 0; heightLimit-- {
+				if !srv.blockchain.bestChain.Chain[heightLimit].Status.IsFullyProcessed() {
 					break
 				}
 			}
@@ -888,7 +912,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 
 				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
 				// the array index.
-				currentNode := srv.blockchain.bestChain[currentHeight]
+				currentNode := srv.blockchain.bestChain.Chain[currentHeight]
 				currentHeight++
 
 				// If we've already requested this block then we don't request it again.
@@ -1015,9 +1039,11 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	var hasSeenCheckpointBlockHash bool
 	var checkpointBlockNode *BlockNode
 	if isHeaderChain {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChain.GetBlockByHashAndHeight(
+			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
 	} else {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChain.GetBlockByHashAndHeight(
+			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
 	}
 	// If we haven't seen the checkpoint block hash yet, we skip signature verification.
 	if !hasSeenCheckpointBlockHash {
@@ -1047,9 +1073,11 @@ func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
 	}
 	hasSeenCheckPointBlockHash := false
 	if isHeaders {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChain.GetBlockByHashAndHeight(
+			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
 	} else {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChain.GetBlockByHashAndHeight(
+			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
 	}
 	if !hasSeenCheckPointBlockHash {
 		return fmt.Sprintf("<Checkpoint block %v not seen yet>", checkpointBlockInfo.String())
@@ -1086,7 +1114,8 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// have this issue. Hitting duplicates after we're done syncing is
 		// fine and can happen in certain cases.
 		headerHash, _ := headerReceived.Hash()
-		if srv.blockchain.HasHeader(headerHash) {
+		hasHeader := srv.blockchain.HasHeaderByHashAndHeight(headerHash, headerReceived.Height)
+		if hasHeader {
 			if srv.blockchain.isSyncing() {
 
 				glog.Warningf("Server._handleHeaderBundle: Duplicate header %v received from peer %v "+
@@ -1228,11 +1257,21 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// expected height at which the snapshot should be taking place. We do this to make sure that the
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
+				expectedSnapshotHeightBlock, expectedSnapshotHeightblockExists, err :=
+					srv.blockchain.bestHeaderChain.GetBlockByHeight(expectedSnapshotHeight)
+				if err != nil {
+					glog.Errorf("Server._handleHeaderBundle: Problem getting expected snapshot height block, error (%v)", err)
+					return
+				}
+				if !expectedSnapshotHeightblockExists || expectedSnapshotHeightBlock == nil {
+					glog.Errorf("Server._handleHeaderBundle: Expected snapshot height block doesn't exist.")
+					return
+				}
 				srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 					SnapshotBlockHeight:       expectedSnapshotHeight,
 					FirstSnapshotBlockHeight:  expectedSnapshotHeight,
 					CurrentEpochChecksumBytes: []byte{},
-					CurrentEpochBlockHash:     srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash,
+					CurrentEpochBlockHash:     expectedSnapshotHeightBlock.Hash,
 				}
 				srv.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
 				srv.HyperSyncProgress.Completed = false
@@ -1309,7 +1348,8 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// we're either not aware of or that we don't think is the best chain.
 			// Doing things this way makes it so that when we request blocks we
 			// are 100% positive the peer has them.
-			if !srv.blockchain.HasHeader(msg.TipHash) {
+			hasHeader := srv.blockchain.HasHeaderByHashAndHeight(msg.TipHash, uint64(msg.TipHeight))
+			if !hasHeader {
 				glog.V(1).Infof("Server._handleHeaderBundle: Peer's tip is not in our "+
 					"blockchain so not requesting anything else from them. Our block "+
 					"tip %v, their tip %v:%d, peer: %v",
@@ -1364,6 +1404,8 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
 		"header tip %v out of %d from peer %v",
 		headerTip.Header, msg.TipHeight, pp)
+	glog.V(0).Infof("Server._handleHeaderBundle: Num Headers in header chain: (chain map: %v) - (chain: %v) ",
+		srv.blockchain.bestHeaderChain.ChainMap.Len(), len(srv.blockchain.bestHeaderChain.Chain))
 }
 
 func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
@@ -1635,10 +1677,18 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
 	glog.Infof(CLog(Magenta, fmt.Sprintf("Metadata checksum: (%v)",
 		srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
-
-	glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
-		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)))
-
+	blockNode, exists, err := srv.blockchain.bestHeaderChain.GetBlockByHeight(msg.SnapshotMetadata.SnapshotBlockHeight)
+	if err != nil {
+		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error (%v)", err)
+		return
+	}
+	if !exists {
+		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist: (%v)", msg.SnapshotMetadata.SnapshotBlockHeight)
+		//return
+	} else {
+		glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
+			blockNode, srv.blockchain.bestChain.Chain)))
+	}
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
 	checksumBytes, err := srv.snapshot.Checksum.ToBytes()
@@ -1680,14 +1730,21 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// being too large and possibly causing an error in badger.
 	var blockNodeBatch []*BlockNode
 	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-		currentNode := srv.blockchain.bestHeaderChain[ii]
+		currentNode, currentNodeExists, err := srv.blockchain.bestHeaderChain.GetBlockByHeight(ii)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error: (%v)", err)
+			break
+		}
+		if !currentNodeExists {
+			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist")
+			break
+		}
 		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
 		currentNode.Status |= StatusBlockProcessed
 		currentNode.Status |= StatusBlockValidated
 		currentNode.Status |= StatusBlockCommitted
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
-		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
+		srv.blockchain.bestChain.PushNewTip(currentNode)
 		blockNodeBatch = append(blockNodeBatch, currentNode)
 		if len(blockNodeBatch) < 10000 {
 			continue

@@ -10,8 +10,8 @@ require (
 	github.com/bxcodec/faker v2.0.1+incompatible
 	github.com/cloudflare/circl v1.1.0
 	github.com/davecgh/go-spew v1.1.1
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
-	github.com/decred/dcrd/lru v1.1.1
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
+	github.com/decred/dcrd/lru v1.1.3
 	github.com/deso-protocol/go-deadlock v1.0.0
 	github.com/deso-protocol/go-merkle-tree v1.0.0
 	github.com/dgraph-io/badger/v3 v3.2103.5
@@ -22,6 +22,7 @@ require (
 	github.com/go-pg/pg/v10 v10.10.0
 	github.com/golang/glog v1.0.0
 	github.com/google/uuid v1.2.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/holiman/uint256 v1.1.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
@@ -36,8 +37,8 @@ require (
 	github.com/stretchr/testify v1.8.0
 	github.com/tyler-smith/go-bip39 v1.0.2
 	github.com/unrolled/secure v1.0.8
-	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
+	golang.org/x/crypto v0.27.0
+	golang.org/x/sync v0.8.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.29.0
 )
 
@@ -55,6 +56,7 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
+	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
@@ -63,7 +65,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/golang/snappy v0.0.3 // indirect
+	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/flatbuffers v2.0.0+incompatible // indirect
 	github.com/google/pprof v0.0.0-20210226084205-cbba55b83ad5 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -99,11 +101,11 @@ require (
 	github.com/vmihailenco/tagparser v0.1.2 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/net v0.29.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
 	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	gonum.org/v1/gonum v0.6.1 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect

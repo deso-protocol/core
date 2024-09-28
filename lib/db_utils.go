@@ -604,7 +604,11 @@ type DBPrefixes struct {
 	// When reading and writing data to this prefixes, please acquire the snapshotDbMutex in the snapshot.
 	PrefixHypersyncSnapshotDBPrefix []byte `prefix_id:"[97]"`
 
-	// NEXT_TAG: 98
+	// PrefixHashToHeight is used to store the height of a block given its hash.
+	// This helps us map a block hash to its height so we can look up the full info
+	// in PrefixHeightHashToNodeInfo.
+	PrefixHashToHeight []byte `prefix_id:"[98]"`
+	// NEXT_TAG: 99
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -5188,6 +5192,13 @@ func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
 	return prefix
 }
 
+func _heightHashToNodePrefixByHeight(height uint32, bitcoinNodes bool) []byte {
+	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
+	heightBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(heightBytes[:], height)
+	return append(prefix, heightBytes[:]...)
+}
+
 func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool) []byte {
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
 
@@ -5196,6 +5207,12 @@ func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool
 	key := append(prefix, heightBytes[:]...)
 	key = append(key, hash[:]...)
 
+	return key
+}
+
+func _hashToHeightIndexKey(hash *BlockHash) []byte {
+	key := append([]byte{}, Prefixes.PrefixHashToHeight...)
+	key = append(key, hash[:]...)
 	return key
 }
 
@@ -5238,7 +5255,42 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 	if err := DBSetWithTxn(txn, snap, key, serializedNode, eventManager); err != nil {
 		return err
 	}
+
+	hashToHeightKey := _hashToHeightIndexKey(node.Hash)
+	if err = DBSetWithTxn(txn, snap, hashToHeightKey, UintToBuf(uint64(node.Height)), eventManager); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func PutHashToHeightBatch(handle *badger.DB, snap *Snapshot, hashToHeight map[BlockHash]uint32, eventManager *EventManager) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		for hash, height := range hashToHeight {
+			key := _hashToHeightIndexKey(&hash)
+			if err := DBSetWithTxn(txn, snap, key, UintToBuf(uint64(height)), eventManager); err != nil {
+				return errors.Wrap(err, "PutHashToHeightBatch: Problem setting hash to height")
+			}
+		}
+		return nil
+	})
+}
+
+func GetHeightForHash(db *badger.DB, snap *Snapshot, hash *BlockHash) (uint64, error) {
+	var height uint64
+	err := db.View(func(txn *badger.Txn) error {
+		key := _hashToHeightIndexKey(hash)
+		heightBytes, err := DBGetWithTxn(txn, snap, key)
+		if err != nil {
+			return err
+		}
+		height, _ = Uvarint(heightBytes)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return height, nil
 }
 
 func PutHeightHashToNodeInfoBatch(handle *badger.DB, snap *Snapshot,
@@ -5544,9 +5596,110 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 	return blockIndex, nil
 }
 
+func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams) error {
+	prefix := _heightHashToNodePrefixByHeight(height, false)
+
+	return bi.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			var blockNode *BlockNode
+
+			// Don't bother checking the key. We assume that the key lines up
+			// with what we've stored in the value in terms of (height, block hash).
+			item := nodeIterator.Item()
+			err := item.Value(func(blockNodeBytes []byte) error {
+				// Deserialize the block node.
+				var err error
+				// TODO: There is room for optimization here by pre-allocating a
+				// contiguous list of block nodes and then populating that list
+				// rather than having each blockNode be a stand-alone allocation.
+				blockNode, err = DeserializeBlockNode(blockNodeBytes)
+				if err != nil {
+					return err
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+
+			// If we got here it means we read a blockNode successfully. Store it
+			// into our node index.
+			bi.addNewBlockNodeToBlockIndex(blockNode)
+
+			// Find the parent of this block, which should already have been read
+			// in and connect it. Skip the genesis block, which has height 0. Also
+			// skip the block if its PrevBlockHash is empty, which will be true for
+			// the BitcoinStartBlockNode.
+			//
+			// TODO: There is room for optimization here by keeping a reference to
+			// the last node we've iterated over and checking if that node is the
+			// parent. Doing this would avoid an expensive hashmap check to get
+			// the parent by its block hash.
+			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
+				continue
+			}
+			if parent, ok := bi.GetBlockNodeByHashAndHeight(blockNode.Header.PrevBlockHash, uint64(blockNode.Height)); ok {
+				// We found the parent node so connect it.
+				blockNode.Parent = parent
+			} else {
+				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
+				// be orphan blocks in the block index. In this case, we don't throw an error.
+				if params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+					continue
+				}
+				// In this case we didn't find the parent so error. There shouldn't
+				// be any unconnectedTxns in our block index.
+				return fmt.Errorf("GetBlockIndex: Could not find parent for blockNode: %+v", blockNode)
+			}
+		}
+		return nil
+	})
+}
+
+func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager) error {
+	return handle.View(func(txn *badger.Txn) error {
+		prefix := _heightHashToNodeIndexPrefix(false)
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		// We don't need values for this migration.
+		opts.PrefetchValues = false
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+		hashToHeightMap := make(map[BlockHash]uint32)
+		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			item := nodeIterator.Item().Key()
+
+			// Parse the key to get the height and hash.
+			height := binary.BigEndian.Uint32(item[1:5])
+			hash := BlockHash{}
+			copy(hash[:], item[5:])
+			hashToHeightMap[hash] = height
+			if len(hashToHeightMap) < 10000 {
+				continue
+			}
+			innerErr := PutHashToHeightBatch(handle, snapshot, hashToHeightMap, eventManager)
+			if innerErr != nil {
+				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
+			}
+			hashToHeightMap = make(map[BlockHash]uint32)
+		}
+		if len(hashToHeightMap) > 0 {
+			innerErr := PutHashToHeightBatch(handle, snapshot, hashToHeightMap, eventManager)
+			if innerErr != nil {
+				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
+			}
+		}
+		return nil
+	})
+}
+
 func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
-	for tipNode != nil {
+	maxBestChainInitLength := 3600 * 100 // Cache up to 100 hours of blocks.
+	for tipNode != nil && len(reversedBestChain) < maxBestChainInitLength {
 		if (tipNode.Status&StatusBlockValidated) == 0 &&
 			(tipNode.Status&StatusBitcoinHeaderValidated) == 0 {
 

@@ -330,7 +330,12 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 		} else if invVect.Type == InvTypeBlock {
 			// For blocks, we check that the hash isn't known to us either in our
 			// main header chain or in side chains.
-			if pp.srv.blockchain.HasHeader(&currentHash) {
+			exists, err := pp.srv.blockchain.HasHeader(&currentHash)
+			if exists {
+				continue
+			}
+			if err != nil {
+				glog.Errorf("Server._handleInv: Error checking if block exists: %v", err)
 				continue
 			}
 

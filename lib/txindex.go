@@ -171,7 +171,8 @@ func (txi *TXIndex) Start() {
 				txi.updateWaitGroup.Done()
 				return
 			default:
-				if txi.CoreChain.ChainState() == SyncStateFullyCurrent {
+				chainState := txi.CoreChain.ChainState()
+				if chainState == SyncStateFullyCurrent || (chainState == SyncStateNeedBlocksss && txi.CoreChain.headerTip().Height-txi.CoreChain.blockTip().Height < 10) {
 					if !txi.CoreChain.IsFullyStored() {
 						glog.V(1).Infof("TXIndex: Waiting, blockchain is not fully stored")
 						break
@@ -225,7 +226,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	// The only thing we can really do in this case is rebuild the entire index
 	// from scratch. To do that, we return all the blocks in the index to detach
 	// and all the blocks in the real chain to attach.
-	txindexTipNode, _ := txi.TXIndexChain.blockIndexByHash.Get(*txindexTipHash.Hash)
+	txindexTipNode, _ := txi.TXIndexChain.blockIndex.GetBlockNodeByHashAndHeight(txindexTipHash.Hash, uint64(txindexTipHash.Height))
 
 	// Get the committed tip.
 	committedTip, _ := txi.CoreChain.GetCommittedTip()
@@ -242,7 +243,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(&derefedTxindexTipNode, committedTip)
+	commonAncestor, detachBlocks, attachBlocks := txi.CoreChain.GetReorgBlocks(&derefedTxindexTipNode, committedTip)
 
 	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
 }
@@ -368,13 +369,13 @@ func (txi *TXIndex) Update() error {
 		// Delete this block from the chain db so we don't get duplicate block errors.
 
 		// Remove this block from our bestChain data structures.
-		newBlockIndexByHash, newBlockIndexByHeight := txi.TXIndexChain.CopyBlockIndexes()
+		newBlockIndex := txi.TXIndexChain.CopyBlockIndexes()
 		newBestChain, newBestChainMap := txi.TXIndexChain.CopyBestChain()
 		newBestChain = newBestChain[:len(newBestChain)-1]
-		delete(newBestChainMap, *(blockToDetach.Hash))
-		newBlockIndexByHash.Remove(*(blockToDetach.Hash))
+		newBestChainMap.Remove(*blockToDetach.Hash)
+		newBlockIndex.Remove(*blockToDetach.Hash)
 
-		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndexByHash, newBlockIndexByHeight)
+		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndex)
 
 		// At this point the entries for the block should have been removed
 		// from both our Txindex chain and our transaction index mappings.
@@ -408,7 +409,7 @@ func (txi *TXIndex) Update() error {
 		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
 		if blockToAttach.Header.PrevBlockHash != nil && !utxoView.TipHash.IsEqual(blockToAttach.Header.PrevBlockHash) {
 			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
-			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash)
+			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash, blockToAttach.Header.Height-1)
 			if err != nil {
 				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
 					blockToAttach.Header.PrevBlockHash, err)
