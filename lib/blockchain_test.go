@@ -1254,7 +1254,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1292,7 +1292,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1356,7 +1356,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1394,7 +1394,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1458,7 +1458,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1516,7 +1516,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1575,7 +1575,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1612,7 +1612,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			},
 			StatusNone,
 		))
-		bc.bestChain.PushNewTip(nodes[len(nodes)-1])
+		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
