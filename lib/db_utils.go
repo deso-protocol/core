@@ -5669,6 +5669,9 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		nodeIterator := txn.NewIterator(opts)
 		defer nodeIterator.Close()
 		hashToHeightMap := make(map[BlockHash]uint32)
+		// Just in case we need it, get the height of the best hash.
+		bestHash := DbGetBestHash(handle, snapshot, ChainTypeDeSoBlock)
+		var bestHashHeight uint32
 		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 			item := nodeIterator.Item().Key()
 
@@ -5677,6 +5680,9 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 			hash := BlockHash{}
 			copy(hash[:], item[5:])
 			hashToHeightMap[hash] = height
+			if bestHash != nil && bestHash.IsEqual(&hash) {
+				bestHashHeight = height
+			}
 			if len(hashToHeightMap) < 10000 {
 				continue
 			}
@@ -5692,6 +5698,10 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
 			}
 		}
+		// If we don't have a best hash, then we certainly haven't hit the first pos block height.
+		if bestHash == nil {
+			return nil
+		}
 		// TODO: get best chain up to PoS Cutover height and set all blocks in that chain to committed.
 		firstPoSBlockHeight := params.GetFirstPoSBlockHeight()
 		// Look up blocks at cutover height.
@@ -5700,15 +5710,21 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		if err != nil {
 			return errors.Wrap(err, "RunBlockIndexMigration: Problem enumerating keys for prefix")
 		}
-		if len(valsFound) == 0 {
-			return fmt.Errorf("RunBlockIndexMigration: No blocks found at PoS cutover height")
-		}
 		if len(valsFound) > 1 {
 			return fmt.Errorf("RunBlockIndexMigration: More than one block found at PoS cutover height")
 		}
-		blockNode, err := DeserializeBlockNode(valsFound[0])
-		if err != nil {
-			return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node for pos cutover")
+		var blockNode *BlockNode
+		// In this case, we need to find pull the best hash from the DB and iterate backwards.
+		if len(valsFound) == 0 {
+			blockNode = GetHeightHashToNodeInfoWithTxn(txn, snapshot, bestHashHeight, bestHash, false)
+			if blockNode == nil {
+				return fmt.Errorf("RunBlockIndexMigration: block with Best hash (%v) and height (%v) not found", bestHash, bestHashHeight)
+			}
+		} else {
+			blockNode, err = DeserializeBlockNode(valsFound[0])
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node for pos cutover")
+			}
 		}
 		var blockNodeBatch []*BlockNode
 		for blockNode != nil {
