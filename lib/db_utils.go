@@ -5360,7 +5360,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		diffTarget,
 		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
 		genesisBlock.Header, // Header
-		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
+		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated|StatusBlockCommitted, // Status
 	)
 
 	// Set the fields in the db to reflect the current state of our chain.

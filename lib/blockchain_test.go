@@ -1252,9 +1252,9 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1290,9 +1290,9 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 				// Blocks generating every 4 second, which is 2x too slow.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1354,9 +1354,9 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1392,9 +1392,9 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 				// Blocks generating every 8 second, which is >2x too slow.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
@@ -1456,9 +1456,9 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 				// Blocks generating all at once.
 				TstampNanoSecs: SecondsToNanoSeconds(0),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1514,9 +1514,9 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 				// Blocks generating every 2 second, which is under the limit.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 2)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1573,9 +1573,9 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1610,9 +1610,9 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 				// Blocks generating every 3 seconds, which is slow but under the limit.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii) * 3),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-		bc.bestHeaderChain.PushNewTip(nodes[len(nodes)-1])
+		bc.blockIndex.SetHeaderTip(nodes[len(nodes)-1])
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 

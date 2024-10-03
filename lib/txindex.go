@@ -150,8 +150,8 @@ func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string)
 }
 
 func (txi *TXIndex) FinishedSyncing() bool {
-	committedTip, idx := txi.CoreChain.GetCommittedTip()
-	if idx == -1 {
+	committedTip, exists := txi.CoreChain.GetCommittedTip()
+	if !exists {
 		return false
 	}
 	return txi.TXIndexChain.BlockTip().Height == committedTip.Height
@@ -208,8 +208,7 @@ func (txi *TXIndex) Stop() {
 
 // GetTxindexUpdateBlockNodes ...
 func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
-	_txindexTipNode *BlockNode, _blockTipNode *BlockNode, _commonAncestor *BlockNode,
-	_detachBlocks []*BlockNode, _attachBlocks []*BlockNode) {
+	_txindexTipNode *BlockNode, _blockTipNode *BlockNode, _commonAncestor *BlockNode) {
 
 	// Get the current txindex tip.
 	txindexTipHash := txi.TXIndexChain.BlockTip()
@@ -219,7 +218,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 		// case.
 		glog.Error("Error: TXIndexChain had nil tip; this should never " +
 			"happen and it means the transaction index is broken.")
-		return nil, nil, nil, nil, nil
+		return nil, nil, nil
 	}
 	// If the tip of the txindex is no longer stored in the block index, it
 	// means the txindex hit a fork that we are no longer keeping track of.
@@ -230,22 +229,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 
 	// Get the committed tip.
 	committedTip, _ := txi.CoreChain.GetCommittedTip()
-	if txindexTipNode == nil {
-		glog.Info("GetTxindexUpdateBlockNodes: Txindex tip was not found; building txindex starting at genesis block")
-
-		newTxIndexBestChain, _ := txi.TXIndexChain.CopyBestChain()
-		newBlockchainBestChain, _ := txi.CoreChain.CopyBestChain()
-
-		return txindexTipNode, committedTip, nil, newTxIndexBestChain, newBlockchainBestChain
-	}
-
-	derefedTxindexTipNode := *txindexTipNode
-
-	// At this point, we know our txindex tip is in our block index so
-	// there must be a common ancestor between the tip and the block tip.
-	commonAncestor, detachBlocks, attachBlocks := txi.CoreChain.GetReorgBlocks(&derefedTxindexTipNode, committedTip)
-
-	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
+	return txindexTipNode, committedTip, txindexTipNode
 }
 
 // Update syncs the transaction index with the blockchain.
@@ -265,7 +249,7 @@ func (txi *TXIndex) Update() error {
 	// done with the rest of the function.
 	txi.TXIndexLock.Lock()
 	defer txi.TXIndexLock.Unlock()
-	txindexTipNode, blockTipNode, commonAncestor, detachBlocks, attachBlocks := txi.GetTxindexUpdateBlockNodes()
+	txindexTipNode, blockTipNode, commonAncestor := txi.GetTxindexUpdateBlockNodes()
 
 	// Note that the blockchain's ChainLock does not need to be held at this
 	// point because we're just reading blocks from the db, which never get
@@ -294,97 +278,100 @@ func (txi *TXIndex) Update() error {
 
 	// For each of the blocks we're removing, delete the transactions from
 	// the transaction index.
-	for _, blockToDetach := range detachBlocks {
-		if txi.killed {
-			glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while detaching blocks"))
-			break
-		}
-		// Go through each txn in the block and delete its mappings from our
-		// txindex.
-		glog.V(1).Infof("Update: Detaching block (height: %d, hash: %v)",
-			blockToDetach.Height, blockToDetach.Hash)
-		blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB(), nil)
-		if err != nil {
-			return fmt.Errorf("Update: Problem fetching detach block "+
-				"with hash %v: %v", blockToDetach.Hash, err)
-		}
-		blockHeight := uint64(txi.CoreChain.blockTip().Height)
-		err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
-			for _, txn := range blockMsg.Txns {
-				if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn, nil,
-					blockHeight, txn, txi.Params, txi.CoreChain.eventManager, true); err != nil {
-
-					return fmt.Errorf("Update: Problem deleting "+
-						"transaction mappings for transaction %v: %v", txn.Hash(), err)
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-
-		// Now that all the transactions have been deleted from our txindex,
-		// it's safe to disconnect the block from our txindex chain.
-		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
-		utxoOps, err := GetUtxoOperationsForBlock(
-			txi.TXIndexChain.DB(), nil, blockToDetach.Hash)
-		if err != nil {
-			return fmt.Errorf(
-				"Update: Error getting UtxoOps for block %v: %v", blockToDetach, err)
-		}
-		// Compute the hashes for all the transactions.
-		txHashes, err := ComputeTransactionHashes(blockMsg.Txns)
-		if err != nil {
-			return fmt.Errorf(
-				"Update: Error computing tx hashes for block %v: %v",
-				blockToDetach, err)
-		}
-		if err := utxoView.DisconnectBlock(blockMsg, txHashes, utxoOps, blockHeight); err != nil {
-			return fmt.Errorf("Update: Error detaching block "+
-				"%v from UtxoView: %v", blockToDetach, err)
-		}
-		if err := utxoView.FlushToDb(blockHeight); err != nil {
-			return fmt.Errorf("Update: Error flushing view to db for block "+
-				"%v: %v", blockToDetach, err)
-		}
-		// We have to flush a couple of extra things that the view doesn't flush...
-		if err := PutBestHash(txi.TXIndexChain.DB(), nil, utxoView.TipHash, ChainTypeDeSoBlock, txi.CoreChain.eventManager); err != nil {
-			return fmt.Errorf("Update: Error putting best hash for block "+
-				"%v: %v", blockToDetach, err)
-		}
-		err = txi.TXIndexChain.DB().Update(func(txn *badger.Txn) error {
-			if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, blockToDetach.Hash, txi.TXIndexChain.eventManager, true); err != nil {
-				return fmt.Errorf("Update: Error deleting UtxoOperations 1 for block %v, %v", blockToDetach.Hash, err)
-			}
-			if err := txn.Delete(BlockHashToBlockKey(blockToDetach.Hash)); err != nil {
-				return fmt.Errorf("Update: Error deleting UtxoOperations 2 for block %v %v", blockToDetach.Hash, err)
-			}
-			return nil
-		})
-
-		if err != nil {
-			return fmt.Errorf("Update: Error updating badgger: %v", err)
-		}
-		// Delete this block from the chain db so we don't get duplicate block errors.
-
-		// Remove this block from our bestChain data structures.
-		newBlockIndex := txi.TXIndexChain.CopyBlockIndexes()
-		newBestChain, newBestChainMap := txi.TXIndexChain.CopyBestChain()
-		newBestChain = newBestChain[:len(newBestChain)-1]
-		newBestChainMap.Remove(*blockToDetach.Hash)
-		newBlockIndex.Remove(*blockToDetach.Hash)
-
-		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndex)
-
-		// At this point the entries for the block should have been removed
-		// from both our Txindex chain and our transaction index mappings.
-	}
+	// TODO: delete - we're simplifying the txindex logic to only use committed state.
+	//for _, blockToDetach := range detachBlocks {
+	//	if txi.killed {
+	//		glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while detaching blocks"))
+	//		break
+	//	}
+	//	// Go through each txn in the block and delete its mappings from our
+	//	// txindex.
+	//	glog.V(1).Infof("Update: Detaching block (height: %d, hash: %v)",
+	//		blockToDetach.Height, blockToDetach.Hash)
+	//	blockMsg, err := GetBlock(blockToDetach.Hash, txi.TXIndexChain.DB(), nil)
+	//	if err != nil {
+	//		return fmt.Errorf("Update: Problem fetching detach block "+
+	//			"with hash %v: %v", blockToDetach.Hash, err)
+	//	}
+	//	blockHeight := uint64(txi.CoreChain.blockTip().Height)
+	//	err = txi.TXIndexChain.DB().Update(func(dbTxn *badger.Txn) error {
+	//		for _, txn := range blockMsg.Txns {
+	//			if err := DbDeleteTxindexTransactionMappingsWithTxn(dbTxn, nil,
+	//				blockHeight, txn, txi.Params, txi.CoreChain.eventManager, true); err != nil {
+	//
+	//				return fmt.Errorf("Update: Problem deleting "+
+	//					"transaction mappings for transaction %v: %v", txn.Hash(), err)
+	//			}
+	//		}
+	//		return nil
+	//	})
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//	// Now that all the transactions have been deleted from our txindex,
+	//	// it's safe to disconnect the block from our txindex chain.
+	//	utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
+	//	utxoOps, err := GetUtxoOperationsForBlock(
+	//		txi.TXIndexChain.DB(), nil, blockToDetach.Hash)
+	//	if err != nil {
+	//		return fmt.Errorf(
+	//			"Update: Error getting UtxoOps for block %v: %v", blockToDetach, err)
+	//	}
+	//	// Compute the hashes for all the transactions.
+	//	txHashes, err := ComputeTransactionHashes(blockMsg.Txns)
+	//	if err != nil {
+	//		return fmt.Errorf(
+	//			"Update: Error computing tx hashes for block %v: %v",
+	//			blockToDetach, err)
+	//	}
+	//	if err := utxoView.DisconnectBlock(blockMsg, txHashes, utxoOps, blockHeight); err != nil {
+	//		return fmt.Errorf("Update: Error detaching block "+
+	//			"%v from UtxoView: %v", blockToDetach, err)
+	//	}
+	//	if err := utxoView.FlushToDb(blockHeight); err != nil {
+	//		return fmt.Errorf("Update: Error flushing view to db for block "+
+	//			"%v: %v", blockToDetach, err)
+	//	}
+	//	// We have to flush a couple of extra things that the view doesn't flush...
+	//	if err := PutBestHash(txi.TXIndexChain.DB(), nil, utxoView.TipHash, ChainTypeDeSoBlock, txi.CoreChain.eventManager); err != nil {
+	//		return fmt.Errorf("Update: Error putting best hash for block "+
+	//			"%v: %v", blockToDetach, err)
+	//	}
+	//	err = txi.TXIndexChain.DB().Update(func(txn *badger.Txn) error {
+	//		if err := DeleteUtxoOperationsForBlockWithTxn(txn, nil, blockToDetach.Hash, txi.TXIndexChain.eventManager, true); err != nil {
+	//			return fmt.Errorf("Update: Error deleting UtxoOperations 1 for block %v, %v", blockToDetach.Hash, err)
+	//		}
+	//		if err := txn.Delete(BlockHashToBlockKey(blockToDetach.Hash)); err != nil {
+	//			return fmt.Errorf("Update: Error deleting UtxoOperations 2 for block %v %v", blockToDetach.Hash, err)
+	//		}
+	//		return nil
+	//	})
+	//
+	//	if err != nil {
+	//		return fmt.Errorf("Update: Error updating badgger: %v", err)
+	//	}
+	//	// Delete this block from the chain db so we don't get duplicate block errors.
+	//
+	//	// Remove this block from our bestChain data structures.
+	//	newBlockIndex := txi.TXIndexChain.CopyBlockIndexes()
+	//	newTip := blockToDetach.GetParent(txi.TXIndexChain.blockIndex)
+	//	if newTip == nil {
+	//		return fmt.Errorf("Update: Error getting parent of block %v", blockToDetach)
+	//	}
+	//
+	//	txi.TXIndexChain.SetBestChainMap(newBlockIndex, newTip)
+	//
+	//	// At this point the entries for the block should have been removed
+	//	// from both our Txindex chain and our transaction index mappings.
+	//}
 
 	// For each of the blocks we're adding, process them on our txindex chain
 	// and add their mappings to our txn index. Compute any metadata that might
 	// be useful.
-	for _, blockToAttach := range attachBlocks {
+	blockToAttach := &BlockNode{}
+	*blockToAttach = *txindexTipNode
+	for !blockToAttach.Hash.IsEqual(blockTipNode.Hash) {
 		if txi.killed {
 			glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while attaching blocks"))
 			break
@@ -453,6 +440,11 @@ func (txi *TXIndex) Update() error {
 		if err != nil {
 			return fmt.Errorf("Update: Problem attaching block %v: %v",
 				blockToAttach, err)
+		}
+		var exists bool
+		blockToAttach, exists, err = txi.CoreChain.GetBlockFromBestChainByHeight(uint64(blockToAttach.Height+1), false)
+		if !exists || err != nil {
+			return fmt.Errorf("Update: Problem getting block at height %d: %v", blockToAttach.Height+1, err)
 		}
 	}
 
