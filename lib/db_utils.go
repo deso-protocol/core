@@ -5659,8 +5659,8 @@ func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams
 	})
 }
 
-func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager) error {
-	return handle.View(func(txn *badger.Txn) error {
+func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager, params *DeSoParams) error {
+	return handle.Update(func(txn *badger.Txn) error {
 		prefix := _heightHashToNodeIndexPrefix(false)
 		opts := badger.DefaultIteratorOptions
 		opts.Prefix = prefix
@@ -5691,6 +5691,48 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 			if innerErr != nil {
 				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
 			}
+		}
+		// TODO: get best chain up to PoS Cutover height and set all blocks in that chain to committed.
+		firstPoSBlockHeight := params.GetFirstPoSBlockHeight()
+		// Look up blocks at cutover height.
+		prefixKey := _heightHashToNodePrefixByHeight(uint32(firstPoSBlockHeight), false)
+		_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, prefixKey, false)
+		if err != nil {
+			return errors.Wrap(err, "RunBlockIndexMigration: Problem enumerating keys for prefix")
+		}
+		if len(valsFound) == 0 {
+			return fmt.Errorf("RunBlockIndexMigration: No blocks found at PoS cutover height")
+		}
+		if len(valsFound) > 1 {
+			return fmt.Errorf("RunBlockIndexMigration: More than one block found at PoS cutover height")
+		}
+		blockNode, err := DeserializeBlockNode(valsFound[0])
+		if err != nil {
+			return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node for pos cutover")
+		}
+		var blockNodeBatch []*BlockNode
+		for blockNode != nil {
+			if !blockNode.IsCommitted() {
+				blockNode.Status |= StatusBlockCommitted
+			}
+			// TODO: make sure I don't need a copy.
+			blockNodeBatch = append(blockNodeBatch, blockNode)
+			if len(blockNodeBatch) < 10000 {
+				continue
+			}
+			err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+			}
+			parentBlockNode := GetHeightHashToNodeInfoWithTxn(txn, snapshot, blockNode.Height, blockNode.Hash, false /*bitcoinNodes*/)
+			if blockNode.Height > 0 && parentBlockNode == nil {
+				return errors.New("RunBlockIndexMigration: Parent block node not found")
+			}
+			blockNode = parentBlockNode
+		}
+		err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+		if err != nil {
+			return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
 		}
 		return nil
 	})

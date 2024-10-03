@@ -364,8 +364,8 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
-func RunBlockIndexMigrationOnce(db *badger.DB, dataDir string) error {
-	blockIndexMigrationFileName := filepath.Join(dataDir, BlockIndexMigrationFileName)
+func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
+	blockIndexMigrationFileName := filepath.Join(db.Opts().Dir, BlockIndexMigrationFileName)
 	glog.V(0).Info("FileName: ", blockIndexMigrationFileName)
 	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
 	if err == nil && hasRunMigration {
@@ -373,7 +373,7 @@ func RunBlockIndexMigrationOnce(db *badger.DB, dataDir string) error {
 		return nil
 	}
 	glog.V(0).Info("Running block index migration")
-	if err = RunBlockIndexMigration(db, nil, nil); err != nil {
+	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
 		return errors.Wrapf(err, "Problem running block index migration")
 	}
 	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
@@ -457,11 +457,6 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
-
-	if err := RunBlockIndexMigrationOnce(_db, _dataDir); err != nil {
-		return nil, errors.Wrapf(err, "NewServer: Problem running block index migration"), true
-	}
-
 	var err error
 
 	// Only initialize state change syncer if the directories are defined.

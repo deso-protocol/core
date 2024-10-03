@@ -1306,6 +1306,9 @@ func NewBlockchain(
 	archivalMode bool,
 	checkpointSyncingProviders []string,
 ) (*Blockchain, error) {
+	if err := RunBlockIndexMigrationOnce(db, params); err != nil {
+		return nil, errors.Wrapf(err, "NewBlockchain: Problem running block index migration")
+	}
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
 	for _, keyStr := range trustedBlockProducerPublicKeyStrs {
