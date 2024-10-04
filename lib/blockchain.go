@@ -1335,14 +1335,8 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex: NewBlockIndex(db, snapshot, nil), // TODO: replace with actual tip.
-		//blockIndexByHash:   collections.NewConcurrentMap[BlockHash, *BlockNode](),
-		//blockIndexByHeight: make(map[uint64]map[BlockHash]*BlockNode),
-		//bestChainMap: make(map[BlockHash]*BlockNode),
-		//bestChain: NewBestChain(db, snapshot, false, params),
-		//bestHeaderChainMap: make(map[BlockHash]*BlockNode),
-		//bestHeaderChain: NewBestChain(db, snapshot, true, params),
-		blockViewCache: lru.NewKVCache(100), // TODO: parameterize
+		blockIndex:     NewBlockIndex(db, snapshot, nil), // TODO: replace with actual tip.
+		blockViewCache: lru.NewKVCache(100),              // TODO: parameterize
 		snapshotCache:  NewSnapshotCache(),
 
 		checkpointSyncingProviders: checkpointSyncingProviders,
