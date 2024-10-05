@@ -1,6 +1,9 @@
 package lib
 
-import "github.com/google/uuid"
+import (
+	"github.com/dgraph-io/badger/v3"
+	"github.com/google/uuid"
+)
 
 type TransactionEventFunc func(event *TransactionEvent)
 type StateSyncerOperationEventFunc func(event *StateSyncerOperationEvent)
@@ -59,7 +62,10 @@ type EventManager struct {
 	blockCommittedHandlers       []BlockEventFunc
 	blockAcceptedHandlers        []BlockEventFunc
 	snapshotCompletedHandlers    []SnapshotCompletedEventFunc
-	isMempoolManager             bool
+	// A transaction used by the state syncer mempool routine to reference the state of the badger db
+	// prior to flushing mempool transactions. This represents the last committed view of the db.
+	lastCommittedViewTxn *badger.Txn
+	isMempoolManager     bool
 }
 
 func NewEventManager() *EventManager {
