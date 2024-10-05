@@ -170,4 +170,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://pearl.app",
 		Owner: "pearl",
 	},
+	30: {
+		Name:  "Setu Deso",
+		URL:   "https://web3setu.com",
+		Owner: "setu_deso",
+	},
 }
