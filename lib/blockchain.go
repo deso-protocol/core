@@ -1085,13 +1085,37 @@ func (bc *Blockchain) IsFullyStored() bool {
 	chainState := bc.ChainState()
 	if chainState == SyncStateFullyCurrent || (chainState == SyncStateNeedBlocksss &&
 		bc.headerTip().Height-bc.blockTip().Height < 10) {
-		// TODO: rewrite to work w/ block index.
-		panic("IsFullyStored: Need to implement this.")
-		//for _, blockNode := range bc.bestChain.Chain {
-		//	if !blockNode.Status.IsFullyProcessed() {
-		//		return false
-		//	}
-		//}
+		// Get a sampling of blocks from the best chain and check if they are fully stored.
+		// We only need to check a few blocks to determine if the chain is fully stored.
+		blockTipHeight := uint64(bc.BlockTip().Height)
+		increment := blockTipHeight / 20
+		if increment == 0 {
+			increment = 1
+		}
+		blockHeights := []uint64{}
+		for ii := uint64(0); ii < blockTipHeight; ii += increment {
+			blockHeights = append(blockHeights, ii)
+		}
+		if blockTipHeight > 100 {
+			for ii := blockTipHeight - 20; ii < blockTipHeight; ii++ {
+				blockHeights = append(blockHeights, ii)
+			}
+		}
+		blockHeights = append(blockHeights, blockTipHeight)
+		blockHeightSet := NewSet(blockHeights)
+		for _, blockHeight := range blockHeightSet.ToSlice() {
+			blockNode, exists, err := bc.GetBlockFromBestChainByHeight(blockHeight, false)
+			if err != nil {
+				glog.Errorf("IsFullyStored: Problem getting block at height %d: %v", blockHeight, err)
+				return false
+			}
+			if !exists {
+				return false
+			}
+			if !blockNode.Status.IsFullyProcessed() {
+				return false
+			}
+		}
 		return true
 	}
 	return false
@@ -1960,23 +1984,38 @@ func (bc *Blockchain) checkArchivalMode() bool {
 	_ = firstSnapshotHeight
 	// @diamondhands - can we spot check just a few blocks such as firstSnapshotHeight - 1,
 	// firstSnapshotHeight / 2 - 1, and firstSnapshotHeight / 4 - 1 to see if they are stored?
-	// TODO: figure out how to iterate over best chain to checkArchivalMode
-	// when we only have a portion of best chain in memory.
-	panic("NOT IMPLEMENTED: checkArchivalMode")
-	//for _, blockNode := range bc.bestChain.Chain {
-	//	if uint64(blockNode.Height) > firstSnapshotHeight {
-	//		return false
-	//	}
-	//
-	//	// Check if we have blocks that have been processed and validated but not stored. This would indicate that there
-	//	// are historical blocks that we are yet to download.
-	//	if (blockNode.Status&StatusBlockProcessed) == 1 &&
-	//		(blockNode.Status&StatusBlockValidated) == 1 &&
-	//		(blockNode.Status&StatusBlockStored) == 0 {
-	//
-	//		return true
-	//	}
-	//}
+	// We take a sampling of blocks to determine if we've downloaded all the blocks up to the first snapshot height.
+	blockHeights := []uint64{}
+	increment := firstSnapshotHeight / 10
+	for ii := uint64(0); ii < firstSnapshotHeight; ii += increment {
+		blockHeights = append(blockHeights, ii)
+	}
+	for ii := firstSnapshotHeight - 10; ii < firstSnapshotHeight; ii++ {
+		blockHeights = append(blockHeights, ii)
+	}
+	blockHeights = append(blockHeights, firstSnapshotHeight)
+	for _, height := range blockHeights {
+		blockNode, exists, err := bc.GetBlockFromBestChainByHeight(height, false)
+		if err != nil {
+			glog.Errorf("checkArchivalMode: Problem getting block by height: %v", err)
+			return false
+		}
+		if !exists {
+			return false
+		}
+		if uint64(blockNode.Height) > firstSnapshotHeight {
+			return false
+		}
+
+		// Check if we have blocks that have been processed and validated but not stored. This would indicate that there
+		// are historical blocks that we are yet to download.
+		if (blockNode.Status&StatusBlockProcessed) == 1 &&
+			(blockNode.Status&StatusBlockValidated) == 1 &&
+			(blockNode.Status&StatusBlockStored) == 0 {
+
+			return true
+		}
+	}
 
 	// If we get here, it means that all blocks have been processed and stored, so there is nothing to do.
 	return false
