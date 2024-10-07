@@ -103,7 +103,7 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 	nextView := currentView + 1
 
 	blockIndex := NewBlockIndex(nil, nil, nil)
-	blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*blockHash: {Header: blockHeader, Height: uint32(blockHeader.Height), Hash: blockHash},
 	})
 

@@ -5754,6 +5754,8 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 	})
 }
 
+// TODO: refactor to actually get the whole best chain if that's
+// what someone wants. It'll take a while, but whatever.
 func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
 	maxBestChainInitLength := 3600 * 100 // Cache up to 100 hours of blocks.

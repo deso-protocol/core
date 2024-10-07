@@ -252,7 +252,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{*genesisBlock.Hash: genesisBlock})
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{*genesisBlock.Hash: genesisBlock})
 	bc.blockIndex.blockIndexByHash.Add(*genesisBlock.Hash, genesisBlock)
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
@@ -331,7 +331,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -473,7 +473,7 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -805,7 +805,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	})
 	block := &MsgDeSoBlock{
@@ -841,7 +841,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		ProposedInView: 2,
 		PrevBlockHash:  hash1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
-	bc.blockIndex.SetTip(block2)
+	bc.blockIndex.setTip(block2)
 	bc.blockIndex.blockIndexByHash.Add(*hash2, block2)
 	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
@@ -1244,7 +1244,7 @@ func TestShouldReorg(t *testing.T) {
 			Height: 1,
 		},
 	}
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: chain[0],
 		*hash3: chain[1],
 	})
@@ -1378,7 +1378,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.True(t, checkBestChainForHash(hash1))
 
 	// Remove newBlock from the best chain and block index to reset the state.
-	bc.blockIndex.SetTip(bc.blockIndex.GetTip().GetParent(bc.blockIndex))
+	bc.blockIndex.setTip(bc.blockIndex.GetTip().GetParent(bc.blockIndex))
 	// Add block 3 back
 	bc.addTipBlockToBestChain(bn3)
 
@@ -1457,7 +1457,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	//bc.bestChain.ChainMap.Remove(*hash5)
 	//bc.bestChain.ChainMap.Remove(*newBlockHash)
 	//bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-3]
-	bc.blockIndex.SetTip(newBlockNode.GetParent(bc.blockIndex))
+	bc.blockIndex.setTip(newBlockNode.GetParent(bc.blockIndex))
 
 	// Add block 2 and 3 back.
 	bc.addTipBlockToBestChain(bn2)

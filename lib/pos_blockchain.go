@@ -97,7 +97,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 		return false, false, nil
 	}
 
-	bc.blockIndex.SetHeaderTip(blockNode)
+	bc.blockIndex.setHeaderTip(blockNode)
 
 	// The header is not an orphan and has a higher view than the current tip. We reorg the header chain
 	// and apply the incoming header as the new tip.
@@ -1650,7 +1650,7 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 
 // addTipBlockToBestChain adds the block as the new tip of the best chain.
 func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
-	bc.blockIndex.SetTip(blockNode)
+	bc.blockIndex.setTip(blockNode)
 }
 
 // removeTipBlockFromBestChain removes the current tip from the best chain. It
@@ -1661,7 +1661,7 @@ func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	// Remove the last block from the best chain.
 	lastBlock := bc.blockIndex.GetTip()
 	// Uhhh what happens if we don't have the parent set up!?
-	bc.blockIndex.SetTip(lastBlock.GetParent(bc.blockIndex))
+	bc.blockIndex.setTip(lastBlock.GetParent(bc.blockIndex))
 	return lastBlock
 }
 

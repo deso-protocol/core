@@ -585,7 +585,7 @@ func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *Block
 	}
 }
 
-func (bi *BlockIndex) SetBlockIndexFromMap(input map[BlockHash]*BlockNode) {
+func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) {
 	newHashToBlockNodeMap, _ := lru2.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	newHeightToBlockNodeMap, _ := lru2.New[uint64, []*BlockNode](MaxBlockIndexNodes)
 	bi.blockIndexByHash = newHashToBlockNodeMap
@@ -602,13 +602,13 @@ func (bi *BlockIndex) SetBlockIndexFromMap(input map[BlockHash]*BlockNode) {
 	}
 }
 
-func (bi *BlockIndex) SetHeaderTip(tip *BlockNode) {
+func (bi *BlockIndex) setHeaderTip(tip *BlockNode) {
 	// Just to be safe, we also add it to the block index.
 	bi.addNewBlockNodeToBlockIndex(tip)
 	bi.headerTip = tip
 }
 
-func (bi *BlockIndex) SetTip(tip *BlockNode) {
+func (bi *BlockIndex) setTip(tip *BlockNode) {
 	// Just to be safe, we also add it to the block index.
 	bi.addNewBlockNodeToBlockIndex(tip)
 	bi.tip = tip
@@ -882,6 +882,10 @@ func (bc *Blockchain) CopyBlockIndexes() (
 	return newBlockIndexByHash
 }
 
+func (bc *Blockchain) GetBlockIndex() *BlockIndex {
+	return bc.blockIndex
+}
+
 // TODO: read through to DB.
 func (bc *Blockchain) getAllBlockNodesIndexedAtHeight(blockHeight uint64) []*BlockNode {
 	return bc.blockIndex.GetBlockNodesByHeight(blockHeight)
@@ -1033,8 +1037,8 @@ func (bc *Blockchain) _initChain() error {
 		}
 
 		// We start by simply setting the chain tip and header tip to the tip node.
-		bc.blockIndex.SetTip(tipNode)
-		bc.blockIndex.SetHeaderTip(tipNode)
+		bc.blockIndex.setTip(tipNode)
+		bc.blockIndex.setHeaderTip(tipNode)
 	}
 	bc.isInitialized = true
 
@@ -1081,8 +1085,8 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
 	}
 
-	bc.blockIndex.SetTip(uncommittedTipBlockNode)
-	bc.blockIndex.SetHeaderTip(uncommittedTipBlockNode)
+	bc.blockIndex.setTip(uncommittedTipBlockNode)
+	bc.blockIndex.setHeaderTip(uncommittedTipBlockNode)
 	return nil
 }
 
@@ -1953,9 +1957,9 @@ func (bc *Blockchain) SetBestChain(bestChain []*BlockNode) {
 	for _, blockNode := range bestChain {
 		bc.blockIndex.addNewBlockNodeToBlockIndex(blockNode)
 		if bc.blockIndex.GetTip() == nil {
-			bc.blockIndex.SetTip(blockNode)
+			bc.blockIndex.setTip(blockNode)
 		} else if bc.blockIndex.GetTip().Height < blockNode.Height {
-			bc.blockIndex.SetTip(blockNode)
+			bc.blockIndex.setTip(blockNode)
 		}
 	}
 }
@@ -1965,7 +1969,7 @@ func (bc *Blockchain) SetBestChainMap(
 	tipNode *BlockNode,
 ) {
 	bc.blockIndex.blockIndexByHash = blockIndexByHash
-	bc.blockIndex.SetTip(tipNode)
+	bc.blockIndex.setTip(tipNode)
 }
 
 func (bc *Blockchain) _validateOrphanBlockPoW(desoBlock *MsgDeSoBlock) error {
@@ -2485,7 +2489,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	headerTip := bc.headerTip()
 	if headerTip.CumWork.Cmp(newNode.CumWork) < 0 {
 		isMainChain = true
-		bc.blockIndex.SetHeaderTip(newNode)
+		bc.blockIndex.setHeaderTip(newNode)
 	}
 
 	return isMainChain, false, nil
@@ -2996,9 +3000,9 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// If we're syncing there's no risk of concurrency issues. Otherwise, we
 		// need to make a copy in order to be save.
 		if bc.isSyncing() {
-			bc.blockIndex.SetTip(nodeToValidate)
+			bc.blockIndex.setTip(nodeToValidate)
 		} else {
-			bc.blockIndex.SetTip(nodeToValidate)
+			bc.blockIndex.setTip(nodeToValidate)
 		}
 
 		// This node is on the main chain so set this variable.
@@ -3286,8 +3290,8 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 
 		// Now the db has been updated, update our in-memory best chain. Note that there
 		// is no need to update the node index because it was updated as we went along.
-		bc.blockIndex.SetTip(newTipNode)
-		bc.blockIndex.SetHeaderTip(newTipNode)
+		bc.blockIndex.setTip(newTipNode)
+		bc.blockIndex.setHeaderTip(newTipNode)
 
 		// If we made it here then this block is on the main chain.
 		isMainChain = true

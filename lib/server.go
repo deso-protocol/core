@@ -1756,7 +1756,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		currentNode.Status |= StatusBlockValidated
 		currentNode.Status |= StatusBlockCommitted
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-		srv.blockchain.blockIndex.SetTip(currentNode)
+		srv.blockchain.blockIndex.setTip(currentNode)
 		blockNodeBatch = append(blockNodeBatch, currentNode)
 		if len(blockNodeBatch) < 10000 {
 			continue
