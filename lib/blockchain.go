@@ -870,24 +870,8 @@ type Blockchain struct {
 	ChainLock deadlock.RWMutex
 
 	// These should only be accessed after acquiring the ChainLock.
-	//
-	// An in-memory index of the "tree" of blocks we are currently aware of.
-	// This index includes forks and side-chains.
-	//blockIndexByHash *collections.ConcurrentMap[BlockHash, *BlockNode]
-	//// blockIndexByHeight is an in-memory map of block height to block nodes. This is
-	//// used to quickly find the safe blocks from which the chain can be extended for PoS
-	//blockIndexByHeight map[uint64]map[BlockHash]*BlockNode
-	// An in-memory slice of the blocks on the main chain only. The end of
-	// this slice is the best known tip that we have at any given time.
-	//bestChain    []*BlockNode
-	//bestChainMap map[BlockHash]*BlockNode
-	//
-	//bestHeaderChain    []*BlockNode
-	//bestHeaderChainMap map[BlockHash]*BlockNode
-
-	blockIndex *BlockIndex
-	//bestChain       *BestChain
-	//bestHeaderChain *BestChain
+	blockIndex           *BlockIndex
+	lowestBlockNotStored uint64
 
 	// We keep track of orphan blocks with the following data structures. Orphans
 	// are not written to disk and are only cached in memory. Moreover we only keep

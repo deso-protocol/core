@@ -879,59 +879,73 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 	}
 
 	// Go through the block nodes in the blockchain and download the blocks if they're not stored.
-	// TODO: need to figure out a way to get all the blocks in the best chain so we can download historical blocks.
-	//for _, blockNode := range srv.blockchain.bestChain.Chain {
-	//	// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
-	//	if blockNode.Status&StatusBlockStored == 0 {
-	//		maxBlocksInFlight := MaxBlocksInFlight
-	//		if pp.NegotiatedProtocolVersion >= ProtocolVersion2 &&
-	//			(srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) ||
-	//				srv.params.NetworkType == NetworkType_TESTNET) {
-	//
-	//			maxBlocksInFlight = MaxBlocksInFlightPoS
-	//		}
-	//		numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
-	//		currentHeight := int(blockNode.Height)
-	//		blockNodesToFetch := []*BlockNode{}
-	//		// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
-	//		var heightLimit int
-	//		for heightLimit = len(srv.blockchain.bestChain.Chain) - 1; heightLimit >= 0; heightLimit-- {
-	//			if !srv.blockchain.bestChain.Chain[heightLimit].Status.IsFullyProcessed() {
-	//				break
-	//			}
-	//		}
-	//
-	//		// Find the blocks that we should download.
-	//		for currentHeight <= heightLimit &&
-	//			len(blockNodesToFetch) < numBlocksToFetch {
-	//
-	//			// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
-	//			// the array index.
-	//			currentNode := srv.blockchain.bestChain.Chain[currentHeight]
-	//			currentHeight++
-	//
-	//			// If we've already requested this block then we don't request it again.
-	//			if _, exists := pp.requestedBlocks[*currentNode.Hash]; exists {
-	//				continue
-	//			}
-	//
-	//			blockNodesToFetch = append(blockNodesToFetch, currentNode)
-	//		}
-	//
-	//		var hashList []*BlockHash
-	//		for _, node := range blockNodesToFetch {
-	//			hashList = append(hashList, node.Hash)
-	//			pp.requestedBlocks[*node.Hash] = true
-	//		}
-	//		pp.AddDeSoMessage(&MsgDeSoGetBlocks{
-	//			HashList: hashList,
-	//		}, false)
-	//
-	//		glog.V(1).Infof("GetBlocksToStore: Downloading blocks to store for header %v from peer %v",
-	//			blockNode.Header, pp)
-	//		return
-	//	}
-	//}
+	for ii := uint32(srv.blockchain.lowestBlockNotStored); ii <= srv.blockchain.blockTip().Height; ii++ {
+		blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(ii), false)
+		if err != nil {
+			glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
+			return
+		}
+		if !exists {
+			glog.Errorf("GetBlocksToStore: Block at height %v not found in best chain", ii)
+			return
+		}
+		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
+		if blockNode.Status&StatusBlockStored == 0 {
+			maxBlocksInFlight := MaxBlocksInFlight
+			if pp.NegotiatedProtocolVersion >= ProtocolVersion2 &&
+				(srv.params.IsPoSBlockHeight(uint64(blockNode.Height)) ||
+					srv.params.NetworkType == NetworkType_TESTNET) {
+
+				maxBlocksInFlight = MaxBlocksInFlightPoS
+			}
+			srv.blockchain.lowestBlockNotStored = uint64(blockNode.Height)
+			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
+			currentHeight := int(blockNode.Height)
+			blockNodesToFetch := []*BlockNode{}
+			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
+			// We filter those out in the loop below by checking IsFullyProcessed.
+			// Find the blocks that we should download.
+			for len(blockNodesToFetch) < numBlocksToFetch {
+
+				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
+				// the array index.
+				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(currentHeight), false)
+				if err != nil {
+					glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
+					return
+				}
+				if !currNodeExists {
+					glog.Errorf("GetBlocksToStore: Block at height %v not found in best chain", currentHeight)
+					return
+				}
+				currentHeight++
+				// If this node is already fully processed, then we don't need to download it.
+				if currentNode.Status.IsFullyProcessed() {
+					break
+				}
+
+				// If we've already requested this block then we don't request it again.
+				if _, exists = pp.requestedBlocks[*currentNode.Hash]; exists {
+					continue
+				}
+
+				blockNodesToFetch = append(blockNodesToFetch, currentNode)
+			}
+
+			var hashList []*BlockHash
+			for _, node := range blockNodesToFetch {
+				hashList = append(hashList, node.Hash)
+				pp.requestedBlocks[*node.Hash] = true
+			}
+			pp.AddDeSoMessage(&MsgDeSoGetBlocks{
+				HashList: hashList,
+			}, false)
+
+			glog.V(1).Infof("GetBlocksToStore: Downloading blocks to store for header %v from peer %v",
+				blockNode.Header, pp)
+			return
+		}
+	}
 
 	// If we get here then it means that we've downloaded all blocks so we can update
 	srv.blockchain.downloadingHistoricalBlocks = false
