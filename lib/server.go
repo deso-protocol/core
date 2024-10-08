@@ -12,20 +12,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/collections"
-	"github.com/deso-protocol/core/consensus"
-
-	"github.com/decred/dcrd/lru"
-
 	"github.com/DataDog/datadog-go/v5/statsd"
-
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -91,7 +88,7 @@ type Server struct {
 	// adding it to this map and checking this map before replying will make it
 	// so that we only send a reply to the first peer that sent us the inv, which
 	// is more efficient.
-	inventoryBeingProcessed lru.Cache
+	inventoryBeingProcessed *lru.Cache[InvVect, struct{}]
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
 	// peer. It's initially false
@@ -229,7 +226,7 @@ func (srv *Server) _removeRequest(hash *BlockHash) {
 		Type: InvTypeTx,
 		Hash: *hash,
 	}
-	srv.inventoryBeingProcessed.Delete(*invVect)
+	srv.inventoryBeingProcessed.Remove(*invVect)
 }
 
 // dataLock must be acquired for writing before calling this function.
@@ -704,7 +701,7 @@ func NewServer(
 	srv.blockProducer = _blockProducer
 	srv.incomingMessages = _incomingMessages
 	// Make this hold a multiple of what we hold for individual peers.
-	srv.inventoryBeingProcessed = lru.NewCache(maxKnownInventory)
+	srv.inventoryBeingProcessed, _ = lru.New[InvVect, struct{}](maxKnownInventory)
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
@@ -1781,7 +1778,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
-	srv.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+	srv.snapshot.DatabaseCache, _ = lru.New[string, []byte](int(DatabaseCacheSize))
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.syncingState = false
@@ -2067,8 +2064,8 @@ func (srv *Server) _relayTransactions() {
 
 			// Add the transaction to the peer's known inventory. We do
 			// it here when we enqueue the message to the peers outgoing
-			// message queue so that we don't have remember to do it later.
-			pp.knownInventory.Add(*invVect)
+			// message queue so that we don't have to remember to do it later.
+			pp.knownInventory.Add(*invVect, struct{}{})
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {

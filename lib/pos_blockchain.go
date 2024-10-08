@@ -1937,16 +1937,9 @@ func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	return blockViewAndUtxoOps.UtxoView, nil
 }
 
-func (bc *Blockchain) getCachedBlockViewAndUtxoOps(blockHash BlockHash) (*BlockViewAndUtxoOps, error, bool) {
-	if viewAndUtxoOpsAtHashItem, exists := bc.blockViewCache.Lookup(blockHash); exists {
-		viewAndUtxoOpsAtHash, ok := viewAndUtxoOpsAtHashItem.(*BlockViewAndUtxoOps)
-		if !ok {
-			glog.Errorf("getCachedBlockViewAndUtxoOps: Problem casting to BlockViewAndUtxoOps")
-			return nil, fmt.Errorf("getCachedBlockViewAndUtxoOps: Problem casting to BlockViewAndUtxoOps"), false
-		}
-		return viewAndUtxoOpsAtHash, nil, true
-	}
-	return nil, nil, false
+func (bc *Blockchain) getCachedBlockViewAndUtxoOps(blockHash BlockHash) (*BlockViewAndUtxoOps, bool) {
+	viewAndUtxoOpsAtHash, exists := bc.blockViewCache.Get(blockHash)
+	return viewAndUtxoOpsAtHash, exists
 }
 
 // getUtxoViewAndUtxoOpsAtBlockHash builds a UtxoView to the block provided and returns a BlockViewAndUtxoOps
@@ -1993,10 +1986,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 				"getUtxoViewAndUtxoOpsAtBlockHash: extends from a committed block that isn't the committed tip")
 		}
 	}
-	viewAndUtxoOpsAtHash, err, exists := bc.getCachedBlockViewAndUtxoOps(blockHash)
-	if err != nil {
-		return nil, errors.Wrapf(err, "getUtxoViewAndUtxoOpsAtBlockHash: Problem getting cached BlockViewAndUtxoOps")
-	}
+	viewAndUtxoOpsAtHash, exists := bc.getCachedBlockViewAndUtxoOps(blockHash)
 	if exists {
 		viewAndUtxoOpsCopy := viewAndUtxoOpsAtHash.Copy()
 		return viewAndUtxoOpsCopy, nil
@@ -2011,6 +2001,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
 		glog.Infof("Connecting block %v", uncommittedAncestors[ii])
+		var err error
 		// We need to get these blocks from badger
 		fullBlock, err = GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
 		if err != nil {
