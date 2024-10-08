@@ -54,12 +54,11 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 	// updated. This is necessary because the block index may have been updated with the header but the
 	// bestHeaderChain.ChainMap may not have been updated yet.
 	// TODO: make sure this is ok or do we need to explicitly check the block index's cache?
-	//_, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHash(headerHash, true)
-	blockNode, isHeightInBestHeaderChain, err := bc.GetBlockFromBestChainByHeight(header.Height, true)
+	_, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHash(headerHash, true)
 	if err != nil {
 		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem getting block from best chain by hash: ")
 	}
-	if isHeightInBestHeaderChain && blockNode.Hash.IsEqual(headerHash) {
+	if isInBestHeaderChain {
 		return true, false, nil
 	}
 

@@ -1896,7 +1896,7 @@ func (bc *Blockchain) GetBlockFromBestChainByHash(blockHash *BlockHash, useHeade
 	if !exists {
 		return nil, false, errors.New("GetBlockFromBestChainByHash: Committed tip not found")
 	}
-	if uint64(bn.Height) > uint64(blockTip.Height) {
+	if uint64(bn.Height) > uint64(blockTip.Height) || uint64(bn.Height) < uint64(committedTip.Height) {
 		return nil, false, nil
 	}
 	currNode := &BlockNode{}
