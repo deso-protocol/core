@@ -897,16 +897,18 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 			}
 			srv.blockchain.lowestBlockNotStored = uint64(blockNode.Height)
 			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
-			currentHeight := int(blockNode.Height)
+			currentHeight := uint64(blockNode.Height)
 			blockNodesToFetch := []*BlockNode{}
 			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
 			// We filter those out in the loop below by checking IsFullyProcessed.
 			// Find the blocks that we should download.
 			for len(blockNodesToFetch) < numBlocksToFetch {
-
+				if currentHeight > uint64(srv.blockchain.blockTip().Height) {
+					break
+				}
 				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
 				// the array index.
-				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(currentHeight), false)
+				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(currentHeight, false)
 				if err != nil {
 					glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
 					return
