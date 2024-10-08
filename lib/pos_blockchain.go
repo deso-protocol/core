@@ -81,9 +81,12 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, verifySignatures b
 		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem validating and indexing header: ")
 	}
 
-	// Now that we know we have a valid header, we check the block index for it any orphan children for it
-	// and heal the parent pointers for all of them.
-	bc.healPointersForOrphanChildren(blockNode)
+	// Don't worry about healing orphan children when we're syncing.
+	if !bc.isSyncing() {
+		// Now that we know we have a valid header, we check the block index for it any orphan children for it
+		// and heal the parent pointers for all of them.
+		bc.healPointersForOrphanChildren(blockNode)
+	}
 
 	// Exit early if the header is an orphan.
 	if isOrphan {
