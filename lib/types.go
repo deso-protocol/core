@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"reflect"
 	"sort"
 
 	"github.com/holiman/uint256"
@@ -238,7 +237,7 @@ func (bh *BlockHash) IsEqual(target *BlockHash) bool {
 		return false
 	}
 
-	return reflect.DeepEqual(bh[:], target[:])
+	return bytes.Equal(bh[:], target[:])
 }
 
 func (bh *BlockHash) NewBlockHash() *BlockHash {
