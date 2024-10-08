@@ -1951,7 +1951,7 @@ func (bc *Blockchain) GetBlockFromBestChainByHeight(height uint64, useHeaderChai
 }
 
 // TODO: need to figure out how to handle this for exchange api tests.
-func (bc *Blockchain) setBestChain(bestChain []*BlockNode) {
+func (bc *Blockchain) SetBestChain(bestChain []*BlockNode) {
 	for _, blockNode := range bestChain {
 		bc.blockIndex.addNewBlockNodeToBlockIndex(blockNode)
 		if bc.blockIndex.GetTip() == nil {
