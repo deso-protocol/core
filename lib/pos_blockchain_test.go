@@ -1276,7 +1276,7 @@ func TestShouldReorg(t *testing.T) {
 // 1. Simple reorg. Just replacing the uncommitted tip.
 // 2. Create a longer chain and reorg to it.
 // 3. Make sure no reorg when current view is greater than block's view
-// 4. Super happy path of simply extending current uncommitted tip.
+// 4. Super happy path of simply extet anding current uncommitted tip.
 func TestTryApplyNewTip(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
