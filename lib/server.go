@@ -12,18 +12,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/datadog-go/statsd"
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/collections"
-	"github.com/deso-protocol/core/consensus"
-	"github.com/hashicorp/golang-lru/v2"
-
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
