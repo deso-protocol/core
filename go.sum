@@ -131,8 +131,6 @@ github.com/decred/dcrd/crypto/blake256 v1.1.0/go.mod h1:2OfgNZ5wDpcsFmHmCK5gZTPc
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 h1:rpfIENRNNilwHwZeG5+P150SMrnNEcHYvcCuK6dPZSg=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0/go.mod h1:v57UDF4pDQJcEfFUCRop3lJL149eHGSe9Jvczhzjo/0=
 github.com/decred/dcrd/lru v1.0.0/go.mod h1:mxKOwFd7lFjN2GZYsiz/ecgqR6kkYAl+0pz0tEMk218=
-github.com/decred/dcrd/lru v1.1.3 h1:w9EAbvGLyzm6jTjF83UKuqZEiUtJmvRhQDOCEIvSuE0=
-github.com/decred/dcrd/lru v1.1.3/go.mod h1:Tw0i0pJyiLEx/oZdHLe1Wdv/Y7EGzAX+sYftnmxBR4o=
 github.com/deso-protocol/go-deadlock v1.0.0 h1:mw0pHy/19zgC+JFBStuQt1+1Ehv5OKA5NxXqecnL5ic=
 github.com/deso-protocol/go-deadlock v1.0.0/go.mod h1:K0Wd2OV2x7ck7SMYDraWerpKjFKUeBqaFcwz21tmkb8=
 github.com/deso-protocol/go-merkle-tree v1.0.0 h1:9zkI5dQsITYy77s4kbTGPQmZnhQ+LsH/kRdL5l/Yzvg=
