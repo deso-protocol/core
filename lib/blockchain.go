@@ -2508,7 +2508,7 @@ func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *Bloc
 	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic.
 	// Otherwise, fall back to the PoW logic.
 	if bc.params.IsPoSBlockHeight(blockHeader.Height) {
-		return bc.processHeaderPoS(blockHeader, verifySignatures)
+		return bc.processHeaderPoS(blockHeader, headerHash, verifySignatures)
 	}
 
 	return bc.processHeaderPoW(blockHeader, headerHash)

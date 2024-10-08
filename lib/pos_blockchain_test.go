@@ -374,9 +374,9 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 			},
 		},
 	}
-	blockNode, err := bc.storeBlockInBlockIndex(block)
-	require.NoError(t, err)
 	newHash, err := block.Hash()
+	require.NoError(t, err)
+	blockNode, err := bc.storeBlockInBlockIndex(block, newHash)
 	require.NoError(t, err)
 	// Check the block index by hash
 	blockNodeFromIndex, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(newHash, uint64(blockNode.Height))
@@ -400,7 +400,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
 	// Okay now we update the status of the block to include validated.
-	blockNode, err = bc.storeValidatedBlockInBlockIndex(block)
+	blockNode, err = bc.storeValidatedBlockInBlockIndex(block, newHash)
 	require.NoError(t, err)
 	blockNodeFromIndex, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(newHash, uncommittedBlock.Header.Height)
 	require.True(t, exists)
@@ -425,7 +425,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.False(t, updatedBlockHash.IsEqual(newHash))
 
 	// Okay now put this new block in there.
-	blockNode, err = bc.storeBlockInBlockIndex(block)
+	blockNode, err = bc.storeBlockInBlockIndex(block, updatedBlockHash)
 	require.NoError(t, err)
 	// Make sure the blockIndexByHash is correct.
 	updatedBlockNode, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(updatedBlockHash, uint64(blockNode.Height))
@@ -446,7 +446,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerVotingPublicKey = nil
-	_, err = bc.storeBlockInBlockIndex(block)
+	_, err = bc.storeBlockInBlockIndex(block, nil)
 	require.Error(t, err)
 }
 
@@ -2008,7 +2008,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	block1Hash, err := block1.Hash()
 	require.NoError(t, err)
 	// Add block 1 w/ stored and validated
-	bn1, err := testMeta.chain.storeValidatedBlockInBlockIndex(block1)
+	bn1, err := testMeta.chain.storeValidatedBlockInBlockIndex(block1, nil)
 	require.NoError(t, err)
 	require.True(t, bn1.Hash.IsEqual(block1Hash))
 	// Create block 2 w/ block 1 as parent and add it to the block index w/ stored & validated
@@ -2016,13 +2016,13 @@ func TestGetSafeBlocks(t *testing.T) {
 	block2 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+1), uint64(testMeta.savedHeight+1), 1293, block1Hash, false)
 	block2Hash, err := block2.Hash()
 	require.NoError(t, err)
-	bn2, err := testMeta.chain.storeValidatedBlockInBlockIndex(block2)
+	bn2, err := testMeta.chain.storeValidatedBlockInBlockIndex(block2, nil)
 	require.NoError(t, err)
 	require.True(t, bn2.Hash.IsEqual(block2Hash))
 	// Add block 3 only as stored and validated
 	var block3 *MsgDeSoBlock
 	block3 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+2), 1372, block2Hash, false)
-	bn3, err := testMeta.chain.storeValidatedBlockInBlockIndex(block3)
+	bn3, err := testMeta.chain.storeValidatedBlockInBlockIndex(block3, nil)
 	require.NoError(t, err)
 	block3Hash, err := block3.Hash()
 	require.NoError(t, err)
@@ -2030,7 +2030,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	// Add block 3' only as stored
 	var block3Prime *MsgDeSoBlock
 	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+3), 137175, block2Hash, false)
-	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime)
+	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime, nil)
 	require.NoError(t, err)
 	block3PrimeHash, err := block3Prime.Hash()
 	require.NoError(t, err)
@@ -2041,7 +2041,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	block5.Header.Height = uint64(testMeta.savedHeight + 5)
 	block5Hash, err := block5.Hash()
 	require.NoError(t, err)
-	_, err = testMeta.chain.storeValidatedBlockInBlockIndex(block5)
+	_, err = testMeta.chain.storeValidatedBlockInBlockIndex(block5, nil)
 	require.NoError(t, err)
 	// Okay let's get the safe blocks.
 	safeBlocks, err := testMeta.chain.GetSafeBlocks()
@@ -2062,7 +2062,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	require.False(t, _checkSafeBlocksForBlockHash(block5Hash, safeBlocks))
 
 	// Update block 3 prime to be validated and it should now be a safe block.
-	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime)
+	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime, nil)
 	require.NoError(t, err)
 	require.True(t, bn3Prime.IsValidated())
 	safeBlocks, err = testMeta.chain.GetSafeBlocks()
@@ -2345,7 +2345,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	utxoView := _newUtxoView(testMeta)
 	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
 	require.NoError(t, err)
-	isValid, err := utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+	isValid, err := utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 	require.NoError(t, err)
 	require.True(t, isValid)
 
@@ -2353,7 +2353,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	realVotingPublicKey := realBlock.Header.ProposerVotingPublicKey
 	{
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 		// Reset the proposer voting public key
@@ -2365,7 +2365,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
 		realBlock.Header.ProposerVotePartialSignature, err =
 			testMeta.blsPubKeyToBLSKeyMap[realBlock.Header.ProposerVotingPublicKey.ToString()].Sign(incorrectPayload[:])
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2378,7 +2378,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		correctPayload := consensus.GetVoteSignaturePayload(12, realBlockHash)
 		wrongPrivateKey := _generateRandomBLSPrivateKey(t)
 		realBlock.Header.ProposerVotePartialSignature, err = wrongPrivateKey.Sign(correctPayload[:])
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2543,7 +2543,7 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	require.NoError(testMeta.t, err)
 
 	// Add block to block index.
-	blockNode, err := testMeta.chain.storeBlockInBlockIndex(msgDesoBlock)
+	blockNode, err := testMeta.chain.storeBlockInBlockIndex(msgDesoBlock, nil)
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
 	_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(newBlockHash, msgDesoBlock.Header.Height)
@@ -2568,7 +2568,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	newBlockHash, err := msgDesoBlock.Hash()
 	require.NoError(testMeta.t, err)
 	// Add block to block index.
-	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
+	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock, nil)
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
 	require.True(testMeta.t, blockNode.IsValidated())
