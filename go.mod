@@ -1,6 +1,8 @@
 module github.com/deso-protocol/core
 
-go 1.20
+go 1.23.0
+
+toolchain go1.23.2
 
 require (
 	github.com/DataDog/datadog-go/v5 v5.5.0
