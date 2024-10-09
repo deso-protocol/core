@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/hashicorp/golang-lru/v2"
 	"math"
 	"math/big"
 	"net/http"
@@ -16,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2"
-
 	"github.com/deso-protocol/core/collections"
 
 	"github.com/google/uuid"
@@ -25,12 +24,12 @@ import (
 
 	btcdchain "github.com/btcsuite/btcd/blockchain"
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/go-deadlock"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1139,10 +1138,9 @@ func NewBlockchain(
 		params:                          params,
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
-
-		blockIndex:     NewBlockIndex(db, snapshot, nil), // TODO: replace with actual tip.
-		blockViewCache: blockViewCache,
-		snapshotCache:  NewSnapshotCache(),
+		blockIndex:                      NewBlockIndex(db, snapshot, nil), // TODO: replace with actual tip.
+		blockViewCache:                  blockViewCache,
+		snapshotCache:                   NewSnapshotCache(),
 
 		checkpointSyncingProviders: checkpointSyncingProviders,
 
@@ -2608,7 +2606,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 			// trusted.
 
 			signature := desoBlock.BlockProducerInfo.Signature
-			pkObj, err := btcec.ParsePubKey(publicKey, btcec.S256())
+			pkObj, err := btcec.ParsePubKey(publicKey)
 			if err != nil {
 				return false, false, errors.Wrapf(err,
 					"ProcessBlock: Error parsing block producer public key: %v.",
@@ -3669,7 +3667,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		// Encrypt the passed-in message text with the recipient's public key.
 		//
 		// Parse the recipient public key.
-		recipientPk, err := btcec.ParsePubKey(recipientPublicKey, btcec.S256())
+		recipientPk, err := btcec.ParsePubKey(recipientPublicKey)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem parsing "+
 				"recipient public key: ")

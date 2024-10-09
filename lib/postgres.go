@@ -11,7 +11,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
@@ -721,7 +721,7 @@ func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 		HODLerPKID:  balance.HolderPKID,
 		CreatorPKID: balance.CreatorPKID,
 		// FIXME: This will break if the value exceeds uint256
-		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
+		BalanceNanos: *uint256.NewInt(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -1094,14 +1094,14 @@ func (messageEntry *PGNewMessageGroupChatThreadEntry) ToAccessGroupId() AccessGr
 }
 
 func HexToUint256(input string) *uint256.Int {
-	output := uint256.NewInt()
+	output := uint256.NewInt(0)
 
 	if input != "" {
 		var err error
 		output, err = uint256.FromHex(input)
 
 		if err != nil {
-			output = uint256.NewInt()
+			output = uint256.NewInt(0)
 		}
 	}
 
@@ -1447,8 +1447,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 
 		if txn.Signature.Sign != nil {
-			transaction.R = BigintToHash(txn.Signature.Sign.R)
-			transaction.S = BigintToHash(txn.Signature.Sign.S)
+			r := txn.Signature.Sign.R()
+			s := txn.Signature.Sign.S()
+			rBytes := (&r).Bytes()
+			sBytes := (&s).Bytes()
+			transaction.R = NewBlockHash(rBytes[:])
+			transaction.S = NewBlockHash(sBytes[:])
 			transaction.RecoveryId = uint32(txn.Signature.RecoveryId)
 			transaction.IsRecoverable = txn.Signature.IsRecoverable
 		}

@@ -5,8 +5,8 @@ import (
 
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
@@ -72,7 +72,7 @@ func TestCoinLockupsForkHeight(t *testing.T) {
 			m0Pub,
 			1000,
 			1000,
-			uint256.NewInt().SetUint64(100),
+			uint256.NewInt(100),
 			0)
 		_, _, _, err2 := _updateCoinLockupParams(
 			t, chain, db, params,
@@ -93,7 +93,7 @@ func TestCoinLockupsForkHeight(t *testing.T) {
 			NewPublicKey(m3PkBytes),
 			NewPublicKey(m0PkBytes),
 			1000,
-			uint256.NewInt().SetUint64(1))
+			uint256.NewInt(1))
 		_, _, _, err4 := _coinUnlockWithConnectTimestamp(
 			t, chain, db, params,
 			feeRateNanosPerKb,
@@ -118,33 +118,33 @@ func TestCalculateLockupYield(t *testing.T) {
 	// Ensure that a lockup with zero duration has zero yield.
 	yield, err = CalculateLockupYield(
 		MaxUint256,
-		uint256.NewInt(),
-		uint256.NewInt().SetUint64(1))
+		uint256.NewInt(0),
+		uint256.NewInt(1))
 	require.NoError(t, err)
-	require.Equal(t, *yield, *uint256.NewInt())
+	require.Equal(t, *yield, *uint256.NewInt(0))
 
 	// Ensure that a lockup with zero apyYieldBasisPoints has zero yield.
 	yield, err = CalculateLockupYield(
 		MaxUint256,
-		uint256.NewInt().SetUint64(1),
-		uint256.NewInt())
+		uint256.NewInt(1),
+		uint256.NewInt(0))
 	require.NoError(t, err)
-	require.Equal(t, *yield, *uint256.NewInt())
+	require.Equal(t, *yield, *uint256.NewInt(0))
 
 	// Ensure that when principal is MaxUint256 and the apy yield is 2bp,
 	// the operation fails due to lack of precision.
 	_, err = CalculateLockupYield(
 		MaxUint256,
-		uint256.NewInt().SetUint64(2),
-		uint256.NewInt().SetUint64(1))
+		uint256.NewInt(2),
+		uint256.NewInt(1))
 	require.Contains(t, err.Error(), RuleErrorCoinLockupCoinYieldOverflow)
 
 	// Ensure that when principal is MaxUint256 and the duration is 2ns,
 	// the operation fails due to lack of precision.
 	_, err = CalculateLockupYield(
 		MaxUint256,
-		uint256.NewInt().SetUint64(1),
-		uint256.NewInt().SetUint64(2))
+		uint256.NewInt(1),
+		uint256.NewInt(2))
 	require.Contains(t, err.Error(), RuleErrorCoinLockupCoinYieldOverflow)
 
 	// Ensure that the CalculateLockupYield operation acts as a floor of
@@ -162,11 +162,11 @@ func TestCalculateLockupYield(t *testing.T) {
 	// In theory, this should return a yield of 1 without any overflow in the operation.
 	// We test this below:
 	yield, err = CalculateLockupYield(
-		uint256.NewInt().SetUint64(365*24*10000),
-		uint256.NewInt().SetUint64(60*60),
-		uint256.NewInt().SetUint64(1e9))
+		uint256.NewInt(365*24*10000),
+		uint256.NewInt(60*60),
+		uint256.NewInt(1e9))
 	require.NoError(t, err)
-	require.Equal(t, *yield, *uint256.NewInt().SetUint64(1))
+	require.Equal(t, *yield, *uint256.NewInt(1))
 
 	// Knowing this, we can now check to ensure the edges of the CalculateLockupYield
 	// operation are behaving correctly and never minting more coins than expected.
@@ -174,21 +174,21 @@ func TestCalculateLockupYield(t *testing.T) {
 	// To test this, we set duration = 1e9 - 1.
 	// (This decreases only the largest factor, leading to the smallest decrease possible in the numerator)
 	yield, err = CalculateLockupYield(
-		uint256.NewInt().SetUint64(365*24*10000),
-		uint256.NewInt().SetUint64(60*60),
-		uint256.NewInt().SetUint64(1e9-1))
+		uint256.NewInt(365*24*10000),
+		uint256.NewInt(60*60),
+		uint256.NewInt(1e9-1))
 	require.NoError(t, err)
-	require.Equal(t, *yield, *uint256.NewInt().SetUint64(0))
+	require.Equal(t, *yield, *uint256.NewInt(0))
 
 	// If we only slightly increase the numerator, we should expect to see the yield remain the same.
 	// To test this, we set duration = 1e9 + 1
 	// (This increases only the largest factor, leading to the smallest increase possible in the numerator)
 	yield, err = CalculateLockupYield(
-		uint256.NewInt().SetUint64(365*24*10000),
-		uint256.NewInt().SetUint64(60*60),
-		uint256.NewInt().SetUint64(1e9+1))
+		uint256.NewInt(365*24*10000),
+		uint256.NewInt(60*60),
+		uint256.NewInt(1e9+1))
 	require.NoError(t, err)
-	require.Equal(t, *yield, *uint256.NewInt().SetUint64(1))
+	require.Equal(t, *yield, *uint256.NewInt(1))
 
 	// We should only see an increase to the output yield if the numerator is scaled by a constant.
 	// To do this, we can iterate through various constants and see if the output yield matches.
@@ -196,19 +196,19 @@ func TestCalculateLockupYield(t *testing.T) {
 	// We also ensure that slight deviations do not alter the output.
 	for ii := uint64(0); ii < 100000; ii++ {
 		yield, err = CalculateLockupYield(
-			uint256.NewInt().SetUint64(ii*365*24*10000),
-			uint256.NewInt().SetUint64(60*60),
-			uint256.NewInt().SetUint64(1e9))
+			uint256.NewInt(ii*365*24*10000),
+			uint256.NewInt(60*60),
+			uint256.NewInt(1e9))
 		require.NoError(t, err)
-		require.Equal(t, *yield, *uint256.NewInt().SetUint64(ii))
+		require.Equal(t, *yield, *uint256.NewInt(ii))
 
 		// Slight increase to the numerator. Ensure we don't create more yield than expected.
 		yield, err = CalculateLockupYield(
-			uint256.NewInt().SetUint64(ii*365*24*10000),
-			uint256.NewInt().SetUint64(60*60),
-			uint256.NewInt().SetUint64(1e9+1))
+			uint256.NewInt(ii*365*24*10000),
+			uint256.NewInt(60*60),
+			uint256.NewInt(1e9+1))
 		require.NoError(t, err)
-		require.Equal(t, *yield, *uint256.NewInt().SetUint64(ii))
+		require.Equal(t, *yield, *uint256.NewInt(ii))
 
 		// Slight decrease to the numerator. Ensure we create strictly less yield.
 		expectedValue := ii - 1
@@ -216,11 +216,11 @@ func TestCalculateLockupYield(t *testing.T) {
 			expectedValue = 0
 		}
 		yield, err = CalculateLockupYield(
-			uint256.NewInt().SetUint64(ii*365*24*10000),
-			uint256.NewInt().SetUint64(60*60),
-			uint256.NewInt().SetUint64(1e9-1))
+			uint256.NewInt(ii*365*24*10000),
+			uint256.NewInt(60*60),
+			uint256.NewInt(1e9-1))
 		require.NoError(t, err)
-		require.Equal(t, *yield, *uint256.NewInt().SetUint64(expectedValue))
+		require.Equal(t, *yield, *uint256.NewInt(expectedValue))
 	}
 }
 
@@ -237,7 +237,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			0, 0, uint256.NewInt(), 0)
+			0, 0, uint256.NewInt(0), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupOfAmountZero)
 	}
 
@@ -247,7 +247,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m2Pub, m0Pub,
-			0, 0, uint256.NewInt().SetUint64(1), 0)
+			0, 0, uint256.NewInt(1), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupOnNonExistentProfile)
 	}
 
@@ -257,7 +257,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params), m0Pub,
-			0, 0, uint256.NewInt().SetUint64(1), 0)
+			0, 0, uint256.NewInt(1), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupCannotLockupZeroKey)
 	}
 
@@ -267,7 +267,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			0, 0, uint256.NewInt().SetUint64(1), 0)
+			0, 0, uint256.NewInt(1), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidLockupDuration)
 	}
 
@@ -277,7 +277,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			0, 0, uint256.NewInt().SetUint64(1), 1)
+			0, 0, uint256.NewInt(1), 1)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidLockupDuration)
 	}
 
@@ -287,7 +287,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 900, uint256.NewInt().SetUint64(1), 950)
+			1000, 900, uint256.NewInt(1), 950)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInvalidVestingEndTimestamp)
 	}
 
@@ -297,7 +297,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, Base58CheckEncode(ZeroPublicKey.ToBytes(), false, testMeta.params),
-			1000, 1000, uint256.NewInt().SetUint64(1), 950)
+			1000, 1000, uint256.NewInt(1), 950)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupZeroPublicKeyAsRecipient)
 	}
 
@@ -307,7 +307,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1, 1, uint256.NewInt().SetUint64(1e10), 0)
+			1, 1, uint256.NewInt(1e10), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupInsufficientCoins)
 	}
 
@@ -326,12 +326,12 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 	)
 	_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m0Pub, m0Priv, DAOCoinTransferMetadata{
 		ProfilePublicKey:       m0PkBytes,
-		DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+		DAOCoinToTransferNanos: *uint256.NewInt(1000),
 		ReceiverPublicKey:      m1PkBytes,
 	})
 	_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m0Pub, m0Priv, DAOCoinTransferMetadata{
 		ProfilePublicKey:       m0PkBytes,
-		DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+		DAOCoinToTransferNanos: *uint256.NewInt(1000),
 		ReceiverPublicKey:      m2PkBytes,
 	})
 
@@ -341,7 +341,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m0Pub, m0Pub,
-			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1000, uint256.NewInt(1000), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToProfileOwner)
 	}
 
@@ -364,7 +364,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m0Pub, m3Pub,
-			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1000, uint256.NewInt(1000), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToDAOMembers)
 	}
 
@@ -374,7 +374,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m0Pub, m2Pub,
-			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -400,7 +400,7 @@ func TestCoinLockupTxnRuleErrors(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 }
@@ -548,7 +548,7 @@ func TestCoinLockupTransferTxnRuleErrors(t *testing.T) {
 			NewPublicKey(m3PkBytes),
 			NewPublicKey(m0PkBytes),
 			0,
-			uint256.NewInt())
+			uint256.NewInt(0))
 		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferOfAmountZero)
 	}
 
@@ -632,7 +632,7 @@ func TestCoinLockupTransferTxnRuleErrors(t *testing.T) {
 		_coinLockupWithTestMetaAndConnectTimestamp(
 			testMeta, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1, 1, uint256.NewInt().SetUint64(1e6), 0)
+			1, 1, uint256.NewInt(1e6), 0)
 
 		// Send 1000 locked M0 coins to M2.
 		_coinLockupTransferWithTestMeta(
@@ -643,7 +643,7 @@ func TestCoinLockupTransferTxnRuleErrors(t *testing.T) {
 			NewPublicKey(m2PkBytes),
 			NewPublicKey(m0PkBytes),
 			1,
-			uint256.NewInt().SetUint64(1e6),
+			uint256.NewInt(1e6),
 		)
 
 		// Attempt to have M2 send locked M0 coins to M3.
@@ -656,7 +656,7 @@ func TestCoinLockupTransferTxnRuleErrors(t *testing.T) {
 			NewPublicKey(m3PkBytes),
 			NewPublicKey(m0PkBytes),
 			1,
-			uint256.NewInt().SetUint64(1))
+			uint256.NewInt(1))
 		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToProfileOwner)
 	}
 
@@ -686,7 +686,7 @@ func TestCoinLockupTransferTxnRuleErrors(t *testing.T) {
 			NewPublicKey(m3PkBytes),
 			NewPublicKey(m0PkBytes),
 			1,
-			uint256.NewInt().SetUint64(1))
+			uint256.NewInt(1))
 		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToDAOMembers)
 	}
 
@@ -795,7 +795,7 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 		// Ensure CoinsInCirculationNanos and NumberOfHolders are now zero
 		utxoView := NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		profileEntry := utxoView.GetProfileEntryForPublicKey(m2PkBytes)
-		require.Equal(t, *uint256.NewInt(), profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
+		require.Equal(t, *uint256.NewInt(0), profileEntry.DAOCoinEntry.CoinsInCirculationNanos)
 		require.Equal(t, uint64(0), profileEntry.DAOCoinEntry.NumberOfHolders)
 	}
 
@@ -821,7 +821,7 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m2Pub, m2Priv, m2Pub, m2Pub,
-			1000, 1000, uint256.NewInt().SetUint64(1), 0)
+			1000, 1000, uint256.NewInt(1), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupYieldCausesOverflowInLockedBalanceEntry)
 	}
 
@@ -965,7 +965,7 @@ func TestLockupBasedOverflowsOnProfiles(t *testing.T) {
 			DAOCoinMetadata{
 				ProfilePublicKey:          m2PkBytes,
 				OperationType:             DAOCoinOperationTypeMint,
-				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1),
+				CoinsToMintNanos:          *uint256.NewInt(1),
 				CoinsToBurnNanos:          uint256.Int{},
 				TransferRestrictionStatus: 0,
 			})
@@ -1051,7 +1051,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			m1Pub, m1Priv, m1Pub, m1Pub,
 			365*24*60*60*1e9+365*12*60*60*1e9,
 			365*24*60*60*1e9+365*12*60*60*1e9,
-			uint256.NewInt().SetUint64(10000),
+			uint256.NewInt(10000),
 			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 10000 base units.
@@ -1064,15 +1064,15 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 				365*24*60*60*1e9+365*12*60*60*1e9,
 				365*24*60*60*1e9+365*12*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(10000), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(10000), lockedBalanceEntry.BalanceBaseUnits)
 
 		// Check to ensure that the BalanceEntry has decreased by exactly 10000.
 		newBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			m1PkBytes, m1PkBytes, true)
 		require.True(t, originalBalanceEntry.BalanceNanos.Gt(&newBalanceEntry.BalanceNanos))
 		require.Equal(t,
-			*uint256.NewInt().Sub(&originalBalanceEntry.BalanceNanos, &newBalanceEntry.BalanceNanos),
-			*uint256.NewInt().SetUint64(10000))
+			*uint256.NewInt(0).Sub(&originalBalanceEntry.BalanceNanos, &newBalanceEntry.BalanceNanos),
+			*uint256.NewInt(10000))
 	}
 
 	// Have m1 lockup 10000 m1 DAO tokens for one year.
@@ -1094,7 +1094,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			m1Pub, m1Priv, m1Pub, m1Pub,
 			2*365*24*60*60*1e9,
 			2*365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(10000),
+			uint256.NewInt(10000),
 			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 10500 base units.
@@ -1107,15 +1107,15 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 				2*365*24*60*60*1e9,
 				2*365*24*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(10500), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(10500), lockedBalanceEntry.BalanceBaseUnits)
 
 		// Check to ensure that the BalanceEntry has decreased by exactly 10000.
 		newBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			m1PkBytes, m1PkBytes, true)
 		require.True(t, originalBalanceEntry.BalanceNanos.Gt(&newBalanceEntry.BalanceNanos))
 		require.Equal(t,
-			*uint256.NewInt().Sub(&originalBalanceEntry.BalanceNanos, &newBalanceEntry.BalanceNanos),
-			*uint256.NewInt().SetUint64(10000))
+			*uint256.NewInt(0).Sub(&originalBalanceEntry.BalanceNanos, &newBalanceEntry.BalanceNanos),
+			*uint256.NewInt(10000))
 	}
 
 	// Have m1 lockup 10000 m1 DAO tokens for one and a half year.
@@ -1128,7 +1128,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			m1Pub, m1Priv, m1Pub, m1Pub,
 			2*365*24*60*60*1e9+365*12*60*60*1e9,
 			2*365*24*60*60*1e9+365*12*60*60*1e9,
-			uint256.NewInt().SetUint64(10000),
+			uint256.NewInt(10000),
 			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 10500 base units.
@@ -1143,7 +1143,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 				2*365*24*60*60*1e9+365*12*60*60*1e9,
 				2*365*24*60*60*1e9+365*12*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(10500), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(10500), lockedBalanceEntry.BalanceBaseUnits)
 	}
 
 	// Have m1 lockup 10000 m1 DAO tokens for two years.
@@ -1155,7 +1155,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			m1Pub, m1Priv, m1Pub, m1Pub,
 			3*365*24*60*60*1e9,
 			3*365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(10000),
+			uint256.NewInt(10000),
 			365*24*60*60*1e9)
 
 		// Check to ensure the resulting locked balance entry has 12000 base units.
@@ -1170,7 +1170,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 				3*365*24*60*60*1e9,
 				3*365*24*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(12000), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(12000), lockedBalanceEntry.BalanceBaseUnits)
 	}
 
 	// Have m1 distribute 1 year locked tokens.
@@ -1183,7 +1183,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			NewPublicKey(m2PkBytes),
 			NewPublicKey(m1PkBytes),
 			2*365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(500),
+			uint256.NewInt(500),
 		)
 		_coinLockupTransferWithTestMeta(
 			testMeta,
@@ -1193,7 +1193,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			NewPublicKey(m3PkBytes),
 			NewPublicKey(m1PkBytes),
 			2*365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(500),
+			uint256.NewInt(500),
 		)
 		_coinLockupTransferWithTestMeta(
 			testMeta,
@@ -1203,7 +1203,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			NewPublicKey(m4PkBytes),
 			NewPublicKey(m1PkBytes),
 			2*365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(500),
+			uint256.NewInt(500),
 		)
 
 		// Check to ensure the resulting locked balance entry for m1 has 9000 base units.
@@ -1218,7 +1218,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 				2*365*24*60*60*1e9,
 				2*365*24*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(9000), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(9000), lockedBalanceEntry.BalanceBaseUnits)
 	}
 
 	// Check to make sure locked tokens are not liquid.
@@ -1230,7 +1230,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 			NewPublicKey(m3PkBytes),
 			NewPublicKey(m1PkBytes),
 			2*365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(500),
+			uint256.NewInt(500),
 		)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupTransferRestrictedToProfileOwner)
 	}
@@ -1260,7 +1260,7 @@ func TestLockupStandardProfileFlows(t *testing.T) {
 		newBalanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(
 			m2PkBytes, m1PkBytes, true)
 		require.True(t, newBalanceEntry.BalanceNanos.Gt(&originalBalanceEntry.BalanceNanos))
-		require.Equal(t, *uint256.NewInt().SetUint64(500), *uint256.NewInt().Sub(
+		require.Equal(t, *uint256.NewInt(500), *uint256.NewInt(0).Sub(
 			&newBalanceEntry.BalanceNanos, &originalBalanceEntry.BalanceNanos))
 	}
 }
@@ -1284,7 +1284,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 
 	senderPrivBytes, _, err := Base58CheckDecode(m0Priv)
 	require.NoError(t, err)
-	m0PrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	m0PrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 
 	// Setup helper functions for creating m0 derived keys
 	newUtxoView := func() *UtxoView {
@@ -1494,7 +1494,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1507,7 +1507,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m1Pub, m1Priv, m1Pub, m1Pub,
 			365*24*60*60*1e9,
 			365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(1000),
+			uint256.NewInt(1000),
 			0)
 		_coinLockupTransferWithTestMeta(
 			testMeta,
@@ -1517,7 +1517,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			NewPublicKey(m0PkBytes),
 			NewPublicKey(m1PkBytes),
 			365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(1000),
+			uint256.NewInt(1000),
 		)
 		coinUnlockMetadata := &CoinUnlockMetadata{ProfilePublicKey: NewPublicKey(m1PkBytes)}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
@@ -1529,7 +1529,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		// (Correct profile + correct operation)
 		_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m1PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+			DAOCoinToTransferNanos: *uint256.NewInt(1000),
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		coinLockupMetadata = &CoinLockupMetadata{
@@ -1537,7 +1537,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m1PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1547,7 +1547,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		// Ensure the operation cannot be performed again as the transaction limit was set to 1.
 		_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m1PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+			DAOCoinToTransferNanos: *uint256.NewInt(1000),
 			ReceiverPublicKey:      m0PkBytes,
 		})
 		coinLockupMetadata = &CoinLockupMetadata{
@@ -1555,7 +1555,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m1PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1583,7 +1583,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 		// Have m1 transfer 1000 unlocked m1 coins to m0
 		_daoCoinTransferTxnWithTestMeta(testMeta, testMeta.feeRateNanosPerKb, m1Pub, m1Priv, DAOCoinTransferMetadata{
 			ProfilePublicKey:       m1PkBytes,
-			DAOCoinToTransferNanos: *uint256.NewInt().SetUint64(1000),
+			DAOCoinToTransferNanos: *uint256.NewInt(1000),
 			ReceiverPublicKey:      m0PkBytes,
 		})
 
@@ -1594,7 +1594,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m1PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1608,7 +1608,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1630,7 +1630,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 365*24*60*60*1e9+1,
@@ -1665,7 +1665,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1678,7 +1678,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			m1Pub, m1Priv, m1Pub, m1Pub,
 			365*24*60*60*1e9,
 			365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(1000),
+			uint256.NewInt(1000),
 			0)
 		_coinLockupTransferWithTestMeta(
 			testMeta,
@@ -1688,7 +1688,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			NewPublicKey(m0PkBytes),
 			NewPublicKey(m1PkBytes),
 			365*24*60*60*1e9,
-			uint256.NewInt().SetUint64(1000),
+			uint256.NewInt(1000),
 		)
 
 		// Have m0 unlock the 1,000 locked m1 tokens.
@@ -1705,7 +1705,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 365*24*60*60*1e9+1,
@@ -1788,7 +1788,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1803,7 +1803,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 				365*24*60*60*1e9,
 				365*24*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(1000), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
 
 		// Perform the second lockup operation of 1000 m0 coins at 2yrs
@@ -1812,7 +1812,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     2 * 365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 2 * 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 0,
@@ -1827,7 +1827,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 				2*365*24*60*60*1e9,
 				2*365*24*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(1000), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(2*365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
 
 		// Perform the first transfer operation to m1 of 500 locked m0 coins @ 1yr
@@ -1835,7 +1835,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:             NewPublicKey(m1PkBytes),
 			ProfilePublicKey:               NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:        365 * 24 * 60 * 60 * 1e9,
-			LockedCoinsToTransferBaseUnits: uint256.NewInt().SetUint64(500),
+			LockedCoinsToTransferBaseUnits: uint256.NewInt(500),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupTransferMetadata}, 0,
@@ -1850,7 +1850,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 				365*24*60*60*1e9,
 				365*24*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(500), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
 
 		// Perform the second transfer operation to m1 of 500 locked m0 coins @ 2yrs
@@ -1858,7 +1858,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:             NewPublicKey(m1PkBytes),
 			ProfilePublicKey:               NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:        2 * 365 * 24 * 60 * 60 * 1e9,
-			LockedCoinsToTransferBaseUnits: uint256.NewInt().SetUint64(500),
+			LockedCoinsToTransferBaseUnits: uint256.NewInt(500),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupTransferMetadata}, 0,
@@ -1873,7 +1873,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 				2*365*24*60*60*1e9,
 				2*365*24*60*60*1e9)
 		require.NoError(t, err)
-		require.Equal(t, *uint256.NewInt().SetUint64(500), lockedBalanceEntry.BalanceBaseUnits)
+		require.Equal(t, *uint256.NewInt(500), lockedBalanceEntry.BalanceBaseUnits)
 		require.Equal(t, int64(2*365*24*60*60*1e9), lockedBalanceEntry.UnlockTimestampNanoSecs)
 
 		// Perform the first unlock operation of 500 m1 tokens @ 1yr
@@ -1890,8 +1890,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		balanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
-		require.Equal(t, *uint256.NewInt().SetUint64(500),
-			*uint256.NewInt().Sub(&balanceEntry.BalanceNanos, &startingBalance))
+		require.Equal(t, *uint256.NewInt(500),
+			*uint256.NewInt(0).Sub(&balanceEntry.BalanceNanos, &startingBalance))
 		lockedBalanceEntry, err =
 			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 				m0PKID,
@@ -1912,8 +1912,8 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 		balanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 		require.True(t, balanceEntry.BalanceNanos.Gt(&startingBalance))
-		require.Equal(t, *uint256.NewInt().SetUint64(1000),
-			*uint256.NewInt().Sub(&balanceEntry.BalanceNanos, &startingBalance))
+		require.Equal(t, *uint256.NewInt(1000),
+			*uint256.NewInt(0).Sub(&balanceEntry.BalanceNanos, &startingBalance))
 		lockedBalanceEntry, err =
 			utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 				m0PKID,
@@ -1929,7 +1929,7 @@ func TestLockupWithDerivedKey(t *testing.T) {
 			RecipientPublicKey:          NewPublicKey(m0PkBytes),
 			UnlockTimestampNanoSecs:     3 * 365 * 24 * 60 * 60 * 1e9,
 			VestingEndTimestampNanoSecs: 3 * 365 * 24 * 60 * 60 * 1e9,
-			LockupAmountBaseUnits:       uint256.NewInt().SetUint64(1000),
+			LockupAmountBaseUnits:       uint256.NewInt(1000),
 		}
 		_, err = _submitLockupTxnWithDerivedKeyAndTimestamp(
 			m0PkBytes, derivedKeyPriv, MsgDeSoTxn{TxnMeta: coinLockupMetadata}, 2*365*24*60*60*1e9+2,
@@ -1956,7 +1956,7 @@ func TestLockupDisconnects(t *testing.T) {
 		m0Pub, m0Priv, m0Pub, m0Pub,
 		2*365*24*60*60*1e9,
 		2*365*24*60*60*1e9,
-		uint256.NewInt().SetUint64(1000),
+		uint256.NewInt(1000),
 		365*24*60*60*1e9)
 	require.NoError(t, err)
 	utxoOps2, txn2, _, err := _coinLockupWithConnectTimestamp(
@@ -1964,7 +1964,7 @@ func TestLockupDisconnects(t *testing.T) {
 		m0Pub, m0Priv, m0Pub, m0Pub,
 		2*365*24*60*60*1e9,
 		2*365*24*60*60*1e9,
-		uint256.NewInt().SetUint64(1000),
+		uint256.NewInt(1000),
 		365*24*60*60*1e9)
 	require.NoError(t, err)
 	txHash := txn2.Hash()
@@ -1984,9 +1984,9 @@ func TestLockupDisconnects(t *testing.T) {
 			2*365*24*60*60*1e9,
 			2*365*24*60*60*1e9)
 	require.NoError(t, err)
-	require.Equal(t, *uint256.NewInt().SetUint64(1000), lockedBalanceEntry.BalanceBaseUnits)
+	require.Equal(t, *uint256.NewInt(1000), lockedBalanceEntry.BalanceBaseUnits)
 	balanceEntry, _, _ := utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
-	require.Equal(t, *uint256.NewInt().SetUint64(999000), balanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(999000), balanceEntry.BalanceNanos)
 	err = utxoView.DisconnectTransaction(txn1, txn1.Hash(), utxoOps1, blockHeight)
 	require.NoError(t, utxoView.FlushToDb(uint64(blockHeight)))
 	require.NoError(t, err)
@@ -2000,7 +2000,7 @@ func TestLockupDisconnects(t *testing.T) {
 			2*365*24*60*60*1e9)
 	require.True(t, lockedBalanceEntry == nil)
 	balanceEntry, _, _ = utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
-	require.Equal(t, *uint256.NewInt().SetUint64(1000000), balanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(1000000), balanceEntry.BalanceNanos)
 
 	//
 	// Test Update Coin Lockup Params for Profiles
@@ -2222,7 +2222,7 @@ func TestLockupDisconnects(t *testing.T) {
 	m4be, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
 	require.NoError(t, err)
 	require.Equal(t, *MaxUint256, m4LockedBalanceEntry.BalanceBaseUnits)
-	require.Equal(t, *uint256.NewInt(), m4be.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(0), m4be.BalanceNanos)
 
 	utxoOps, txn, _, err = _coinUnlockWithConnectTimestamp(
 		t, testMeta.chain, testMeta.db, testMeta.params,
@@ -2264,7 +2264,7 @@ func TestLockupDisconnects(t *testing.T) {
 			1000)
 	require.NoError(t, err)
 	m4be, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m4PkBytes, m4PkBytes)
-	require.Equal(t, *uint256.NewInt(), m4be.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(0), m4be.BalanceNanos)
 	require.Equal(t, *MaxUint256, m4LockedBalanceEntry.BalanceBaseUnits)
 }
 
@@ -2291,8 +2291,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.True(t, m0LeftYieldCurvePoint == nil)
 	m0BalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 	m3BalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
-	require.Equal(t, *uint256.NewInt().SetUint64(1000000), m0BalanceEntry.BalanceNanos)
-	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(1000000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(0), m3BalanceEntry.BalanceNanos)
 	m0LockedBalanceEntry, err :=
 		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 			m0PKID,
@@ -2323,12 +2323,12 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	_signTxn(t, updateTxn, m0Priv)
 	lockupTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTxn(
 		m0PkBytes, m0PkBytes, m0PkBytes, tipTimestamp+2e9, tipTimestamp+2e9,
-		uint256.NewInt().SetUint64(1000), nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+		uint256.NewInt(1000), nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(t, err)
 	_signTxn(t, lockupTxn, m0Priv)
 	transferTxn, _, _, _, err := testMeta.chain.CreateCoinLockupTransferTxn(
 		m0PkBytes, m3PkBytes, m0PkBytes, tipTimestamp+2e9,
-		uint256.NewInt().SetUint64(1000), nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
+		uint256.NewInt(1000), nil, testMeta.feeRateNanosPerKb, nil, []*DeSoOutput{})
 	require.NoError(t, err)
 	_signTxn(t, transferTxn, m0Priv)
 
@@ -2370,8 +2370,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.Equal(t, uint64(1000), m0LeftYieldCurvePoint.LockupYieldAPYBasisPoints)
 	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
-	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
-	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(999000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(0), m3BalanceEntry.BalanceNanos)
 	m0LockedBalanceEntry, err =
 		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 			m0PKID,
@@ -2387,7 +2387,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 			tipTimestamp+2e9,
 			tipTimestamp+2e9)
 	require.NoError(t, err)
-	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3LockedBalanceEntry.BalanceBaseUnits)
+	require.Equal(t, *uint256.NewInt(1000), m3LockedBalanceEntry.BalanceBaseUnits)
 
 	//
 	// Construct a subsequent second block and test unlock.
@@ -2425,8 +2425,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 		testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
-	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
-	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(999000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(1000), m3BalanceEntry.BalanceNanos)
 	m0LockedBalanceEntry, err =
 		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 			m0PKID,
@@ -2478,8 +2478,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.Equal(t, uint64(1000), m0LeftYieldCurvePoint.LockupYieldAPYBasisPoints)
 	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
-	require.Equal(t, *uint256.NewInt().SetUint64(999000), m0BalanceEntry.BalanceNanos)
-	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(999000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(0), m3BalanceEntry.BalanceNanos)
 	m0LockedBalanceEntry, err =
 		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 			m0PKID,
@@ -2495,7 +2495,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 			tipTimestamp+2e9,
 			tipTimestamp+2e9)
 	require.NoError(t, err)
-	require.Equal(t, *uint256.NewInt().SetUint64(1000), m3LockedBalanceEntry.BalanceBaseUnits)
+	require.Equal(t, *uint256.NewInt(1000), m3LockedBalanceEntry.BalanceBaseUnits)
 
 	//
 	// Disconnect the first block and ensure state is reverted.
@@ -2530,8 +2530,8 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.True(t, m0LeftYieldCurvePoint == nil)
 	m0BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 	m3BalanceEntry, _, _ = utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m3PkBytes, m0PkBytes)
-	require.Equal(t, *uint256.NewInt().SetUint64(1000000), m0BalanceEntry.BalanceNanos)
-	require.Equal(t, *uint256.NewInt(), m3BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(1000000), m0BalanceEntry.BalanceNanos)
+	require.Equal(t, *uint256.NewInt(0), m3BalanceEntry.BalanceNanos)
 	m0LockedBalanceEntry, err =
 		utxoView.GetLockedBalanceEntryForHODLerPKIDProfilePKIDUnlockTimestampNanoSecsVestingEndTimestampNanoSecs(
 			m0PKID,
@@ -2562,7 +2562,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m3Pub,
-			1000, 1000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2582,7 +2582,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m3LockedBalanceEntry != nil)
-	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1000)))
 
 	// Check the m0 LockedBalanceEntry as non-existent
 	m0LockedBalanceEntry, err := utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
@@ -2599,7 +2599,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m3Pub,
-			1050, 1100, uint256.NewInt().SetUint64(1000), 0)
+			1050, 1100, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2612,7 +2612,7 @@ func TestCoinLockupIndirectRecipients(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m3LockedBalanceEntry != nil)
-	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+	require.True(t, m3LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1000)))
 
 	// Check the m0 LockedBalanceEntry as non-existent
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
@@ -2637,7 +2637,7 @@ func TestSimpleVestedLockup(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2680,14 +2680,14 @@ func TestSimpleVestedLockup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 
 	// Get the updated m0 balance entry base units and ensure it's been credited 500 base units.
 	utxoView = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	updatedBalanceEntry, _, _ :=
 		utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
-	require.True(t, uint256.NewInt().SetUint64(500).Eq(
-		uint256.NewInt().Sub(
+	require.True(t, uint256.NewInt(500).Eq(
+		uint256.NewInt(0).Sub(
 			&updatedBalanceEntry.BalanceNanos,
 			&originalBalanceEntry.BalanceNanos)))
 	originalBalanceEntry = updatedBalanceEntry
@@ -2724,14 +2724,14 @@ func TestSimpleVestedLockup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(250)))
 
 	// Get the updated m0 balance entry base units and ensure it's been credited 250 base units.
 	utxoView = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	updatedBalanceEntry, _, _ =
 		utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
-	require.True(t, uint256.NewInt().SetUint64(250).Eq(
-		uint256.NewInt().Sub(
+	require.True(t, uint256.NewInt(250).Eq(
+		uint256.NewInt(0).Sub(
 			&updatedBalanceEntry.BalanceNanos,
 			&originalBalanceEntry.BalanceNanos)))
 	originalBalanceEntry = updatedBalanceEntry
@@ -2773,14 +2773,14 @@ func TestSimpleVestedLockup(t *testing.T) {
 	utxoView = NewUtxoView(testMeta.db, testMeta.params, testMeta.chain.postgres, testMeta.chain.snapshot, nil)
 	updatedBalanceEntry, _, _ =
 		utxoView.GetBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes, true)
-	require.True(t, uint256.NewInt().SetUint64(250).Eq(
-		uint256.NewInt().Sub(
+	require.True(t, uint256.NewInt(250).Eq(
+		uint256.NewInt(0).Sub(
 			&updatedBalanceEntry.BalanceNanos,
 			&originalBalanceEntry.BalanceNanos)))
 	originalBalanceEntry = updatedBalanceEntry
 
 	// Check that we're back to where we started (1e6 base units)
-	require.True(t, uint256.NewInt().SetUint64(1e6).Eq(&updatedBalanceEntry.BalanceNanos))
+	require.True(t, uint256.NewInt(1e6).Eq(&updatedBalanceEntry.BalanceNanos))
 }
 
 func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
@@ -2795,7 +2795,7 @@ func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2804,7 +2804,7 @@ func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			3000, 4000, uint256.NewInt().SetUint64(1000), 0)
+			3000, 4000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2823,7 +2823,7 @@ func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1000)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -2832,7 +2832,7 @@ func TestNoOverlapVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1000)))
 }
 
 func TestPerfectOverlapVestedLockupConsolidation(t *testing.T) {
@@ -2847,7 +2847,7 @@ func TestPerfectOverlapVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2856,7 +2856,7 @@ func TestPerfectOverlapVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2875,7 +2875,7 @@ func TestPerfectOverlapVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(2000)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(2000)))
 }
 
 func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
@@ -2897,7 +2897,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2906,7 +2906,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1500, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1500, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2925,7 +2925,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -2934,7 +2934,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1500)))
 
 	// Now we test the opposite vested lockup consolidation type:
 	// existing lockup:                    -------------------
@@ -2948,7 +2948,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1500, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1500, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2957,7 +2957,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -2972,7 +2972,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
@@ -2981,7 +2981,7 @@ func TestLeftOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1500)))
 }
 
 func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
@@ -3003,7 +3003,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3012,7 +3012,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 1499, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1499, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3031,7 +3031,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1499)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1499)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3040,7 +3040,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(501)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(501)))
 
 	// Now we test the opposite vested lockup consolidation type:
 	// existing lockup:       -------------------
@@ -3054,7 +3054,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1000, 1499, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1499, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3063,7 +3063,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3078,7 +3078,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1500)))
 	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
@@ -3087,7 +3087,7 @@ func TestRightOverhangVestedLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 }
 
 func TestExternalThreeWayLockupConsolidation(t *testing.T) {
@@ -3108,7 +3108,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+			1250, 1750, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3117,7 +3117,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 1500, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1500, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3136,7 +3136,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3145,7 +3145,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3154,7 +3154,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1000)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1000)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3175,7 +3175,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1000, 1500, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1500, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3184,7 +3184,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+			1250, 1750, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3199,7 +3199,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
@@ -3208,7 +3208,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1002)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1002)))
 	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
@@ -3217,7 +3217,7 @@ func TestExternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(498)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(498)))
 }
 
 func TestInternalThreeWayLockupConsolidation(t *testing.T) {
@@ -3238,7 +3238,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3247,7 +3247,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+			1250, 1750, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3266,7 +3266,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(250)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3275,7 +3275,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1500)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3284,7 +3284,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(250)))
 
 	// Now we test the opposite vested lockup consolidation type:
 	// existing lockup:             ------------------
@@ -3297,7 +3297,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1250, 1750, uint256.NewInt().SetUint64(1000), 0)
+			1250, 1750, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3306,7 +3306,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m1Pub, m1Priv, m1Pub, m1Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3321,7 +3321,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(250)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(250)))
 	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
@@ -3330,7 +3330,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1501)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1501)))
 	m1LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m1PKID,
 		ProfilePKID:                 *m1PKID,
@@ -3339,7 +3339,7 @@ func TestInternalThreeWayLockupConsolidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m1LockedBalanceEntry != nil)
-	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(249)))
+	require.True(t, m1LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(249)))
 }
 
 func TestSimpleJointExistingVestedLockups(t *testing.T) {
@@ -3360,7 +3360,7 @@ func TestSimpleJointExistingVestedLockups(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 1500, uint256.NewInt().SetUint64(1000), 0)
+			1000, 1500, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3369,7 +3369,7 @@ func TestSimpleJointExistingVestedLockups(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1501, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1501, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3378,7 +3378,7 @@ func TestSimpleJointExistingVestedLockups(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3397,7 +3397,7 @@ func TestSimpleJointExistingVestedLockups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1501)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1501)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3406,7 +3406,7 @@ func TestSimpleJointExistingVestedLockups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(1499)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(1499)))
 }
 
 func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
@@ -3427,7 +3427,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1000, 2000, uint256.NewInt().SetUint64(1000), 0)
+			1000, 2000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3436,7 +3436,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			3000, 4000, uint256.NewInt().SetUint64(1000), 0)
+			3000, 4000, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3445,7 +3445,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 		_, _, _, err := _coinLockupWithConnectTimestamp(
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
-			1500, 3500, uint256.NewInt().SetUint64(1000), 0)
+			1500, 3500, uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3464,7 +3464,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3473,7 +3473,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(750)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(750)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3482,7 +3482,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(499)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(499)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3491,7 +3491,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(751)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(751)))
 	m0LockedBalanceEntry, err = utxoView.GetLockedBalanceEntryForLockedBalanceEntryKey(LockedBalanceEntryKey{
 		HODLerPKID:                  *m0PKID,
 		ProfilePKID:                 *m0PKID,
@@ -3500,7 +3500,7 @@ func TestSimpleDisjointExistingVestedLockups(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, m0LockedBalanceEntry != nil)
-	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(500)))
+	require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(500)))
 }
 
 func TestVestingIntersectionLimit(t *testing.T) {
@@ -3521,7 +3521,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 			_, _, _, err := _coinLockupWithConnectTimestamp(
 				t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 				m0Pub, m0Priv, m0Pub, m0Pub,
-				int64(ii*1000)+1, int64(ii*1000)+1000, uint256.NewInt().SetUint64(1000), 0)
+				int64(ii*1000)+1, int64(ii*1000)+1000, uint256.NewInt(1000), 0)
 			require.NoError(t, err)
 		}
 	}
@@ -3537,7 +3537,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 			DAOCoinMetadata{
 				ProfilePublicKey:          m0PkBytes,
 				OperationType:             DAOCoinOperationTypeMint,
-				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1e9),
+				CoinsToMintNanos:          *uint256.NewInt(1e9),
 				CoinsToBurnNanos:          uint256.Int{},
 				TransferRestrictionStatus: 0,
 			})
@@ -3550,7 +3550,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
 			1, int64((maxIntersections-1)*1000)+1000,
-			uint256.NewInt().SetUint64(uint64(maxIntersections)*1000), 0)
+			uint256.NewInt(uint64(maxIntersections)*1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3568,7 +3568,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.True(t, m0LockedBalanceEntry != nil)
-		require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt().SetUint64(2000)))
+		require.True(t, m0LockedBalanceEntry.BalanceBaseUnits.Eq(uint256.NewInt(2000)))
 	}
 
 	// Now add another vested lockup, pushing us over the limit.
@@ -3578,7 +3578,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 			m0Pub, m0Priv, m0Pub, m0Pub,
 			int64(maxIntersections*1000)+1,
 			int64(maxIntersections*1000)+1000,
-			uint256.NewInt().SetUint64(1000), 0)
+			uint256.NewInt(1000), 0)
 		require.NoError(t, err)
 	}
 
@@ -3589,7 +3589,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
 			1, int64((maxIntersections)*1000)+1000,
-			uint256.NewInt().SetUint64(uint64(maxIntersections)*1000), 0)
+			uint256.NewInt(uint64(maxIntersections)*1000), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupViolatesVestingIntersectionLimit)
 	}
 
@@ -3601,7 +3601,7 @@ func TestVestingIntersectionLimit(t *testing.T) {
 			t, testMeta.chain, testMeta.db, testMeta.params, testMeta.feeRateNanosPerKb,
 			m0Pub, m0Priv, m0Pub, m0Pub,
 			1000, int64((maxIntersections)*1000)+1,
-			uint256.NewInt().SetUint64(uint64(maxIntersections)*1000), 0)
+			uint256.NewInt(uint64(maxIntersections)*1000), 0)
 		require.Contains(t, err.Error(), RuleErrorCoinLockupViolatesVestingIntersectionLimit)
 	}
 
@@ -3625,8 +3625,8 @@ func TestVestingIntersectionLimit(t *testing.T) {
 	finalBalanceEntry, _, _ := utxoView.GetDAOCoinBalanceEntryForHODLerPubKeyAndCreatorPubKey(m0PkBytes, m0PkBytes)
 	require.True(t, finalBalanceEntry != nil)
 	require.True(t,
-		uint256.NewInt().Sub(&finalBalanceEntry.BalanceNanos, &startingBalanceEntry.BalanceNanos).Eq(
-			uint256.NewInt().SetUint64(uint64(maxIntersections)*2000+1000)))
+		uint256.NewInt(0).Sub(&finalBalanceEntry.BalanceNanos, &startingBalanceEntry.BalanceNanos).Eq(
+			uint256.NewInt(uint64(maxIntersections)*2000+1000)))
 
 	// Now just to be extra sure, check to make sure there's no more unlockable locked balance entries.
 	unvestedUnlockable, vestedUnlockable, err :=
@@ -3667,7 +3667,7 @@ func TestRealWorldLockupsUseCase(t *testing.T) {
 			DAOCoinMetadata{
 				ProfilePublicKey:          m0PkBytes,
 				OperationType:             DAOCoinOperationTypeMint,
-				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1e7),
+				CoinsToMintNanos:          *uint256.NewInt(1e7),
 				CoinsToBurnNanos:          uint256.Int{},
 				TransferRestrictionStatus: 0,
 			})
@@ -3685,7 +3685,7 @@ func TestRealWorldLockupsUseCase(t *testing.T) {
 	startTime := time.Date(2024, time.January, 1, 14, 0, 0, 0, time.UTC)
 
 	// We iterate for 10 years.
-	totalLocked := uint256.NewInt()
+	totalLocked := uint256.NewInt(0)
 	for ii := 0; ii < 365*5; ii++ {
 		// Check if it's time for a deposit.
 		if ii%7 != 0 {
@@ -3714,14 +3714,14 @@ func TestRealWorldLockupsUseCase(t *testing.T) {
 				m0Pub, m0Priv, m0Pub, m0Pub,
 				nextLockupStartTime.UnixNano(),
 				nextLockupEndTime.UnixNano()-1,
-				uint256.NewInt().SetUint64(1000),
+				uint256.NewInt(1000),
 				blockConnectTime.UnixNano())
 			require.NoError(t, err)
 		}
 
 		// Add to total locked.
-		totalLocked = uint256.NewInt().Add(
-			totalLocked, uint256.NewInt().SetUint64(1000))
+		totalLocked = uint256.NewInt(0).Add(
+			totalLocked, uint256.NewInt(1000))
 	}
 
 	// Verify the locked balance entries in the db.
@@ -3733,10 +3733,10 @@ func TestRealWorldLockupsUseCase(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the lockedBalanceEntries locked the correct amount and that the entries are consecutive.
-	totalLockedFound := uint256.NewInt()
+	totalLockedFound := uint256.NewInt(0)
 	for ii, lockedBalanceEntry := range lockedBalanceEntries {
 		// Add to the balance found.
-		totalLockedFound = uint256.NewInt().Add(
+		totalLockedFound = uint256.NewInt(0).Add(
 			totalLockedFound, &lockedBalanceEntry.BalanceBaseUnits)
 
 		// Check if we're consecutive.
@@ -3821,7 +3821,7 @@ func _setUpProfilesAndMintM0M1DAOCoins(testMeta *TestMeta) {
 			DAOCoinMetadata{
 				ProfilePublicKey:          m0PkBytes,
 				OperationType:             DAOCoinOperationTypeMint,
-				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1e6),
+				CoinsToMintNanos:          *uint256.NewInt(1e6),
 				CoinsToBurnNanos:          uint256.Int{},
 				TransferRestrictionStatus: 0,
 			})
@@ -3837,7 +3837,7 @@ func _setUpProfilesAndMintM0M1DAOCoins(testMeta *TestMeta) {
 			DAOCoinMetadata{
 				ProfilePublicKey:          m1PkBytes,
 				OperationType:             DAOCoinOperationTypeMint,
-				CoinsToMintNanos:          *uint256.NewInt().SetUint64(1e9),
+				CoinsToMintNanos:          *uint256.NewInt(1e9),
 				CoinsToBurnNanos:          uint256.Int{},
 				TransferRestrictionStatus: 0,
 			})
