@@ -28,11 +28,11 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/sasha-s/go-deadlock"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // blockchain.go is the work-horse for validating DeSo blocks and updating the
@@ -966,6 +966,8 @@ func NewBlockchain(
 	archivalMode bool,
 	checkpointSyncingProviders []string,
 ) (*Blockchain, error) {
+	// Set the deadlock timeout to 10 minutes.
+	deadlock.Opts.DeadlockTimeout = 10 * time.Minute
 
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
 	for _, keyStr := range trustedBlockProducerPublicKeyStrs {
