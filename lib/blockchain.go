@@ -1901,9 +1901,12 @@ func (bc *Blockchain) GetBlockFromBestChainByHash(blockHash *BlockHash, useHeade
 	}
 	currNode := &BlockNode{}
 	*currNode = *blockTip
-	for currNode != nil && currNode.Height > bn.Height {
-		if currNode.Height == bn.Height && currNode.Hash.IsEqual(blockHash) {
-			return currNode, true, nil
+	for currNode != nil && currNode.Height >= bn.Height {
+		if currNode.Height == bn.Height {
+			if currNode.Hash.IsEqual(blockHash) {
+				return currNode, true, nil
+			}
+			return nil, false, nil
 		}
 		currNode = currNode.GetParent(bc.blockIndex)
 	}
