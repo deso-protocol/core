@@ -12,20 +12,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/collections"
-	"github.com/deso-protocol/core/consensus"
-
-	"github.com/decred/dcrd/lru"
-
 	"github.com/DataDog/datadog-go/v5/statsd"
-
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -91,7 +88,7 @@ type Server struct {
 	// adding it to this map and checking this map before replying will make it
 	// so that we only send a reply to the first peer that sent us the inv, which
 	// is more efficient.
-	inventoryBeingProcessed lru.Cache
+	inventoryBeingProcessed *lru.Cache[InvVect, struct{}]
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
 	// peer. It's initially false
@@ -229,7 +226,7 @@ func (srv *Server) _removeRequest(hash *BlockHash) {
 		Type: InvTypeTx,
 		Hash: *hash,
 	}
-	srv.inventoryBeingProcessed.Delete(*invVect)
+	srv.inventoryBeingProcessed.Remove(*invVect)
 }
 
 // dataLock must be acquired for writing before calling this function.
@@ -364,8 +361,8 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
-func RunBlockIndexMigrationOnce(db *badger.DB, dataDir string) error {
-	blockIndexMigrationFileName := filepath.Join(dataDir, BlockIndexMigrationFileName)
+func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
+	blockIndexMigrationFileName := filepath.Join(db.Opts().Dir, BlockIndexMigrationFileName)
 	glog.V(0).Info("FileName: ", blockIndexMigrationFileName)
 	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
 	if err == nil && hasRunMigration {
@@ -373,7 +370,7 @@ func RunBlockIndexMigrationOnce(db *badger.DB, dataDir string) error {
 		return nil
 	}
 	glog.V(0).Info("Running block index migration")
-	if err = RunBlockIndexMigration(db, nil, nil); err != nil {
+	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
 		return errors.Wrapf(err, "Problem running block index migration")
 	}
 	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
@@ -457,11 +454,6 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
-
-	if err := RunBlockIndexMigrationOnce(_db, _dataDir); err != nil {
-		return nil, errors.Wrapf(err, "NewServer: Problem running block index migration"), true
-	}
-
 	var err error
 
 	// Only initialize state change syncer if the directories are defined.
@@ -709,7 +701,7 @@ func NewServer(
 	srv.blockProducer = _blockProducer
 	srv.incomingMessages = _incomingMessages
 	// Make this hold a multiple of what we hold for individual peers.
-	srv.inventoryBeingProcessed = lru.NewCache(maxKnownInventory)
+	srv.inventoryBeingProcessed, _ = lru.New[InvVect, struct{}](maxKnownInventory)
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
@@ -884,8 +876,16 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 	}
 
 	// Go through the block nodes in the blockchain and download the blocks if they're not stored.
-	// TODO: need to figure out a way to get all the blocks in the best chain so we can download historical blocks.
-	for _, blockNode := range srv.blockchain.bestChain.Chain {
+	for ii := uint32(srv.blockchain.lowestBlockNotStored); ii <= srv.blockchain.blockTip().Height; ii++ {
+		blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(ii), false)
+		if err != nil {
+			glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
+			return
+		}
+		if !exists {
+			glog.Errorf("GetBlocksToStore: Block at height %v not found in best chain", ii)
+			return
+		}
 		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
 			maxBlocksInFlight := MaxBlocksInFlight
@@ -895,28 +895,36 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 
 				maxBlocksInFlight = MaxBlocksInFlightPoS
 			}
+			srv.blockchain.lowestBlockNotStored = uint64(blockNode.Height)
 			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
-			currentHeight := int(blockNode.Height)
+			currentHeight := uint64(blockNode.Height)
 			blockNodesToFetch := []*BlockNode{}
 			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
-			var heightLimit int
-			for heightLimit = len(srv.blockchain.bestChain.Chain) - 1; heightLimit >= 0; heightLimit-- {
-				if !srv.blockchain.bestChain.Chain[heightLimit].Status.IsFullyProcessed() {
+			// We filter those out in the loop below by checking IsFullyProcessed.
+			// Find the blocks that we should download.
+			for len(blockNodesToFetch) < numBlocksToFetch {
+				if currentHeight > uint64(srv.blockchain.blockTip().Height) {
 					break
 				}
-			}
-
-			// Find the blocks that we should download.
-			for currentHeight <= heightLimit &&
-				len(blockNodesToFetch) < numBlocksToFetch {
-
 				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
 				// the array index.
-				currentNode := srv.blockchain.bestChain.Chain[currentHeight]
+				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(currentHeight, false)
+				if err != nil {
+					glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
+					return
+				}
+				if !currNodeExists {
+					glog.Errorf("GetBlocksToStore: Block at height %v not found in best chain", currentHeight)
+					return
+				}
 				currentHeight++
+				// If this node is already fully processed, then we don't need to download it.
+				if currentNode.Status.IsFullyProcessed() {
+					break
+				}
 
 				// If we've already requested this block then we don't request it again.
-				if _, exists := pp.requestedBlocks[*currentNode.Hash]; exists {
+				if _, exists = pp.requestedBlocks[*currentNode.Hash]; exists {
 					continue
 				}
 
@@ -1038,12 +1046,16 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	}
 	var hasSeenCheckpointBlockHash bool
 	var checkpointBlockNode *BlockNode
+	var err error
 	if isHeaderChain {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChain.GetBlockByHashAndHeight(
-			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
+		checkpointBlockNode, hasSeenCheckpointBlockHash, err = srv.blockchain.GetBlockFromBestChainByHash(
+			checkpointBlockInfo.Hash, true)
 	} else {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChain.GetBlockByHashAndHeight(
-			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
+		checkpointBlockNode, hasSeenCheckpointBlockHash, err = srv.blockchain.GetBlockFromBestChainByHash(
+			checkpointBlockInfo.Hash, false)
+	}
+	if err != nil {
+		glog.Fatalf("shouldVerifySignatures: Problem getting checkpoint block node from best chain: %v", err)
 	}
 	// If we haven't seen the checkpoint block hash yet, we skip signature verification.
 	if !hasSeenCheckpointBlockHash {
@@ -1071,13 +1083,11 @@ func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
 	if checkpointBlockInfo == nil {
 		return "<No checkpoint block info>"
 	}
-	hasSeenCheckPointBlockHash := false
-	if isHeaders {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChain.GetBlockByHashAndHeight(
-			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
-	} else {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChain.GetBlockByHashAndHeight(
-			checkpointBlockInfo.Hash, checkpointBlockInfo.Height)
+	_, hasSeenCheckPointBlockHash, err := srv.blockchain.GetBlockFromBestChainByHash(
+		checkpointBlockInfo.Hash, isHeaders)
+
+	if err != nil {
+		glog.Fatalf("getCheckpointSyncingStatus: Problem getting checkpoint block node from best chain: %v", err)
 	}
 	if !hasSeenCheckPointBlockHash {
 		return fmt.Sprintf("<Checkpoint block %v not seen yet>", checkpointBlockInfo.String())
@@ -1258,7 +1268,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
 				expectedSnapshotHeightBlock, expectedSnapshotHeightblockExists, err :=
-					srv.blockchain.bestHeaderChain.GetBlockByHeight(expectedSnapshotHeight)
+					srv.blockchain.GetBlockFromBestChainByHeight(expectedSnapshotHeight, true)
 				if err != nil {
 					glog.Errorf("Server._handleHeaderBundle: Problem getting expected snapshot height block, error (%v)", err)
 					return
@@ -1404,8 +1414,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
 		"header tip %v out of %d from peer %v",
 		headerTip.Header, msg.TipHeight, pp)
-	glog.V(0).Infof("Server._handleHeaderBundle: Num Headers in header chain: (chain map: %v) - (chain: %v) ",
-		srv.blockchain.bestHeaderChain.ChainMap.Len(), len(srv.blockchain.bestHeaderChain.Chain))
+	// TODO: this may be wrong?
+	glog.V(0).Infof("Server._handleHeaderBundle: Num Headers in header chain: (header tip height: %v) ",
+		srv.blockchain.blockIndex.GetHeaderTip())
 }
 
 func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
@@ -1677,7 +1688,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
 	glog.Infof(CLog(Magenta, fmt.Sprintf("Metadata checksum: (%v)",
 		srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
-	blockNode, exists, err := srv.blockchain.bestHeaderChain.GetBlockByHeight(msg.SnapshotMetadata.SnapshotBlockHeight)
+	blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(msg.SnapshotMetadata.SnapshotBlockHeight, true)
 	if err != nil {
 		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error (%v)", err)
 		return
@@ -1687,7 +1698,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		//return
 	} else {
 		glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
-			blockNode, srv.blockchain.bestChain.Chain)))
+			blockNode, srv.blockchain.blockIndex.GetTip())))
 	}
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
@@ -1730,7 +1741,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// being too large and possibly causing an error in badger.
 	var blockNodeBatch []*BlockNode
 	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-		currentNode, currentNodeExists, err := srv.blockchain.bestHeaderChain.GetBlockByHeight(ii)
+		currentNode, currentNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(ii, true)
 		if err != nil {
 			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error: (%v)", err)
 			break
@@ -1744,7 +1755,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		currentNode.Status |= StatusBlockValidated
 		currentNode.Status |= StatusBlockCommitted
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-		srv.blockchain.bestChain.PushNewTip(currentNode)
+		srv.blockchain.blockIndex.setTip(currentNode)
 		blockNodeBatch = append(blockNodeBatch, currentNode)
 		if len(blockNodeBatch) < 10000 {
 			continue
@@ -1769,7 +1780,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
-	srv.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+	srv.snapshot.DatabaseCache, _ = lru.New[string, []byte](int(DatabaseCacheSize))
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.syncingState = false
@@ -2055,8 +2066,8 @@ func (srv *Server) _relayTransactions() {
 
 			// Add the transaction to the peer's known inventory. We do
 			// it here when we enqueue the message to the peers outgoing
-			// message queue so that we don't have remember to do it later.
-			pp.knownInventory.Add(*invVect)
+			// message queue so that we don't have to remember to do it later.
+			pp.knownInventory.Add(*invVect, struct{}{})
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {

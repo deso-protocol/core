@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/rand"
@@ -251,7 +252,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.bestChain.Chain = []*BlockNode{genesisBlock}
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{*genesisBlock.Hash: genesisBlock})
 	bc.blockIndex.blockIndexByHash.Add(*genesisBlock.Hash, genesisBlock)
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
@@ -301,7 +302,8 @@ func TestHasValidBlockHeight(t *testing.T) {
 	require.Equal(t, err, RuleErrorInvalidPoSBlockHeight)
 
 	block.Header.Height = 2
-	bc.blockIndex = NewBlockIndex(bc.db, bc.snapshot)
+	// TODO: make sure setting to genesis block works.
+	bc.blockIndex = NewBlockIndex(bc.db, bc.snapshot, genesisBlock)
 	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
@@ -329,7 +331,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -372,9 +374,9 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 			},
 		},
 	}
-	blockNode, err := bc.storeBlockInBlockIndex(block)
-	require.NoError(t, err)
 	newHash, err := block.Hash()
+	require.NoError(t, err)
+	blockNode, err := bc.storeBlockInBlockIndex(block, newHash)
 	require.NoError(t, err)
 	// Check the block index by hash
 	blockNodeFromIndex, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(newHash, uint64(blockNode.Height))
@@ -398,7 +400,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
 	// Okay now we update the status of the block to include validated.
-	blockNode, err = bc.storeValidatedBlockInBlockIndex(block)
+	blockNode, err = bc.storeValidatedBlockInBlockIndex(block, newHash)
 	require.NoError(t, err)
 	blockNodeFromIndex, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(newHash, uncommittedBlock.Header.Height)
 	require.True(t, exists)
@@ -423,7 +425,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.False(t, updatedBlockHash.IsEqual(newHash))
 
 	// Okay now put this new block in there.
-	blockNode, err = bc.storeBlockInBlockIndex(block)
+	blockNode, err = bc.storeBlockInBlockIndex(block, updatedBlockHash)
 	require.NoError(t, err)
 	// Make sure the blockIndexByHash is correct.
 	updatedBlockNode, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(updatedBlockHash, uint64(blockNode.Height))
@@ -444,7 +446,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerVotingPublicKey = nil
-	_, err = bc.storeBlockInBlockIndex(block)
+	_, err = bc.storeBlockInBlockIndex(block, nil)
 	require.Error(t, err)
 }
 
@@ -471,11 +473,7 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.bestChain.Chain = []*BlockNode{
-		genesisNode,
-		block2,
-	}
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
 	})
@@ -807,8 +805,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
-	bc.bestChain.Chain = []*BlockNode{genesisNode}
-	bc.blockIndex.SetBlockIndexFromMap(map[BlockHash]*BlockNode{
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 	})
 	block := &MsgDeSoBlock{
@@ -844,7 +841,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		ProposedInView: 2,
 		PrevBlockHash:  hash1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
-	bc.bestChain.Chain = append(bc.bestChain.Chain, block2)
+	bc.blockIndex.setTip(block2)
 	bc.blockIndex.blockIndexByHash.Add(*hash2, block2)
 	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
@@ -1235,21 +1232,27 @@ func TestShouldReorg(t *testing.T) {
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
 	hash3 := NewBlockHash(RandomBytes(32))
-	bc.bestChain.Chain = []*BlockNode{
+	chain := []*BlockNode{
 		{
 			Hash:   hash1,
 			Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
+			Height: 0,
 		},
 		{
 			Hash:   hash3,
 			Status: StatusBlockStored | StatusBlockValidated,
+			Height: 1,
 		},
 	}
+	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
+		*hash1: chain[0],
+		*hash3: chain[1],
+	})
 
 	newBlock := &BlockNode{
 		Header: &MsgDeSoHeader{
 			ProposedInView: 2,
-			PrevBlockHash:  bc.bestChain.Chain[1].Hash,
+			PrevBlockHash:  chain[1].Hash,
 		},
 	}
 
@@ -1273,7 +1276,7 @@ func TestShouldReorg(t *testing.T) {
 // 1. Simple reorg. Just replacing the uncommitted tip.
 // 2. Create a longer chain and reorg to it.
 // 3. Make sure no reorg when current view is greater than block's view
-// 4. Super happy path of simply extending current uncommitted tip.
+// 4. Super happy path of simply extet anding current uncommitted tip.
 func TestTryApplyNewTip(t *testing.T) {
 	setBalanceModelBlockHeights(t)
 	bc, _, _ := NewTestBlockchain(t)
@@ -1335,44 +1338,47 @@ func TestTryApplyNewTip(t *testing.T) {
 	ancestors, _, err := bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 	checkBestChainForHash := func(hash *BlockHash) bool {
-		return collections.Any(bc.bestChain.Chain, func(bn *BlockNode) bool {
-			return bn.Hash.IsEqual(hash)
-		})
+		_, exists, err := bc.GetBlockFromBestChainByHash(hash, false)
+		require.NoError(t, err)
+		return exists
 	}
 
 	// Try to apply newBlock as tip. This should succeed.
 	newBlockNode := &BlockNode{
 		Header: newBlock.Header,
 		Hash:   newBlockHash,
+		Height: 4,
 	}
 	appliedNewTip, connectedBlockHashes, disconnectedBlockHashes, err := bc.tryApplyNewTip(newBlockNode, 9, ancestors)
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// hash 3 should no longer be in the best chain or best chain map
-	_, hash3ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash3)
+	_, hash3ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash3, false)
+	require.NoError(t, err)
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
 	require.Len(t, connectedBlockHashes, 1)
 	require.Len(t, disconnectedBlockHashes, 1)
 
 	// newBlock should be in the best chain and the best chain map and should be the tip.
-	_, newBlockExistsInBestChainMap := bc.bestChain.ChainMap.Get(*newBlockHash)
+	_, newBlockExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(newBlockHash, false)
+	require.NoError(t, err)
 	require.True(t, newBlockExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(newBlockHash))
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 
 	// Make sure block 2 and block 1 are still in the best chain.
-	_, hash2ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash2)
+	_, hash2ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash2, false)
+	require.NoError(t, err)
 	require.True(t, hash2ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash2))
 
-	_, hash1ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash1)
+	_, hash1ExistsInBestChainMap := bc.blockIndex.blockIndexByHash.Get(*hash1)
 	require.True(t, hash1ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash1))
 
 	// Remove newBlock from the best chain and block index to reset the state.
-	bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-1]
-	bc.bestChain.ChainMap.Remove(*newBlockHash)
+	bc.blockIndex.setTip(bc.blockIndex.GetTip().GetParent(bc.blockIndex))
 	// Add block 3 back
 	bc.addTipBlockToBestChain(bn3)
 
@@ -1409,6 +1415,8 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockNode.Header.ProposedInView = 7
 	newBlockNode.Header.Height = 7
 	newBlockNode.Height = 7
+	// Clear parent out for safety.
+	newBlockNode.Parent = nil
 	require.NoError(t, err)
 	ancestors, _, err = bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
@@ -1420,19 +1428,23 @@ func TestTryApplyNewTip(t *testing.T) {
 	// newBlockHash should be tip.
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 	// hash 3 should no longer be in the best chain or best chain map
-	_, hash3ExistsInBestChainMap = bc.bestChain.ChainMap.Get(*hash3)
+	_, hash3ExistsInBestChainMap, err = bc.GetBlockFromBestChainByHash(hash3, false)
+	require.NoError(t, err)
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
 	// hash 2 should no longer be in the best chain or best chain map
-	_, hash2ExistsInBestChainMap = bc.bestChain.ChainMap.Get(*hash2)
+	_, hash2ExistsInBestChainMap, err = bc.GetBlockFromBestChainByHash(hash2, false)
+	require.NoError(t, err)
 	require.False(t, hash2ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash2))
 	// hash 4 should be in the best chain and the best chain map
-	_, hash4ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash4)
+	_, hash4ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash4, false)
+	require.NoError(t, err)
 	require.True(t, hash4ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash4))
 	// hash 5 should be in the best chain and the best chain map
-	_, hash5ExistsInBestChainMap := bc.bestChain.ChainMap.Get(*hash5)
+	_, hash5ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash5, false)
+	require.NoError(t, err)
 	require.True(t, hash5ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash5))
 
@@ -1440,11 +1452,12 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.Len(t, connectedBlockHashes, 3)
 	require.Len(t, disconnectedBlockHashes, 2)
 
-	// Reset the state of the best chain.
-	bc.bestChain.ChainMap.Remove(*hash4)
-	bc.bestChain.ChainMap.Remove(*hash5)
-	bc.bestChain.ChainMap.Remove(*newBlockHash)
-	bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-3]
+	// Reset the state of the best chain - parent of newBlock
+	//bc.bestChain.ChainMap.Remove(*hash4)
+	//bc.bestChain.ChainMap.Remove(*hash5)
+	//bc.bestChain.ChainMap.Remove(*newBlockHash)
+	//bc.bestChain.Chain = bc.bestChain.Chain[:len(bc.bestChain.Chain)-3]
+	bc.blockIndex.setTip(newBlockNode.GetParent(bc.blockIndex))
 
 	// Add block 2 and 3 back.
 	bc.addTipBlockToBestChain(bn2)
@@ -1514,8 +1527,8 @@ func TestCanCommitGrandparent(t *testing.T) {
 			PrevBlockHash:  hash1,
 		},
 	}
-	bc.bestChain.ChainMap.Add(*hash1, bn1)
-	bc.bestChain.ChainMap.Add(*hash2, bn2)
+	bc.blockIndex.addNewBlockNodeToBlockIndex(bn1)
+	bc.blockIndex.addNewBlockNodeToBlockIndex(bn2)
 
 	// define incoming block
 	hash3 := NewBlockHash(RandomBytes(32))
@@ -1534,7 +1547,7 @@ func TestCanCommitGrandparent(t *testing.T) {
 	// (meaning they are in consecutive views). So we should be able
 	// to commit bn1.
 	grandparentHash, canCommit := bc.canCommitGrandparent(bn3)
-	require.True(t, hash1.IsEqual(grandparentHash))
+	require.True(t, hash1.IsEqual(grandparentHash.Hash))
 	require.True(t, canCommit)
 
 	// Update bn1 to be committed. We no longer can run the commit since bn1 is already
@@ -1609,7 +1622,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 
 	// Add one more block to the best chain, but have the view be further in the future.
 	// this should trigger a commit on block 2.
-	blockTemplate4 := _generateBlockAndAddToBestChain(testMeta, 14, 20, 429)
+	blockTemplate4 := _generateBlockAndAddToBestChain(testMeta, 15, 20, 429)
 	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
@@ -1621,7 +1634,7 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 
 	// Okay so add block 5 to the best chain. This should NOT trigger a commit on block 3
 	// as block 4 is not a direct child of block 3 based on its view.
-	blockTemplate5 := _generateBlockAndAddToBestChain(testMeta, 15, 21, 654)
+	blockTemplate5 := _generateBlockAndAddToBestChain(testMeta, 16, 21, 654)
 	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
 
@@ -1632,9 +1645,9 @@ func TestRunCommitRuleOnBestChain(t *testing.T) {
 	_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, blockHash4, blockHash5}, blockHash2)
 
 	// If we now add a block that is a descendent of block 5, we should be able to commit
-	// blocks 3 and 4 as block 4 and 5 possess a direct parent child relationship and
+	// blocks 3 and 4 as block 4 and 5 possess a direct parent child relationship, and
 	// we have a descendent of block 5.
-	blockTemplate6 := _generateBlockAndAddToBestChain(testMeta, 16, 22, 912)
+	blockTemplate6 := _generateBlockAndAddToBestChain(testMeta, 17, 22, 912)
 	require.NoError(t, err)
 	err = testMeta.chain.runCommitRuleOnBestChain(true)
 	require.NoError(t, err)
@@ -1657,7 +1670,8 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 	for _, committedHash := range committedBlocks {
 		// Okay so let's make sure the block is committed.
-		blockNode, exists := testMeta.chain.bestChain.ChainMap.Get(*committedHash)
+		blockNode, exists, err := testMeta.chain.GetBlockFromBestChainByHash(committedHash, false)
+		require.NoError(testMeta.t, err)
 		require.True(testMeta.t, exists)
 		require.True(testMeta.t, blockNode.IsCommitted())
 
@@ -1682,7 +1696,8 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 	for _, uncommittedBlockHash := range uncommittedBlocks {
 		// Okay so let's make sure the block is uncommitted.
-		blockNode, exists := testMeta.chain.bestChain.ChainMap.Get(*uncommittedBlockHash)
+		blockNode, exists, err := testMeta.chain.GetBlockFromBestChainByHash(uncommittedBlockHash, false)
+		require.NoError(testMeta.t, err)
 		require.True(testMeta.t, exists)
 		require.False(testMeta.t, blockNode.IsCommitted())
 		// TODO: Verify DB results?? Kinda silly to make sure everything is missing.
@@ -1874,7 +1889,8 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Timeout block will no longer be in best chain, and will still be in an uncommitted state in the block index
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, reorgBlockHash}, blockHash2)
 		_verifyRandomSeedHashHelper(testMeta, reorgBlock)
-		_, exists := testMeta.chain.bestChain.ChainMap.Get(*timeoutBlockHash)
+		_, exists, err := testMeta.chain.GetBlockFromBestChainByHash(timeoutBlockHash, false)
+		require.NoError(t, err)
 		require.False(t, exists)
 
 		timeoutBlockNode, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(timeoutBlockHash, timeoutBlockHeight)
@@ -1987,11 +2003,12 @@ func TestGetSafeBlocks(t *testing.T) {
 	testMeta := NewTestPoSBlockchainWithValidators(t)
 	committedHash := testMeta.chain.BlockTip().Hash
 	var block1 *MsgDeSoBlock
+	fmt.Println("HEX STUFF: ", hex.EncodeToString(committedHash[:]))
 	block1 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight), uint64(testMeta.savedHeight), 1723, committedHash, false)
 	block1Hash, err := block1.Hash()
 	require.NoError(t, err)
 	// Add block 1 w/ stored and validated
-	bn1, err := testMeta.chain.storeValidatedBlockInBlockIndex(block1)
+	bn1, err := testMeta.chain.storeValidatedBlockInBlockIndex(block1, nil)
 	require.NoError(t, err)
 	require.True(t, bn1.Hash.IsEqual(block1Hash))
 	// Create block 2 w/ block 1 as parent and add it to the block index w/ stored & validated
@@ -1999,13 +2016,13 @@ func TestGetSafeBlocks(t *testing.T) {
 	block2 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+1), uint64(testMeta.savedHeight+1), 1293, block1Hash, false)
 	block2Hash, err := block2.Hash()
 	require.NoError(t, err)
-	bn2, err := testMeta.chain.storeValidatedBlockInBlockIndex(block2)
+	bn2, err := testMeta.chain.storeValidatedBlockInBlockIndex(block2, nil)
 	require.NoError(t, err)
 	require.True(t, bn2.Hash.IsEqual(block2Hash))
 	// Add block 3 only as stored and validated
 	var block3 *MsgDeSoBlock
 	block3 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+2), 1372, block2Hash, false)
-	bn3, err := testMeta.chain.storeValidatedBlockInBlockIndex(block3)
+	bn3, err := testMeta.chain.storeValidatedBlockInBlockIndex(block3, nil)
 	require.NoError(t, err)
 	block3Hash, err := block3.Hash()
 	require.NoError(t, err)
@@ -2013,7 +2030,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	// Add block 3' only as stored
 	var block3Prime *MsgDeSoBlock
 	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+3), 137175, block2Hash, false)
-	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime)
+	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime, nil)
 	require.NoError(t, err)
 	block3PrimeHash, err := block3Prime.Hash()
 	require.NoError(t, err)
@@ -2024,7 +2041,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	block5.Header.Height = uint64(testMeta.savedHeight + 5)
 	block5Hash, err := block5.Hash()
 	require.NoError(t, err)
-	_, err = testMeta.chain.storeValidatedBlockInBlockIndex(block5)
+	_, err = testMeta.chain.storeValidatedBlockInBlockIndex(block5, nil)
 	require.NoError(t, err)
 	// Okay let's get the safe blocks.
 	safeBlocks, err := testMeta.chain.GetSafeBlocks()
@@ -2045,7 +2062,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	require.False(t, _checkSafeBlocksForBlockHash(block5Hash, safeBlocks))
 
 	// Update block 3 prime to be validated and it should now be a safe block.
-	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime)
+	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime, nil)
 	require.NoError(t, err)
 	require.True(t, bn3Prime.IsValidated())
 	safeBlocks, err = testMeta.chain.GetSafeBlocks()
@@ -2328,7 +2345,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	utxoView := _newUtxoView(testMeta)
 	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
 	require.NoError(t, err)
-	isValid, err := utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+	isValid, err := utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 	require.NoError(t, err)
 	require.True(t, isValid)
 
@@ -2336,7 +2353,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	realVotingPublicKey := realBlock.Header.ProposerVotingPublicKey
 	{
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 		// Reset the proposer voting public key
@@ -2348,7 +2365,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
 		realBlock.Header.ProposerVotePartialSignature, err =
 			testMeta.blsPubKeyToBLSKeyMap[realBlock.Header.ProposerVotingPublicKey.ToString()].Sign(incorrectPayload[:])
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2361,7 +2378,7 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		correctPayload := consensus.GetVoteSignaturePayload(12, realBlockHash)
 		wrongPrivateKey := _generateRandomBLSPrivateKey(t)
 		realBlock.Header.ProposerVotePartialSignature, err = wrongPrivateKey.Sign(correctPayload[:])
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, nil, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2526,7 +2543,7 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	require.NoError(testMeta.t, err)
 
 	// Add block to block index.
-	blockNode, err := testMeta.chain.storeBlockInBlockIndex(msgDesoBlock)
+	blockNode, err := testMeta.chain.storeBlockInBlockIndex(msgDesoBlock, nil)
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
 	_, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(newBlockHash, msgDesoBlock.Header.Height)
@@ -2542,13 +2559,16 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 // _generateBlockAndAddToBestChain generates a BlockTemplate by calling _generateRealBlock and then adds it to the
 // best chain. Finally it updates the PosMempool's latest block view.
 func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, view uint64, seed int64) *MsgDeSoBlock {
-	blockTemplate := _generateRealBlock(testMeta, blockHeight, view, seed, testMeta.chain.BlockTip().Hash, false)
+	prevBlockNode, exists, err := testMeta.chain.GetBlockFromBestChainByHeight(blockHeight-1, false)
+	require.NoError(testMeta.t, err)
+	require.True(testMeta.t, exists)
+	blockTemplate := _generateRealBlock(testMeta, blockHeight, view, seed, prevBlockNode.Hash, false)
 	var msgDesoBlock *MsgDeSoBlock
 	msgDesoBlock = blockTemplate
 	newBlockHash, err := msgDesoBlock.Hash()
 	require.NoError(testMeta.t, err)
 	// Add block to block index.
-	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
+	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock, nil)
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
 	require.True(testMeta.t, blockNode.IsValidated())
@@ -2824,6 +2844,7 @@ func NewTestPoSBlockchainWithValidators(t *testing.T) *TestMeta {
 	for ii := 0; ii < 10; ii++ {
 		_, err := miner.MineAndProcessSingleBlock(0 /*threadIndex*/, oldPool)
 		require.NoError(t, err)
+		fmt.Println("CHAIN TIP: ", chain.BlockTip().Hash)
 	}
 
 	m0PubBytes, _, _ := Base58CheckDecode(m0Pub)

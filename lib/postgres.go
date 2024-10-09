@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	lru2 "github.com/hashicorp/golang-lru/v2"
+	"github.com/hashicorp/golang-lru/v2"
 	"net/url"
 	"regexp"
 	"strings"
@@ -1298,6 +1298,8 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 	// The genesis block has a nil parent
 	if blockNode.Parent != nil {
 		block.ParentHash = blockNode.Parent.Hash
+	} else if !blockNode.Header.PrevBlockHash.IsEqual(GenesisBlockHash) {
+		block.ParentHash = blockNode.Header.PrevBlockHash
 	}
 
 	_, err := tx.Model(block).WherePK().OnConflict("(hash) DO UPDATE").Insert()
@@ -1305,14 +1307,14 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (*lru2.Cache[BlockHash, *BlockNode], error) {
+func (postgres *Postgres) GetBlockIndex() (*lru.Cache[BlockHash, *BlockNode], error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap, _ := lru2.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
+	blockMap, _ := lru.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	for _, block := range blocks {
 		blockMap.Add(*block.Hash, &BlockNode{
 			Hash:             block.Hash,
@@ -1339,7 +1341,7 @@ func (postgres *Postgres) GetBlockIndex() (*lru2.Cache[BlockHash, *BlockNode], e
 		parentHash := blockNode.Header.PrevBlockHash
 		if parentHash != nil {
 			parent, exists := blockMap.Get(*parentHash)
-			if !exists {
+			if !exists && blockNode.Height > 0 {
 				glog.Fatal("Parent block not found in block map")
 			}
 			blockNode.Parent = parent

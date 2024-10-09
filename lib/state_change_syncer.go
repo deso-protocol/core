@@ -777,7 +777,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 		return true, nil
 	}
 
-	blockHeight := uint64(server.blockchain.bestChain.GetTip().Height)
+	blockHeight := uint64(server.blockchain.blockIndex.GetTip().Height)
 
 	stateChangeSyncer.MempoolFlushId = originalCommittedFlushId
 
@@ -804,7 +804,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	mempoolUtxoView.Snapshot = nil
 
 	server.blockchain.ChainLock.RLock()
-	mempoolUtxoView.TipHash = server.blockchain.bestChain.GetTip().Hash
+	mempoolUtxoView.TipHash = server.blockchain.blockIndex.GetTip().Hash
 	server.blockchain.ChainLock.RUnlock()
 
 	// A new transaction is created so that we can simulate writes to the db without actually writing to the db.
@@ -815,7 +815,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	defer txn.Discard()
 	glog.V(2).Infof("Time since mempool sync start: %v", time.Since(startTime))
 	startTime = time.Now()
-	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain.GetTip().Height))
+	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.blockIndex.GetTip().Height))
 	if err != nil {
 		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 			FlushId:        originalCommittedFlushId,

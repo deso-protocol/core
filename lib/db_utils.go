@@ -1183,8 +1183,8 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if val, exists := snap.DatabaseCache.Lookup(keyString); exists {
-			return val.([]byte), nil
+		if val, exists := snap.DatabaseCache.Get(keyString); exists {
+			return val, nil
 		}
 	}
 
@@ -1241,7 +1241,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 			return errors.Wrapf(err, "DBDeleteWithTxn: Problem preparing ancestral record")
 		}
 		// Now delete the past record from the cache.
-		snap.DatabaseCache.Delete(keyString)
+		snap.DatabaseCache.Remove(keyString)
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		if !snap.disableChecksum {
@@ -2810,7 +2810,7 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if _, exists := snap.DatabaseCache.Lookup(keyString); exists {
+		if exists := snap.DatabaseCache.Contains(keyString); exists {
 			return true, nil
 		}
 	}
@@ -5360,7 +5360,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		diffTarget,
 		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
 		genesisBlock.Header, // Header
-		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
+		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated|StatusBlockCommitted, // Status
 	)
 
 	// Set the fields in the db to reflect the current state of our chain.
@@ -5659,8 +5659,8 @@ func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams
 	})
 }
 
-func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager) error {
-	return handle.View(func(txn *badger.Txn) error {
+func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager, params *DeSoParams) error {
+	return handle.Update(func(txn *badger.Txn) error {
 		prefix := _heightHashToNodeIndexPrefix(false)
 		opts := badger.DefaultIteratorOptions
 		opts.Prefix = prefix
@@ -5669,6 +5669,9 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		nodeIterator := txn.NewIterator(opts)
 		defer nodeIterator.Close()
 		hashToHeightMap := make(map[BlockHash]uint32)
+		// Just in case we need it, get the height of the best hash.
+		bestHash := DbGetBestHash(handle, snapshot, ChainTypeDeSoBlock)
+		var bestHashHeight uint32
 		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 			item := nodeIterator.Item().Key()
 
@@ -5677,6 +5680,9 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 			hash := BlockHash{}
 			copy(hash[:], item[5:])
 			hashToHeightMap[hash] = height
+			if bestHash != nil && bestHash.IsEqual(&hash) {
+				bestHashHeight = height
+			}
 			if len(hashToHeightMap) < 10000 {
 				continue
 			}
@@ -5692,10 +5698,64 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
 			}
 		}
+		// If we don't have a best hash, then we certainly haven't hit the first pos block height.
+		if bestHash == nil {
+			return nil
+		}
+		// TODO: get best chain up to PoS Cutover height and set all blocks in that chain to committed.
+		firstPoSBlockHeight := params.GetFirstPoSBlockHeight()
+		// Look up blocks at cutover height.
+		prefixKey := _heightHashToNodePrefixByHeight(uint32(firstPoSBlockHeight), false)
+		_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, prefixKey, false)
+		if err != nil {
+			return errors.Wrap(err, "RunBlockIndexMigration: Problem enumerating keys for prefix")
+		}
+		if len(valsFound) > 1 {
+			return fmt.Errorf("RunBlockIndexMigration: More than one block found at PoS cutover height")
+		}
+		var blockNode *BlockNode
+		// In this case, we need to find pull the best hash from the DB and iterate backwards.
+		if len(valsFound) == 0 {
+			blockNode = GetHeightHashToNodeInfoWithTxn(txn, snapshot, bestHashHeight, bestHash, false)
+			if blockNode == nil {
+				return fmt.Errorf("RunBlockIndexMigration: block with Best hash (%v) and height (%v) not found", bestHash, bestHashHeight)
+			}
+		} else {
+			blockNode, err = DeserializeBlockNode(valsFound[0])
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node for pos cutover")
+			}
+		}
+		var blockNodeBatch []*BlockNode
+		for blockNode != nil {
+			if !blockNode.IsCommitted() {
+				blockNode.Status |= StatusBlockCommitted
+			}
+			// TODO: make sure I don't need a copy.
+			blockNodeBatch = append(blockNodeBatch, blockNode)
+			if len(blockNodeBatch) < 10000 {
+				continue
+			}
+			err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+			}
+			parentBlockNode := GetHeightHashToNodeInfoWithTxn(txn, snapshot, blockNode.Height, blockNode.Hash, false /*bitcoinNodes*/)
+			if blockNode.Height > 0 && parentBlockNode == nil {
+				return errors.New("RunBlockIndexMigration: Parent block node not found")
+			}
+			blockNode = parentBlockNode
+		}
+		err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+		if err != nil {
+			return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+		}
 		return nil
 	})
 }
 
+// TODO: refactor to actually get the whole best chain if that's
+// what someone wants. It'll take a while, but whatever.
 func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
 	maxBestChainInitLength := 3600 * 100 // Cache up to 100 hours of blocks.
