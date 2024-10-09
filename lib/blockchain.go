@@ -2622,7 +2622,6 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	bc.timer.Start("Blockchain.ProcessBlock: BlockNode")
 
 	// See if a node for the block exists in our node index.
-	// TODO: validate that current height - 1 > 0
 	nodeToValidate, nodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(blockHash, blockHeader.Height)
 	// If no node exists for this block at all, then process the header
 	// first before we do anything. This should create a node and set
@@ -2664,10 +2663,13 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// In this case go ahead and return early. If its parents are truly legitimate then we
 	// should re-request it and its parents from a node and reprocess it
 	// once it is no longer an orphan.
-	// TODO: validate that current height - 1 > 0
-	parentNode, parentNodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(blockHeader.PrevBlockHash, blockHeader.Height-1)
-	if !parentNodeExists || (parentNode.Status&StatusBlockProcessed) == 0 {
-		return false, true, nil
+	var parentNode *BlockNode
+	if blockHeader.Height > 0 {
+		var parentNodeExists bool
+		parentNode, parentNodeExists = bc.blockIndex.GetBlockNodeByHashAndHeight(blockHeader.PrevBlockHash, blockHeader.Height-1)
+		if !parentNodeExists || (parentNode.Status&StatusBlockProcessed) == 0 {
+			return false, true, nil
+		}
 	}
 
 	if nodeToValidate.Status.IsFullyProcessed() {
@@ -2697,11 +2699,14 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// Reject the block if any of the following apply to the parent:
 	// - Its header is nil.
 	// - Its header or its block validation failed.
-	if parentNode.Header == nil ||
-		(parentNode.Status&(StatusHeaderValidateFailed|StatusBlockValidateFailed)) != 0 {
+	if blockHeight > 0 {
+		if parentNode == nil ||
+			parentNode.Header == nil ||
+			(parentNode.Status&(StatusHeaderValidateFailed|StatusBlockValidateFailed)) != 0 {
 
-		bc.MarkBlockInvalid(nodeToValidate, RuleErrorPreviousBlockInvalid)
-		return false, false, RuleErrorPreviousBlockInvalid
+			bc.MarkBlockInvalid(nodeToValidate, RuleErrorPreviousBlockInvalid)
+			return false, false, RuleErrorPreviousBlockInvalid
+		}
 	}
 
 	// At this point, we know that we are processing a block we haven't seen
