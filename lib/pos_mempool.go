@@ -1,6 +1,7 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -944,6 +945,15 @@ func (mp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 // new minimum will be removed from the mempool. To safely handle this, this method re-creates the TransactionRegister
 // with the new global params and re-adds all transactions in the mempool to the new register.
 func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
+	// If the global params haven't changed at all, then we don't need to do anything.
+	newGlobalParamBytes := globalParams.RawEncodeWithoutMetadata(mp.latestBlockHeight, true)
+	mp.RLock()
+	mpGlobalParamBytes := mp.globalParams.RawEncodeWithoutMetadata(mp.latestBlockHeight, true)
+	mp.RUnlock()
+	if bytes.Equal(newGlobalParamBytes, mpGlobalParamBytes) {
+		return
+	}
+
 	mp.Lock()
 	defer mp.Unlock()
 

@@ -174,17 +174,17 @@ func TestBlockNodePutGet(t *testing.T) {
 	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
 
-	require.Len(blockIndex, 4)
-	b1Ret, exists := blockIndex[*b1.Hash]
+	require.Equal(blockIndex.Count(), 4)
+	b1Ret, exists := blockIndex.Get(*b1.Hash)
 	require.True(exists, "b1 not found")
 
-	b2Ret, exists := blockIndex[*b2.Hash]
+	b2Ret, exists := blockIndex.Get(*b2.Hash)
 	require.True(exists, "b2 not found")
 
-	b3Ret, exists := blockIndex[*b3.Hash]
+	b3Ret, exists := blockIndex.Get(*b3.Hash)
 	require.True(exists, "b3 not found")
 
-	b4Ret, exists := blockIndex[*b4.Hash]
+	b4Ret, exists := blockIndex.Get(*b4.Hash)
 	require.True(exists, "b4 not found")
 
 	// Make sure the hashes all line up.
@@ -201,7 +201,7 @@ func TestBlockNodePutGet(t *testing.T) {
 
 	// Check that getting the best chain works.
 	{
-		bestChain, err := GetBestChain(b3Ret, blockIndex)
+		bestChain, err := GetBestChain(b3Ret)
 		require.NoError(err)
 		require.Len(bestChain, 3)
 		require.Equal(b1Ret, bestChain[0])
@@ -226,15 +226,15 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	// Check the block index.
 	blockIndex, err := GetBlockIndex(db, false /*bitcoinNodes*/, &DeSoTestnetParams)
 	require.NoError(err)
-	require.Len(blockIndex, 1)
+	require.Equal(blockIndex.Count(), 1)
 	genesisHash := *MustDecodeHexBlockHash(DeSoTestnetParams.GenesisBlockHashHex)
-	genesis, exists := blockIndex[genesisHash]
+	genesis, exists := blockIndex.Get(genesisHash)
 	require.True(exists, "genesis block not found in index")
 	require.NotNil(genesis)
 	require.Equal(&genesisHash, genesis.Hash)
 
 	// Check the bestChain.
-	bestChain, err := GetBestChain(genesis, blockIndex)
+	bestChain, err := GetBestChain(genesis)
 	require.NoError(err)
 	require.Len(bestChain, 1)
 	require.Equal(genesis, bestChain[0])

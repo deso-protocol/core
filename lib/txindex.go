@@ -225,8 +225,7 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 	// The only thing we can really do in this case is rebuild the entire index
 	// from scratch. To do that, we return all the blocks in the index to detach
 	// and all the blocks in the real chain to attach.
-	blockIndexByHashCopy, _ := txi.TXIndexChain.CopyBlockIndexes()
-	txindexTipNode := blockIndexByHashCopy[*txindexTipHash.Hash]
+	txindexTipNode, _ := txi.TXIndexChain.blockIndexByHash.Get(*txindexTipHash.Hash)
 
 	// Get the committed tip.
 	committedTip, _ := txi.CoreChain.GetCommittedTip()
@@ -239,9 +238,11 @@ func (txi *TXIndex) GetTxindexUpdateBlockNodes() (
 		return txindexTipNode, committedTip, nil, newTxIndexBestChain, newBlockchainBestChain
 	}
 
+	derefedTxindexTipNode := *txindexTipNode
+
 	// At this point, we know our txindex tip is in our block index so
 	// there must be a common ancestor between the tip and the block tip.
-	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(txindexTipNode, committedTip)
+	commonAncestor, detachBlocks, attachBlocks := GetReorgBlocks(&derefedTxindexTipNode, committedTip)
 
 	return txindexTipNode, committedTip, commonAncestor, detachBlocks, attachBlocks
 }
@@ -371,7 +372,7 @@ func (txi *TXIndex) Update() error {
 		newBestChain, newBestChainMap := txi.TXIndexChain.CopyBestChain()
 		newBestChain = newBestChain[:len(newBestChain)-1]
 		delete(newBestChainMap, *(blockToDetach.Hash))
-		delete(newBlockIndexByHash, *(blockToDetach.Hash))
+		newBlockIndexByHash.Remove(*(blockToDetach.Hash))
 
 		txi.TXIndexChain.SetBestChainMap(newBestChain, newBestChainMap, newBlockIndexByHash, newBlockIndexByHeight)
 
@@ -405,7 +406,7 @@ func (txi *TXIndex) Update() error {
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
 		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
-		if blockToAttach.Header.PrevBlockHash != nil {
+		if blockToAttach.Header.PrevBlockHash != nil && !utxoView.TipHash.IsEqual(blockToAttach.Header.PrevBlockHash) {
 			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
 			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash)
 			if err != nil {

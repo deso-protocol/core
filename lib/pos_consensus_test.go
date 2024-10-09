@@ -112,9 +112,9 @@ func TestFastHotStuffConsensusHandleLocalTimeoutEvent(t *testing.T) {
 		params: &DeSoTestnetParams,
 		blockchain: &Blockchain{
 			ChainLock: deadlock.RWMutex{},
-			blockIndexByHash: map[BlockHash]*BlockNode{
+			blockIndexByHash: collections.NewConcurrentMapFromMap(map[BlockHash]*BlockNode{
 				*blockHash: {Header: blockHeader},
-			},
+			}),
 			params: &DeSoTestnetParams,
 		},
 		fastHotStuffEventLoop: &consensus.MockFastHotStuffEventLoop{

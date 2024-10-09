@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/DataDog/datadog-go/statsd"
+	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
@@ -319,15 +319,19 @@ func (node *Node) Stop() {
 
 	// Server
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping server..."))
-	node.Server.Stop()
+	if node.Server != nil {
+		node.Server.Stop()
+	}
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Server successfully stopped."))
 
 	// Snapshot
-	snap := node.Server.GetBlockchain().Snapshot()
-	if snap != nil {
-		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
-		snap.Stop()
-		glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
+	if node.Server != nil && node.Server.GetBlockchain() != nil {
+		snap := node.Server.GetBlockchain().Snapshot()
+		if snap != nil {
+			glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Stopping snapshot..."))
+			snap.Stop()
+			glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Snapshot successfully stopped."))
+		}
 	}
 
 	// TXIndex
@@ -340,8 +344,14 @@ func (node *Node) Stop() {
 
 	// Databases
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Closing all databases..."))
-	node.closeDb(node.ChainDB, "chain")
-	node.closeDb(node.Server.GetBlockchain().DB(), "blockchain DB")
+	if node.ChainDB != nil {
+		node.closeDb(node.ChainDB, "chain")
+	}
+	if node.Server != nil && node.Server.GetBlockchain() != nil {
+		blockchainDb := node.Server.GetBlockchain().DB()
+		node.closeDb(blockchainDb, "blockchain DB")
+	}
+
 	node.stopWaitGroup.Wait()
 	glog.Infof(lib.CLog(lib.Yellow, "Node.Stop: Databases successfully closed."))
 

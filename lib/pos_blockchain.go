@@ -137,7 +137,7 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	_headerBlockNode *BlockNode, _isOrphan bool, _err error,
 ) {
 	// Look up the header in the block index to check if it has already been validated and indexed.
-	blockNode, blockNodeExists := bc.blockIndexByHash[*headerHash]
+	blockNode, blockNodeExists := bc.blockIndexByHash.Get(*headerHash)
 
 	// ------------------------------------ Base Cases ----------------------------------- //
 
@@ -157,7 +157,7 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	}
 
 	// The header is an orphan. No need to store it in the block index. Exit early.
-	parentBlockNode, parentBlockNodeExists := bc.blockIndexByHash[*header.PrevBlockHash]
+	parentBlockNode, parentBlockNodeExists := bc.blockIndexByHash.Get(*header.PrevBlockHash)
 	if !parentBlockNodeExists {
 		return nil, true, nil
 	}
@@ -569,7 +569,7 @@ func (bc *Blockchain) checkAndStoreArchivalBlock(block *MsgDeSoBlock) (_success 
 	if err != nil {
 		return false, errors.Wrap(err, "checkAndStoreArchivalBlock: Problem hashing block")
 	}
-	blockNode, exists := bc.blockIndexByHash[*blockHash]
+	blockNode, exists := bc.blockIndexByHash.Get(*blockHash)
 	// If the blockNode doesn't exist, or the block is not committed, or it's already stored, then we're not dealing
 	// with an archival block. Archival blocks must have an existing blockNode, be committed, and not be stored.
 	if !exists || !blockNode.IsCommitted() || blockNode.IsStored() {
@@ -687,7 +687,7 @@ func (bc *Blockchain) validateAndIndexBlockPoS(block *MsgDeSoBlock, parentUtxoVi
 	}
 
 	// Base case - Check if the block is validated or validate failed. If so, we can return early.
-	blockNode, exists := bc.blockIndexByHash[*blockHash]
+	blockNode, exists := bc.blockIndexByHash.Get(*blockHash)
 	if exists && (blockNode.IsValidateFailed() || blockNode.IsValidated()) {
 		return blockNode, nil
 	}
@@ -792,7 +792,7 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(
 	verifySignatures bool,
 ) (*BlockNode, error) {
 	// Check if the block is already in the block index. If so, we check its current status first.
-	blockNode, exists := bc.blockIndexByHash[*blockHash]
+	blockNode, exists := bc.blockIndexByHash.Get(*blockHash)
 	if !exists {
 		// We should never really hit this if the block has already been cached in the block index first.
 		// We check here anyway to be safe.
@@ -890,7 +890,7 @@ func (bc *Blockchain) isValidBlockHeaderPoS(header *MsgDeSoHeader) error {
 // greater than its parent's timestamp.
 func (bc *Blockchain) isBlockTimestampValidRelativeToParentPoS(header *MsgDeSoHeader) error {
 	// Validate that the timestamp is not less than its parent.
-	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash.Get(*header.PrevBlockHash)
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -1050,7 +1050,7 @@ func (bc *Blockchain) hasValidBlockHeightPoS(header *MsgDeSoHeader) error {
 		return RuleErrorPoSBlockBeforeCutoverHeight
 	}
 	// Validate that the block height is exactly one greater than its parent.
-	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash.Get(*header.PrevBlockHash)
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -1065,7 +1065,7 @@ func (bc *Blockchain) hasValidBlockHeightPoS(header *MsgDeSoHeader) error {
 // hasValidBlockViewPoS validates the view for a given block header
 func (bc *Blockchain) hasValidBlockViewPoS(header *MsgDeSoHeader) error {
 	// Validate that the view is greater than the latest uncommitted block.
-	parentBlockNode, exists := bc.blockIndexByHash[*header.PrevBlockHash]
+	parentBlockNode, exists := bc.blockIndexByHash.Get(*header.PrevBlockHash)
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -1094,7 +1094,7 @@ func (bc *Blockchain) hasValidBlockViewPoS(header *MsgDeSoHeader) error {
 
 func (bc *Blockchain) hasValidProposerRandomSeedSignaturePoS(header *MsgDeSoHeader) (bool, error) {
 	// Validate that the leader proposed a valid random seed signature.
-	parentBlock, exists := bc.blockIndexByHash[*header.PrevBlockHash]
+	parentBlock, exists := bc.blockIndexByHash.Get(*header.PrevBlockHash)
 	if !exists {
 		// Note: this should never happen as we only call this function after
 		// we've validated that all ancestors exist in the block index.
@@ -1323,7 +1323,7 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 	prevHeight := header.Height
 	prevView := header.GetView()
 	for {
-		currentBlock, exists := bc.blockIndexByHash[*currentHash]
+		currentBlock, exists := bc.blockIndexByHash.Get(*currentHash)
 		if !exists {
 			return nil, []*BlockHash{currentHash}, RuleErrorMissingAncestorBlock
 		}
@@ -1366,8 +1366,8 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock) (*
 	if err != nil {
 		return nil, errors.Wrapf(err, "getOrCreateBlockNodeFromBlockIndex: Problem hashing block %v", block)
 	}
-	blockNode := bc.blockIndexByHash[*hash]
-	prevBlockNode := bc.blockIndexByHash[*block.Header.PrevBlockHash]
+	blockNode, _ := bc.blockIndexByHash.Get(*hash)
+	prevBlockNode, _ := bc.blockIndexByHash.Get(*block.Header.PrevBlockHash)
 	if blockNode != nil {
 		// If the block node already exists, we should set its parent if it doesn't have one already.
 		if blockNode.Parent == nil {
@@ -1855,7 +1855,7 @@ func (bc *Blockchain) GetUncommittedBlocks(tipHash *BlockHash) ([]*BlockNode, er
 		if currentParentHash == nil {
 			return nil, errors.Errorf("GetUncommittedBlocks: Block %v has nil PrevBlockHash", currentBlock.Hash)
 		}
-		currentBlock = bc.blockIndexByHash[*currentParentHash]
+		currentBlock, _ = bc.blockIndexByHash.Get(*currentParentHash)
 		if currentBlock == nil {
 			return nil, errors.Errorf("GetUncommittedBlocks: Block %v not found in block index", currentBlock.Hash)
 		}
@@ -1917,7 +1917,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash) (
 	// Always fetch the lineage from the committed tip to the block provided first to
 	// ensure that a valid UtxoView is returned.
 	uncommittedAncestors := []*BlockNode{}
-	currentBlock := bc.blockIndexByHash[blockHash]
+	currentBlock, _ := bc.blockIndexByHash.Get(blockHash)
 	if currentBlock == nil {
 		return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", blockHash)
 	}
@@ -1940,7 +1940,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash) (
 		if currentParentHash == nil {
 			return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
 		}
-		currentBlock = bc.blockIndexByHash[*currentParentHash]
+		currentBlock, _ = bc.blockIndexByHash.Get(*currentParentHash)
 		if currentBlock == nil {
 			return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", currentParentHash)
 		}
