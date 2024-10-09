@@ -14,7 +14,7 @@ import (
 
 	"github.com/cloudflare/circl/group"
 	"github.com/decred/dcrd/lru"
-	"github.com/deso-protocol/go-deadlock"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/fatih/color"
 	"github.com/golang/glog"

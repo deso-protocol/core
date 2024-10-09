@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/tyler-smith/go-bip39"
 
-	"github.com/deso-protocol/go-deadlock"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/golang/glog"

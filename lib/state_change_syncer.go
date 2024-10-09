@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // StateSyncerOperationType is an enum that represents the type of operation that should be performed on the
