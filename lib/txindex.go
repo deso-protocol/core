@@ -394,7 +394,9 @@ func (txi *TXIndex) Update() error {
 		//
 		// Only set a BitcoinManager if we have one. This makes some tests pass.
 		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
-		if blockToAttach.Header.PrevBlockHash != nil && !utxoView.TipHash.IsEqual(blockToAttach.Header.PrevBlockHash) {
+		if blockToAttach.Height > 0 &&
+			blockToAttach.Header.PrevBlockHash != nil &&
+			!utxoView.TipHash.IsEqual(blockToAttach.Header.PrevBlockHash) {
 			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
 			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash, blockToAttach.Header.Height-1)
 			if err != nil {
