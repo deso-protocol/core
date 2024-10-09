@@ -1885,6 +1885,10 @@ func (bc *Blockchain) GetBlockFromBestChainByHash(blockHash *BlockHash, useHeade
 		// have to get a bunch of parents in order to be sure it is part of the best header chain. I guess we could
 		// have a map, but kinda defeats the purpose of this refactor.
 	}
+	// TODO: is this legit? It seems like it's fair game...
+	if bc.isSyncing() && useHeaderChain && bn.IsHeaderValidated() {
+		return bn, true, nil
+	}
 	blockTip := bc.BlockTip()
 	if useHeaderChain {
 		blockTip = bc.HeaderTip()
