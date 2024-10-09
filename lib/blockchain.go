@@ -1617,14 +1617,16 @@ func (bc *Blockchain) isTipCurrent(tip *BlockNode) bool {
 		return tip.Height >= bc.MaxSyncBlockHeight
 	}
 
-	minChainWorkBytes, _ := hex.DecodeString(bc.params.MinChainWorkHex)
-
 	// Not current if the cumulative work is below the threshold.
-	if bc.params.IsPoWBlockHeight(uint64(tip.Height)) && tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
-		//glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
-		//"CumWork (%v) is less than minChainWorkBytes (%v)",
-		//tip.CumWork, BytesToBigint(minChainWorkBytes))
-		return false
+	if bc.params.IsPoWBlockHeight(uint64(tip.Height)) {
+		minChainWorkBytes, _ := hex.DecodeString(bc.params.MinChainWorkHex)
+
+		if tip.CumWork.Cmp(BytesToBigint(minChainWorkBytes)) < 0 {
+			//glog.V(2).Infof("Blockchain.isTipCurrent: Tip not current because "+
+			//"CumWork (%v) is less than minChainWorkBytes (%v)",
+			//tip.CumWork, BytesToBigint(minChainWorkBytes))
+			return false
+		}
 	}
 
 	// Not current if the tip has a timestamp older than the maximum
