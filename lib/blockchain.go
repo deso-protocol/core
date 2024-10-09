@@ -389,6 +389,8 @@ func (nn *BlockNode) String() string {
 	var parentHash *BlockHash
 	if nn.Parent != nil {
 		parentHash = nn.Parent.Hash
+	} else {
+		parentHash = nn.Header.PrevBlockHash
 	}
 	tstamp := uint32(0)
 	if nn.Header != nil {
@@ -428,6 +430,9 @@ func (nn *BlockNode) Ancestor(height uint32, blockIndex *BlockIndex) *BlockNode 
 	}
 
 	node := nn
+	// NOTE: using .Parent here is okay b/c it explicitly set it
+	// if we don't already have it when we fetch the parent from
+	// the block index.
 	for ; node != nil && node.Height != height; node = node.Parent {
 		// Keep iterating node until the condition no longer holds.
 		if node.Parent == nil {
@@ -1476,7 +1481,7 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 		// StatusBlockProcessed so this loop is guaranteed to terminate successfully.
 		headerNodeStart = bc.headerTip()
 		for headerNodeStart != nil && (headerNodeStart.Status&StatusBlockProcessed) == 0 {
-			headerNodeStart = headerNodeStart.Parent
+			headerNodeStart = headerNodeStart.GetParent(bc.blockIndex)
 		}
 
 		if headerNodeStart == nil {
@@ -3004,11 +3009,13 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 
 		// If we're syncing there's no risk of concurrency issues. Otherwise, we
 		// need to make a copy in order to be save.
-		if bc.isSyncing() {
-			bc.blockIndex.setTip(nodeToValidate)
-		} else {
-			bc.blockIndex.setTip(nodeToValidate)
-		}
+		// We no longer need to worry about whether we're syncing or not. Just
+		// set the tip.
+		//if bc.isSyncing() {
+		//	bc.blockIndex.setTip(nodeToValidate)
+		//} else {
+		bc.blockIndex.setTip(nodeToValidate)
+		//}
 
 		// This node is on the main chain so set this variable.
 		isMainChain = true
@@ -3163,7 +3170,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 
 			// If the parent node has been marked as invalid then mark this node as
 			// invalid as well.
-			if (attachNode.Parent.Status & StatusBlockValidateFailed) != 0 {
+			if (attachNode.GetParent(bc.blockIndex).Status & StatusBlockValidateFailed) != 0 {
 				bc.MarkBlockInvalid(attachNode, RuleErrorPreviousBlockInvalid)
 				continue
 			}

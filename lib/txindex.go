@@ -369,8 +369,11 @@ func (txi *TXIndex) Update() error {
 	// For each of the blocks we're adding, process them on our txindex chain
 	// and add their mappings to our txn index. Compute any metadata that might
 	// be useful.
-	blockToAttach := &BlockNode{}
-	*blockToAttach = *txindexTipNode
+	// Get the next block after the current txindex tip hash. we know we've already processed the txindex tip hash.
+	blockToAttach, exists, err := txi.CoreChain.GetBlockFromBestChainByHeight(uint64(txindexTipNode.Height+1), false)
+	if !exists || err != nil {
+		return fmt.Errorf("Update: Problem getting block at height %d: %v", txindexTipNode.Height+1, err)
+	}
 	for !blockToAttach.Hash.IsEqual(blockTipNode.Hash) {
 		if txi.killed {
 			glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while attaching blocks"))

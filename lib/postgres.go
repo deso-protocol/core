@@ -1298,6 +1298,8 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 	// The genesis block has a nil parent
 	if blockNode.Parent != nil {
 		block.ParentHash = blockNode.Parent.Hash
+	} else if !blockNode.Header.PrevBlockHash.IsEqual(GenesisBlockHash) {
+		block.ParentHash = blockNode.Header.PrevBlockHash
 	}
 
 	_, err := tx.Model(block).WherePK().OnConflict("(hash) DO UPDATE").Insert()
@@ -1339,7 +1341,7 @@ func (postgres *Postgres) GetBlockIndex() (*lru.Cache[BlockHash, *BlockNode], er
 		parentHash := blockNode.Header.PrevBlockHash
 		if parentHash != nil {
 			parent, exists := blockMap.Get(*parentHash)
-			if !exists {
+			if !exists && blockNode.Height > 0 {
 				glog.Fatal("Parent block not found in block map")
 			}
 			blockNode.Parent = parent
