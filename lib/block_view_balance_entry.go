@@ -182,9 +182,9 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, fetchLockedBalan
 				lockedBalanceEntrysByPkid[*lockedBalanceEntry.HODLerPKID], lockedBalanceEntry)
 
 			if _, ok := lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID]; !ok {
-				lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt()
+				lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt(0)
 			}
-			lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt().Add(
+			lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt(0).Add(
 				lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID],
 				&lockedBalanceEntry.BalanceBaseUnits)
 		}

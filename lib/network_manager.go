@@ -11,11 +11,11 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/container/lru"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -69,7 +69,7 @@ type NetworkManager struct {
 	NonValidatorInboundIndex  *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 
 	// Cache of nonces used during handshake.
-	usedNonces lru.Set[uint64]
+	usedNonces *lru.Cache[uint64, struct{}]
 
 	// The address manager keeps track of peer addresses we're aware of. When
 	// we need to connect to a new outbound peer, it chooses one of the addresses
@@ -121,7 +121,7 @@ func NewNetworkManager(
 	minTxFeeRateNanosPerKB uint64,
 	nodeServices ServiceFlag,
 ) *NetworkManager {
-
+	usedNoncesCache, _ := lru.New[uint64, struct{}](1000)
 	return &NetworkManager{
 		params:                                params,
 		srv:                                   srv,
@@ -136,7 +136,7 @@ func NewNetworkManager(
 		ValidatorOutboundIndex:                collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
 		NonValidatorOutboundIndex:             collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
 		NonValidatorInboundIndex:              collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
-		usedNonces:                            *lru.NewSet[uint64](1000),
+		usedNonces:                            usedNoncesCache,
 		connectIps:                            connectIps,
 		persistentIpToRemoteNodeIdsMap:        collections.NewConcurrentMap[string, RemoteNodeId](),
 		activeValidatorsMap:                   collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator](),
@@ -261,7 +261,7 @@ func (nm *NetworkManager) _handleVersionMessage(origin *Peer, desoMsg DeSoMessag
 	// If we've seen this nonce before then return an error since this is a connection from ourselves.
 	msgNonce := verMsg.Nonce
 	if nm.usedNonces.Contains(msgNonce) {
-		nm.usedNonces.Delete(msgNonce)
+		nm.usedNonces.Remove(msgNonce)
 		glog.Errorf("NetworkManager.handleVersionMessage: Disconnecting RemoteNode with id: (%v) "+
 			"nonce collision, nonce (%v)", origin.ID, msgNonce)
 		nm.Disconnect(rn, "nonce collision")
@@ -277,7 +277,7 @@ func (nm *NetworkManager) _handleVersionMessage(origin *Peer, desoMsg DeSoMessag
 		return
 
 	}
-	nm.usedNonces.Put(responseNonce)
+	nm.usedNonces.Add(responseNonce, struct{}{})
 }
 
 // _handleVerackMessage is called when a new verack message is received.
@@ -1248,7 +1248,7 @@ func (nm *NetworkManager) InitiateHandshake(rn *RemoteNode) {
 		glog.Errorf("NetworkManager.InitiateHandshake: Error initiating handshake: %v", err)
 		nm.Disconnect(rn, fmt.Sprintf("error initiating handshake: %v", err))
 	}
-	nm.usedNonces.Put(nonce)
+	nm.usedNonces.Add(nonce, struct{}{})
 }
 
 // handleHandshakeComplete is called on a completed handshake with a RemoteNodes.

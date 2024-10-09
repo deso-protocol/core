@@ -1958,3 +1958,4 @@ const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
 
 // Constants that was removed from newer version of Btcec
 const BtcecPubKeyBytesLenUncompressed = 65
+const BlockIndexMigrationFileName = "block_index_migration.txt"

@@ -369,8 +369,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	blockRet.Header.TransactionMerkleRoot = merkleRoot
 
 	// Compute the next difficulty target given the current tip.
-	diffTarget, err := CalcNextDifficultyTarget(
-		lastNode, CurrentHeaderVersion, desoBlockProducer.params)
+	diffTarget, err := desoBlockProducer.chain.CalcNextDifficultyTarget(
+		lastNode, CurrentHeaderVersion)
 	if err != nil {
 		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem computing next difficulty: ")
 	}

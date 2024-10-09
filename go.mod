@@ -12,7 +12,6 @@ require (
 	github.com/bxcodec/faker v2.0.1+incompatible
 	github.com/cloudflare/circl v1.4.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
-	github.com/decred/dcrd/container/lru v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/deso-protocol/go-deadlock v1.0.0
 	github.com/deso-protocol/go-merkle-tree v1.0.0
@@ -24,6 +23,7 @@ require (
 	github.com/go-pg/pg/v10 v10.13.0
 	github.com/golang/glog v1.2.2
 	github.com/google/uuid v1.6.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/holiman/uint256 v1.3.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
