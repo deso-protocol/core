@@ -1298,6 +1298,8 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 	// The genesis block has a nil parent
 	if blockNode.Parent != nil {
 		block.ParentHash = blockNode.Parent.Hash
+	} else if !blockNode.Header.PrevBlockHash.IsEqual(GenesisBlockHash) {
+		block.ParentHash = blockNode.Header.PrevBlockHash
 	}
 
 	_, err := tx.Model(block).WherePK().OnConflict("(hash) DO UPDATE").Insert()

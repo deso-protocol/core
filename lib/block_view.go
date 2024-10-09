@@ -5112,6 +5112,7 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 			// but we do have the header. As a result, this condition always evaluates to false and thus
 			// we only process the block reward for the previous block instead of all immature block rewards
 			// as defined by the params.
+			// NOTE: we are not using .GetParent here as it changes the meaning of this code.
 			if blockNode.Parent != nil {
 				nextBlockHash = blockNode.Parent.Hash
 			} else {

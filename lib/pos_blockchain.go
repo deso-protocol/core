@@ -76,11 +76,11 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 	}
 
 	// Don't worry about healing orphan children when we're syncing.
-	if !bc.isSyncing() {
-		// Now that we know we have a valid header, we check the block index for it any orphan children for it
-		// and heal the parent pointers for all of them.
-		bc.healPointersForOrphanChildren(blockNode)
-	}
+	//if !bc.isSyncing() {
+	//	// Now that we know we have a valid header, we check the block index for it any orphan children for it
+	//	// and heal the parent pointers for all of them.
+	//	bc.healPointersForOrphanChildren(blockNode)
+	//}
 
 	// Exit early if the header is an orphan.
 	if isOrphan {
@@ -116,31 +116,31 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 // later on, we not only need to store the parent in the block index but also need to update the
 // pointer from the orphan block's BlockNode to the parent. We do that dynamically here as we
 // process headers.
-func (bc *Blockchain) healPointersForOrphanChildren(blockNode *BlockNode) {
-	// Fetch all potential children of this blockNode from the block index.
-	blockNodesAtNextHeight := bc.blockIndex.GetBlockNodesByHeight(blockNode.Header.Height + 1)
-	exists := len(blockNodesAtNextHeight) > 0
-	if !exists {
-		// No children of this blockNode exist in the block index. Exit early.
-		return
-	}
-
-	// Iterate through all block nodes at the next block height and update their parent pointers.
-	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
-		// Check if it's a child of the parent block node.
-		if !blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) {
-			continue
-		}
-
-		// Check if it has its parent pointer set. If it does, then we exit early.
-		if blockNodeAtNextHeight.Parent != nil {
-			continue
-		}
-
-		// If the parent block node is not set, then we set it to the parent block node.
-		blockNodeAtNextHeight.Parent = blockNode
-	}
-}
+//func (bc *Blockchain) healPointersForOrphanChildren(blockNode *BlockNode) {
+//	// Fetch all potential children of this blockNode from the block index.
+//	blockNodesAtNextHeight := bc.blockIndex.GetBlockNodesByHeight(blockNode.Header.Height + 1)
+//	exists := len(blockNodesAtNextHeight) > 0
+//	if !exists {
+//		// No children of this blockNode exist in the block index. Exit early.
+//		return
+//	}
+//
+//	// Iterate through all block nodes at the next block height and update their parent pointers.
+//	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
+//		// Check if it's a child of the parent block node.
+//		if !blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) {
+//			continue
+//		}
+//
+//		// Check if it has its parent pointer set. If it does, then we exit early.
+//		if blockNodeAtNextHeight.Parent != nil {
+//			continue
+//		}
+//
+//		// If the parent block node is not set, then we set it to the parent block node.
+//		blockNodeAtNextHeight.Parent = blockNode
+//	}
+//}
 
 func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash, verifySignatures bool) (
 	_headerBlockNode *BlockNode, _isOrphan bool, _err error,
@@ -1391,14 +1391,15 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock, ha
 		}
 	}
 	blockNode, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(hash, block.Header.Height)
-	prevBlockNode, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(block.Header.PrevBlockHash, block.Header.Height-1)
 	if blockNode != nil {
 		// If the block node already exists, we should set its parent if it doesn't have one already.
 		if blockNode.Parent == nil {
+			prevBlockNode, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(block.Header.PrevBlockHash, block.Header.Height-1)
 			blockNode.Parent = prevBlockNode
 		}
 		return blockNode, nil
 	}
+	prevBlockNode, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(block.Header.PrevBlockHash, block.Header.Height-1)
 	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(block.Header.Height), nil, nil, block.Header, StatusNone)
 	bc.addNewBlockNodeToBlockIndex(newBlockNode)
 	return newBlockNode, nil
