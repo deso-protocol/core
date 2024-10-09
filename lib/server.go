@@ -22,10 +22,10 @@ import (
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
+	"github.com/sasha-s/go-deadlock"
 )
 
 // ServerMessage is the core data structure processed by the Server in its main

@@ -11,8 +11,8 @@ import (
 	"github.com/dgraph-io/badger/v3"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
+	"github.com/sasha-s/go-deadlock"
 )
 
 type TXIndex struct {
