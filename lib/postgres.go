@@ -1341,7 +1341,7 @@ func (postgres *Postgres) GetBlockIndex() (*lru.Cache[BlockHash, *BlockNode], er
 		parentHash := blockNode.Header.PrevBlockHash
 		if parentHash != nil {
 			parent, exists := blockMap.Get(*parentHash)
-			if !exists {
+			if !exists && blockNode.Height > 0 {
 				glog.Fatal("Parent block not found in block map")
 			}
 			blockNode.Parent = parent
