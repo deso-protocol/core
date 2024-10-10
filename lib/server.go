@@ -483,8 +483,8 @@ func NewServer(
 		_snapshot, err, shouldRestart, isChecksumIssue = NewSnapshot(
 			_db,
 			_snapshotBlockHeightPeriod,
-			true,
 			false,
+			!_forceChecksum,
 			_params,
 			_disableEncoderMigrations,
 			_hypersyncMaxQueueSize,
