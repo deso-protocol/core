@@ -1273,7 +1273,9 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	}()
 	go func() {
 		defer syncGroup.Done()
-
+		if snap.disableChecksum {
+			return
+		}
 		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
 			if localErr := snap.Checksum.AddOrRemoveBytesWithMigrations(dbEntry.Key, dbEntry.Value, blockHeight,
