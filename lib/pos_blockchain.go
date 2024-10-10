@@ -2023,7 +2023,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	utxoView.TipHash = &blockHash
 	// Save a copy of the UtxoView to the cache.
 	copiedView := utxoView.CopyUtxoView()
-	bc.blockViewCache.Put(blockHash, &BlockViewAndUtxoOps{
+	bc.blockViewCache.Add(blockHash, &BlockViewAndUtxoOps{
 		UtxoView: copiedView,
 		UtxoOps:  utxoOps,
 		Block:    fullBlock,

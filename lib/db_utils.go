@@ -1142,7 +1142,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
-		snap.DatabaseCache.Put(keyString, value)
+		snap.DatabaseCache.Add(keyString, value)
 
 		if !snap.disableChecksum {
 			// We have to remove the previous value from the state checksum.

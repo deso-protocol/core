@@ -1502,7 +1502,7 @@ func (sc *StateChecksum) HashToCurve(bytes []byte) group.Element {
 		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
 		hashElement = sc.curve.HashToElement(bytes, sc.dst)
 		// Also add to the hashToCurveCache
-		sc.hashToCurveCache.Put(bytesStr, hashElement)
+		sc.hashToCurveCache.Add(bytesStr, hashElement)
 	}
 
 	return hashElement
