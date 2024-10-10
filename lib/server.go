@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"net"
 	"path/filepath"
 	"reflect"
@@ -19,8 +20,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
-	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
@@ -89,6 +89,7 @@ type Server struct {
 	// so that we only send a reply to the first peer that sent us the inv, which
 	// is more efficient.
 	inventoryBeingProcessed *lru.Cache[InvVect, struct{}]
+
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
 	// peer. It's initially false
@@ -454,6 +455,13 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
+	// We set the deadlock timeout to 10 minutes.
+	// We used to have a vendored version of the library, but it caused
+	// issues when upgrading to go 1.23 and the forked version was not
+	// kept up to date with the original library. We need to simply make
+	// the only significant change we made in the forked version here.
+	deadlock.Opts.DeadlockTimeout = 10 * time.Minute
+
 	var err error
 
 	// Only initialize state change syncer if the directories are defined.
@@ -702,6 +710,7 @@ func NewServer(
 	srv.incomingMessages = _incomingMessages
 	// Make this hold a multiple of what we hold for individual peers.
 	srv.inventoryBeingProcessed, _ = lru.New[InvVect, struct{}](maxKnownInventory)
+
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
@@ -2068,6 +2077,7 @@ func (srv *Server) _relayTransactions() {
 			// it here when we enqueue the message to the peers outgoing
 			// message queue so that we don't have to remember to do it later.
 			pp.knownInventory.Add(*invVect, struct{}{})
+
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
@@ -2803,9 +2813,10 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	}
 
 	// Add all the addresses we received to the addrmgr.
-	netAddrsReceived := []*wire.NetAddress{}
+	netAddrsReceived := []*wire.NetAddressV2{}
 	for _, addr := range msg.AddrList {
-		addrAsNetAddr := wire.NewNetAddressIPPort(addr.IP, addr.Port, (wire.ServiceFlag)(addr.Services))
+		addrAsNetAddr := wire.NetAddressV2FromBytes(
+			addr.Timestamp, (wire.ServiceFlag)(addr.Services), addr.IP[:], addr.Port)
 		if !addrmgr.IsRoutable(addrAsNetAddr) {
 			glog.V(1).Infof("Server._handleAddrMessage: Dropping address %v from peer %v because it is not routable", addr, pp)
 			continue
@@ -2822,7 +2833,7 @@ func (srv *Server) _handleAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 			"peer %v", len(msg.AddrList), pp)
 		sourceAddr := &SingleAddr{
 			Timestamp: time.Now(),
-			IP:        pp.netAddr.IP,
+			IP:        pp.netAddr.ToLegacy().IP,
 			Port:      pp.netAddr.Port,
 			Services:  pp.serviceFlags,
 		}
@@ -2869,7 +2880,7 @@ func (srv *Server) _handleGetAddrMessage(pp *Peer, desoMsg DeSoMessage) {
 	for _, netAddr := range netAddrsFound {
 		singleAddr := &SingleAddr{
 			Timestamp: time.Now(),
-			IP:        netAddr.IP,
+			IP:        netAddr.ToLegacy().IP,
 			Port:      netAddr.Port,
 			Services:  (ServiceFlag)(netAddr.Services),
 		}
@@ -3128,12 +3139,12 @@ func (srv *Server) _startAddressRelayer() {
 				bestAddress := srv.AddrMgr.GetBestLocalAddress(netAddr)
 				if bestAddress != nil {
 					glog.V(2).Infof("Server.startAddressRelayer: Relaying address %v to "+
-						"RemoteNode (id= %v)", bestAddress.IP.String(), rn.GetId())
+						"RemoteNode (id= %v)", bestAddress.Addr.String(), rn.GetId())
 					addrMsg := &MsgDeSoAddr{
 						AddrList: []*SingleAddr{
 							{
 								Timestamp: time.Now(),
-								IP:        bestAddress.IP,
+								IP:        bestAddress.ToLegacy().IP,
 								Port:      bestAddress.Port,
 								Services:  (ServiceFlag)(bestAddress.Services),
 							},

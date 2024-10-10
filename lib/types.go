@@ -297,9 +297,9 @@ func FixedWidthDecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 		valBytes := make([]byte, 32, 32)
 		_, err := io.ReadFull(rr, valBytes)
 		if err != nil {
-			return uint256.NewInt(), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
+			return uint256.NewInt(0), fmt.Errorf("ReadUint256: Error reading value bytes: %v", err)
 		}
-		return uint256.NewInt().SetBytes(valBytes), nil
+		return uint256.NewInt(0).SetBytes(valBytes), nil
 	}
 	return nil, nil
 }

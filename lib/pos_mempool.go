@@ -8,10 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2"
-
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -847,7 +846,7 @@ func (mp *PosMempool) validateTransactions() error {
 			// Mark the txn as invalid and add an error to the cache so we can return it to the user if they
 			// try to resubmit it.
 			txn.SetValidated(false)
-			mp.recentRejectedTxnCache.Add(*txn.Hash, err)
+			mp.recentRejectedTxnCache.Put(*txn.Hash, err)
 
 			// Try to remove the transaction with a lock.
 			mp.removeTransaction(txn, true)
@@ -1025,7 +1024,7 @@ func (mp *PosMempool) WaitForTxnValidation(txHash *BlockHash) error {
 	for {
 		rejectionErr, wasRejected := mp.recentRejectedTxnCache.Get(*txHash)
 		if wasRejected {
-			return rejectionErr.(error)
+			return rejectionErr
 		}
 		mtxn := mp.GetTransaction(txHash)
 		if mtxn == nil {

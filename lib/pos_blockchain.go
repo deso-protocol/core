@@ -9,7 +9,7 @@ import (
 
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -2023,7 +2023,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	utxoView.TipHash = &blockHash
 	// Save a copy of the UtxoView to the cache.
 	copiedView := utxoView.CopyUtxoView()
-	bc.blockViewCache.Add(blockHash, &BlockViewAndUtxoOps{
+	bc.blockViewCache.Put(blockHash, &BlockViewAndUtxoOps{
 		UtxoView: copiedView,
 		UtxoOps:  utxoOps,
 		Block:    fullBlock,
