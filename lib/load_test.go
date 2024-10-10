@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +35,7 @@ func TestComputeMaxTPS(t *testing.T) {
 	for ii := 0; ii < numProfiles; ii++ {
 		fmt.Println("Processing top txn: ", len(txns))
 		// Compute a private/public key pair
-		privKey, err := btcec.NewPrivateKey(btcec.S256())
+		privKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		privKeys = append(privKeys, privKey)
 		pubKeys = append(pubKeys, privKey.PubKey())

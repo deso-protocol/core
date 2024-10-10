@@ -10,7 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/lru"
+	"github.com/decred/dcrd/container/lru"
 	"github.com/golang/glog"
 )
 
@@ -50,9 +50,10 @@ type ConnectionManager struct {
 	//   download historical blocks. Can only be set if HyperSync is true.
 	SyncType NodeSyncType
 
+	// TODO: seems like we don't use this.
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
-	sentNonces lru.Cache
+	sentNonces lru.Set[any]
 
 	// This section defines the data structures for storing all the
 	// peers we're aware of.
@@ -131,7 +132,7 @@ func NewConnectionManager(
 		listeners: _listeners,
 		// We keep track of the last N nonces we've sent in order to detect
 		// self connections.
-		sentNonces: lru.NewCache(1000),
+		sentNonces: *lru.NewSet[any](1000),
 		//newestBlock: _newestBlock,
 
 		// Initialize the peer data structures.
@@ -158,7 +159,7 @@ func NewConnectionManager(
 }
 
 // Check if the address passed shares a group with any addresses already in our data structures.
-func (cmgr *ConnectionManager) IsFromRedundantOutboundIPAddress(na *wire.NetAddress) bool {
+func (cmgr *ConnectionManager) IsFromRedundantOutboundIPAddress(na *wire.NetAddressV2) bool {
 	return false
 	// TODO: Delete this code once we're 100% sure we don't need it.
 	// This group checking was required as an early DDOS prevention measure,
@@ -186,7 +187,7 @@ func (cmgr *ConnectionManager) IsFromRedundantOutboundIPAddress(na *wire.NetAddr
 	//return true
 }
 
-func (cmgr *ConnectionManager) AddToGroupKey(na *wire.NetAddress) {
+func (cmgr *ConnectionManager) AddToGroupKey(na *wire.NetAddressV2) {
 	groupKey := addrmgr.GroupKey(na)
 
 	cmgr.mtxOutboundConnIPGroups.Lock()
@@ -194,7 +195,7 @@ func (cmgr *ConnectionManager) AddToGroupKey(na *wire.NetAddress) {
 	cmgr.mtxOutboundConnIPGroups.Unlock()
 }
 
-func (cmgr *ConnectionManager) subFromGroupKey(na *wire.NetAddress) {
+func (cmgr *ConnectionManager) subFromGroupKey(na *wire.NetAddressV2) {
 	groupKey := addrmgr.GroupKey(na)
 
 	cmgr.mtxOutboundConnIPGroups.Lock()
@@ -202,7 +203,7 @@ func (cmgr *ConnectionManager) subFromGroupKey(na *wire.NetAddress) {
 	cmgr.mtxOutboundConnIPGroups.Unlock()
 }
 
-func _delayRetry(retryCount uint64, persistentAddrForLogging *wire.NetAddress, unit time.Duration) (_retryDuration time.Duration) {
+func _delayRetry(retryCount uint64, persistentAddrForLogging *wire.NetAddressV2, unit time.Duration) (_retryDuration time.Duration) {
 	// No delay if we haven't tried yet or if the number of retries isn't positive.
 	if retryCount <= 0 {
 		return 0
@@ -212,7 +213,7 @@ func _delayRetry(retryCount uint64, persistentAddrForLogging *wire.NetAddress, u
 
 	if persistentAddrForLogging != nil {
 		glog.V(1).Infof("Retrying connection to outbound persistent peer: "+
-			"(%s:%d) in (%d) seconds.", persistentAddrForLogging.IP.String(),
+			"(%s:%d) in (%d) seconds.", persistentAddrForLogging.ToLegacy().IP.String(),
 			persistentAddrForLogging.Port, numSecs)
 	} else {
 		glog.V(2).Infof("Retrying connection to outbound non-persistent peer in (%d) seconds.", numSecs)
@@ -220,41 +221,41 @@ func _delayRetry(retryCount uint64, persistentAddrForLogging *wire.NetAddress, u
 	return retryDelay
 }
 
-func (cmgr *ConnectionManager) IsConnectedOutboundIpAddress(netAddr *wire.NetAddress) bool {
+func (cmgr *ConnectionManager) IsConnectedOutboundIpAddress(netAddr *wire.NetAddressV2) bool {
 	cmgr.mtxAddrsMaps.RLock()
 	defer cmgr.mtxAddrsMaps.RUnlock()
 	return cmgr.connectedOutboundAddrs[addrmgr.NetAddressKey(netAddr)]
 }
 
-func (cmgr *ConnectionManager) IsAttemptedOutboundIpAddress(netAddr *wire.NetAddress) bool {
+func (cmgr *ConnectionManager) IsAttemptedOutboundIpAddress(netAddr *wire.NetAddressV2) bool {
 	cmgr.mtxAddrsMaps.RLock()
 	defer cmgr.mtxAddrsMaps.RUnlock()
 	return cmgr.attemptedOutboundAddrs[addrmgr.NetAddressKey(netAddr)]
 }
 
-func (cmgr *ConnectionManager) AddAttemptedOutboundAddrs(netAddr *wire.NetAddress) {
+func (cmgr *ConnectionManager) AddAttemptedOutboundAddrs(netAddr *wire.NetAddressV2) {
 	cmgr.mtxAddrsMaps.Lock()
 	defer cmgr.mtxAddrsMaps.Unlock()
 	cmgr.attemptedOutboundAddrs[addrmgr.NetAddressKey(netAddr)] = true
 }
 
-func (cmgr *ConnectionManager) RemoveAttemptedOutboundAddrs(netAddr *wire.NetAddress) {
+func (cmgr *ConnectionManager) RemoveAttemptedOutboundAddrs(netAddr *wire.NetAddressV2) {
 	cmgr.mtxAddrsMaps.Lock()
 	defer cmgr.mtxAddrsMaps.Unlock()
 	delete(cmgr.attemptedOutboundAddrs, addrmgr.NetAddressKey(netAddr))
 }
 
 // DialPersistentOutboundConnection attempts to connect to a persistent peer.
-func (cmgr *ConnectionManager) DialPersistentOutboundConnection(persistentAddr *wire.NetAddress, attemptId uint64) (_attemptId uint64) {
+func (cmgr *ConnectionManager) DialPersistentOutboundConnection(persistentAddr *wire.NetAddressV2, attemptId uint64) (_attemptId uint64) {
 	glog.V(2).Infof("ConnectionManager.DialPersistentOutboundConnection: Connecting to peer  (IP=%v, Port=%v)",
-		persistentAddr.IP.String(), persistentAddr.Port)
+		persistentAddr.ToLegacy().IP.String(), persistentAddr.Port)
 	return cmgr._dialOutboundConnection(persistentAddr, attemptId, true)
 }
 
 // DialOutboundConnection attempts to connect to a non-persistent peer.
-func (cmgr *ConnectionManager) DialOutboundConnection(addr *wire.NetAddress, attemptId uint64) {
+func (cmgr *ConnectionManager) DialOutboundConnection(addr *wire.NetAddressV2, attemptId uint64) {
 	glog.V(2).Infof("ConnectionManager.ConnectOutboundConnection: Connecting to peer (IP=%v, Port=%v)",
-		addr.IP.String(), addr.Port)
+		addr.ToLegacy().IP.String(), addr.Port)
 	cmgr._dialOutboundConnection(addr, attemptId, false)
 }
 
@@ -271,7 +272,7 @@ func (cmgr *ConnectionManager) CloseAttemptedConnection(attemptId uint64) {
 
 // _dialOutboundConnection is the internal method that spawns and initiates an OutboundConnectionAttempt, which handles the
 // connection attempt logic. It returns the attemptId of the attempt that was created.
-func (cmgr *ConnectionManager) _dialOutboundConnection(addr *wire.NetAddress, attemptId uint64, isPersistent bool) (_attemptId uint64) {
+func (cmgr *ConnectionManager) _dialOutboundConnection(addr *wire.NetAddressV2, attemptId uint64, isPersistent bool) (_attemptId uint64) {
 	connectionAttempt := NewOutboundConnectionAttempt(attemptId, addr, isPersistent,
 		cmgr.params.DialTimeout, cmgr.outboundConnectionChan)
 	cmgr.mtxConnectionAttempts.Lock()
@@ -289,7 +290,7 @@ func (cmgr *ConnectionManager) _dialOutboundConnection(addr *wire.NetAddress, at
 // is set, then we will connect only to that addr. Otherwise, we will use
 // the addrmgr to randomly select addrs and create OUTBOUND connections
 // with them until we find a worthy peer.
-func (cmgr *ConnectionManager) ConnectPeer(id uint64, conn net.Conn, na *wire.NetAddress, isOutbound bool,
+func (cmgr *ConnectionManager) ConnectPeer(id uint64, conn net.Conn, na *wire.NetAddressV2, isOutbound bool,
 	isPersistent bool) *Peer {
 
 	// At this point Conn is set so create a peer object to do a version negotiation.
@@ -310,7 +311,7 @@ func (cmgr *ConnectionManager) ConnectPeer(id uint64, conn net.Conn, na *wire.Ne
 	return peer
 }
 
-func (cmgr *ConnectionManager) IsDuplicateInboundIPAddress(netAddr *wire.NetAddress) bool {
+func (cmgr *ConnectionManager) IsDuplicateInboundIPAddress(netAddr *wire.NetAddressV2) bool {
 	cmgr.mtxPeerMaps.RLock()
 	defer cmgr.mtxPeerMaps.RUnlock()
 
@@ -321,7 +322,7 @@ func (cmgr *ConnectionManager) IsDuplicateInboundIPAddress(netAddr *wire.NetAddr
 	// If the IP is a localhost IP let it slide. This is useful for testing fake
 	// nodes on a local machine.
 	// TODO: Should this be a flag?
-	if net.IP([]byte{127, 0, 0, 1}).Equal(netAddr.IP) {
+	if net.IP([]byte{127, 0, 0, 1}).Equal(netAddr.ToLegacy().IP) {
 		glog.V(1).Infof("ConnectionManager.IsDuplicateInboundIPAddress: Allowing " +
 			"localhost IP address to connect")
 		return false
@@ -329,7 +330,7 @@ func (cmgr *ConnectionManager) IsDuplicateInboundIPAddress(netAddr *wire.NetAddr
 	for _, peer := range cmgr.inboundPeers {
 		// If the peer's IP is equal to the passed IP then we have found a duplicate
 		// inbound connection
-		if peer.netAddr.IP.Equal(netAddr.IP) {
+		if peer.netAddr.ToLegacy().IP.Equal(netAddr.ToLegacy().IP) {
 			return true
 		}
 	}

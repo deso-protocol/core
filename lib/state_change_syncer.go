@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -1057,6 +1057,7 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 	deadlock.Opts.Disable = true
 	defer func() {
 		deadlock.Opts.Disable = false
+		deadlock.Opts.DeadlockTimeout = 10 * time.Minute
 	}()
 	// Lock the blockchain so that nothing shifts under our feet while dumping the current state to the state change file.
 	server.blockchain.ChainLock.Lock()

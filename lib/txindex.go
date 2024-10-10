@@ -3,15 +3,15 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 )
 
@@ -40,6 +40,13 @@ type TXIndex struct {
 
 func NewTXIndex(coreChain *Blockchain, params *DeSoParams, dataDirectory string) (
 	_txindex *TXIndex, _error error) {
+
+	// We set the deadlock timeout to 10 minutes.
+	// We used to have a vendored version of the library, but it caused
+	// issues when upgrading to go 1.23 and the forked version was not
+	// kept up to date with the original library. We need to simply make
+	// the only significant change we made in the forked version here.
+	deadlock.Opts.DeadlockTimeout = 10 * time.Minute
 	// Initialize database
 	txIndexDir := filepath.Join(GetBadgerDbPath(dataDirectory), "txindex")
 	txIndexOpts := PerformanceBadgerOptions(txIndexDir)
