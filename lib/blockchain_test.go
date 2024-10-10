@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"log"
 	"math"
 	"math/big"
@@ -17,8 +18,8 @@ import (
 	"github.com/go-pg/pg/v10"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -248,7 +249,7 @@ func NewLowDifficultyBlockchainWithParamsAndDb(t *testing.T, params *DeSoParams,
 	// key have some DeSo
 	var snap *Snapshot
 	if !usePostgres {
-		snap, err, _ = NewSnapshot(db, SnapshotBlockHeightPeriod, false, false, &testParams, false, HypersyncDefaultMaxQueueSize, nil)
+		snap, err, _, _ = NewSnapshot(db, SnapshotBlockHeightPeriod, false, false, &testParams, false, HypersyncDefaultMaxQueueSize, nil)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -905,7 +906,7 @@ func _signTxn(t *testing.T, txn *MsgDeSoTxn, privKeyStrArg string) {
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrArg)
 	require.NoError(err)
-	privKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	privKey, _ := btcec.PrivKeyFromBytes(privKeyBytes)
 	txnSignature, err := txn.Sign(privKey)
 	require.NoError(err)
 	txn.Signature.SetSignature(txnSignature)
@@ -923,7 +924,7 @@ func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase
 
 	privKeyBytes, _, err := Base58CheckDecode(privKeyStrBase58Check)
 	require.NoError(err)
-	privateKey, publicKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	privateKey, publicKey := btcec.PrivKeyFromBytes(privKeyBytes)
 
 	// We will randomly sign with the standard DER encoding + ExtraData, or with the DeSo-DER encoding.
 	if signatureType == 0 {
@@ -939,8 +940,7 @@ func _signTxnWithDerivedKeyAndType(t *testing.T, txn *MsgDeSoTxn, privKeyStrBase
 		require.NoError(err)
 		txHash := Sha256DoubleHash(txBytes)[:]
 
-		desoSignature, err := SignRecoverable(txHash, privateKey)
-		require.NoError(err)
+		desoSignature := SignRecoverable(txHash, privateKey)
 		txn.Signature = *desoSignature
 	}
 }
@@ -1666,7 +1666,7 @@ func TestBadBlockSignature(t *testing.T) {
 
 	// Since MineAndProcesssSingleBlock returns a valid block above, we can play with its
 	// signature and re-process the block to see what happens.
-	blockProducerInfoCopy := &BlockProducerInfo{Signature: &btcec.Signature{}}
+	blockProducerInfoCopy := &BlockProducerInfo{Signature: &ecdsa2.Signature{}}
 	blockProducerInfoCopy.PublicKey = append([]byte{}, finalBlock1.BlockProducerInfo.PublicKey...)
 	*blockProducerInfoCopy.Signature = *finalBlock1.BlockProducerInfo.Signature
 

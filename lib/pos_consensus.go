@@ -250,7 +250,7 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 
 	// Fetch the parent block
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
-	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash[*parentBlockHash]
+	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash.Get(*parentBlockHash)
 	if !parentBlockExists {
 		return errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}
@@ -487,7 +487,7 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	tipBlockHash := BlockHashFromConsensusInterface(event.TipBlockHash)
 
 	// Fetch the HighQC from the Blockchain struct
-	tipBlockNode, tipBlockExists := fc.blockchain.blockIndexByHash[*tipBlockHash]
+	tipBlockNode, tipBlockExists := fc.blockchain.blockIndexByHash.Get(*tipBlockHash)
 	if !tipBlockExists {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error fetching tip block: %v", tipBlockHash)
 	}
@@ -733,7 +733,7 @@ func (fc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
 
 	// Fetch the parent block
-	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash[*parentBlockHash]
+	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash.Get(*parentBlockHash)
 	if !parentBlockExists {
 		return nil, errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}

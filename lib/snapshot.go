@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/sasha-s/go-deadlock"
 	"math"
 	"reflect"
 	"runtime"
@@ -13,9 +14,8 @@ import (
 	"time"
 
 	"github.com/cloudflare/circl/group"
-	"github.com/decred/dcrd/lru"
-	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/decred/dcrd/container/lru"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/fatih/color"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
@@ -313,7 +313,7 @@ type Snapshot struct {
 	// DatabaseCache is used to store most recent DB records that we've read/written.
 	// This is a low-level optimization for ancestral records that
 	// saves us read time when we're writing to the DB during UtxoView flush.
-	DatabaseCache lru.KVCache
+	DatabaseCache lru.Map[string, []byte]
 
 	// AncestralFlushCounter is used to offset ancestral records flush to occur only after x blocks.
 	AncestralFlushCounter uint64
@@ -382,7 +382,15 @@ func NewSnapshot(
 	_snap *Snapshot,
 	_err error,
 	_shouldRestart bool,
+	_isChecksumIssue bool, // Specifies whether the issue is a checksum issue or not.
 ) {
+
+	// We set the deadlock timeout to 10 minutes.
+	// We used to have a vendored version of the library, but it caused
+	// issues when upgrading to go 1.23 and the forked version was not
+	// kept up to date with the original library. We need to simply make
+	// the only significant change we made in the forked version here.
+	deadlock.Opts.DeadlockTimeout = 10 * time.Minute
 	var snapshotDbMutex sync.Mutex
 
 	// If the max queue size is unset, use the default.
@@ -393,26 +401,26 @@ func NewSnapshot(
 	// Retrieve and initialize the checksum.
 	checksum := &StateChecksum{}
 	if err := checksum.Initialize(mainDb, &snapshotDbMutex); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading Checksum"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading Checksum"), true, true
 	}
 
 	// Retrieve the snapshot epoch metadata from the snapshot db.
 	metadata := &SnapshotEpochMetadata{}
 	if err := metadata.Initialize(mainDb, &snapshotDbMutex); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotEpochMetadata"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotEpochMetadata"), true, false
 	}
 
 	operationChannel := &SnapshotOperationChannel{}
 	// Initialize the SnapshotOperationChannel. We don't set any of the handlers yet because we don't have a
 	// snapshot instance yet.
 	if err := operationChannel.Initialize(mainDb, &snapshotDbMutex, nil, nil); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotOperationChannel"), true, false
 	}
 
 	// Retrieve and initialize the snapshot status.
 	status := &SnapshotStatus{}
 	if err := status.Initialize(mainDb, &snapshotDbMutex); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading SnapshotStatus"), true, false
 	}
 
 	// Retrieve and initialize snapshot migrations.
@@ -424,7 +432,7 @@ func NewSnapshot(
 		params,
 		disableMigrations,
 	); err != nil {
-		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"), true
+		return nil, errors.Wrapf(err, "NewSnapshot: Problem reading EncoderMigration"), true, false
 	}
 
 	// If this condition is true, the snapshot is broken and we need to start the recovery process.
@@ -443,18 +451,29 @@ func NewSnapshot(
 	//   Either way, it means our snapshot was compromised and we need to recompute it as described
 	//   in the previous bullet.
 	shouldRestart := false
+	isChecksumIssue := false
+	// The only operations tracked by the state semaphore are (1) checksum add, (2) checksum
+	// remove, (3) ProcessChunk, (4) ChecksumPrint, (5) Exit. So the only one operation that isn't checksum related
+	// is the ProcessChunk operation. However, it is okay to consider it a "checksum" issue as it only happens during
+	// the initial sync. isChecksumIssue will not restart the node if force checksum is false. If you have a node that
+	// didn't finish processing chunks, just start over again.
 	if operationChannel.StateSemaphore > 0 {
 		operationChannel.StateSemaphore = 0
 		glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Node didn't shut down properly last time. Entering a "+
-			"recovery mode. The node will roll back to last snapshot epoch block height (%v) and hash (%v), then restart.",
+			"recovery mode if force checksum is true. In recovery mode, the node will roll back to last snapshot "+
+			"epoch block height (%v) and hash (%v), then restart.",
 			metadata.SnapshotBlockHeight, metadata.CurrentEpochBlockHash)))
 		shouldRestart = true
+		isChecksumIssue = true
 	}
 
 	if !shouldRestart {
 		if err := migrations.StartMigrations(); err != nil {
+			// If we hit this error, it means that some encoder migration failed. Migrations are only needed to
+			// guarantee that checksums match.
 			glog.Errorf(CLog(Red, fmt.Sprintf("NewSnapshot: Migration failed: Error (%v)", err)))
 			shouldRestart = true
+			isChecksumIssue = true
 		}
 	}
 
@@ -475,7 +494,7 @@ func NewSnapshot(
 	snap := &Snapshot{
 		mainDb:                       mainDb,
 		SnapshotDbMutex:              &snapshotDbMutex,
-		DatabaseCache:                lru.NewKVCache(DatabaseCacheSize),
+		DatabaseCache:                *lru.NewMap[string, []byte](DatabaseCacheSize),
 		AncestralFlushCounter:        uint64(0),
 		snapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
@@ -497,7 +516,7 @@ func NewSnapshot(
 	// Run the snapshot main loop.
 	go snap.Run()
 
-	return snap, nil, shouldRestart
+	return snap, nil, shouldRestart, isChecksumIssue
 }
 
 // Run is the snapshot main loop. It handles the operations from the OperationChannel.
@@ -1382,7 +1401,7 @@ type StateChecksum struct {
 	ctx context.Context
 
 	// hashToCurveCache is a cache of computed hashToCurve mappings
-	hashToCurveCache lru.KVCache
+	hashToCurveCache lru.Map[string, group.Element]
 
 	// When we want to add a database record to the state checksum, we will first have to
 	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
@@ -1410,7 +1429,7 @@ func (sc *StateChecksum) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mut
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
 
 	// Set the hashToCurveCache
-	sc.hashToCurveCache = lru.NewKVCache(HashToCurveCache)
+	sc.hashToCurveCache = *lru.NewMap[string, group.Element](HashToCurveCache)
 
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
@@ -1475,13 +1494,13 @@ func (sc *StateChecksum) HashToCurve(bytes []byte) group.Element {
 
 	// Check if we've already mapped this element, if so we will save some computation this way.
 	bytesStr := hex.EncodeToString(bytes)
-	if elem, exists := sc.hashToCurveCache.Lookup(bytesStr); exists {
+	if elem, exists := sc.hashToCurveCache.Get(bytesStr); exists {
 		hashElement = elem.(group.Element)
 	} else {
 		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
 		hashElement = sc.curve.HashToElement(bytes, sc.dst)
 		// Also add to the hashToCurveCache
-		sc.hashToCurveCache.Add(bytesStr, hashElement)
+		sc.hashToCurveCache.Put(bytesStr, hashElement)
 	}
 
 	return hashElement

@@ -85,7 +85,7 @@ func TestGenerateLeaderSchedule(t *testing.T) {
 		}
 		stakeMetadata := &StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(pkBytes),
-			StakeAmountNanos:   uint256.NewInt().SetUint64(stakeAmountNanos),
+			StakeAmountNanos:   uint256.NewInt(stakeAmountNanos),
 		}
 		_, err = _submitStakeTxn(testMeta, publicKey, privateKey, stakeMetadata, nil, true)
 		require.NoError(t, err)

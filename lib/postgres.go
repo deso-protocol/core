@@ -6,11 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"net/url"
 	"regexp"
 	"strings"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
@@ -720,7 +721,7 @@ func (balance *PGCreatorCoinBalance) NewBalanceEntry() *BalanceEntry {
 		HODLerPKID:  balance.HolderPKID,
 		CreatorPKID: balance.CreatorPKID,
 		// FIXME: This will break if the value exceeds uint256
-		BalanceNanos: *uint256.NewInt().SetUint64(balance.BalanceNanos),
+		BalanceNanos: *uint256.NewInt(balance.BalanceNanos),
 		HasPurchased: balance.HasPurchased,
 	}
 }
@@ -1093,14 +1094,14 @@ func (messageEntry *PGNewMessageGroupChatThreadEntry) ToAccessGroupId() AccessGr
 }
 
 func HexToUint256(input string) *uint256.Int {
-	output := uint256.NewInt()
+	output := uint256.NewInt(0)
 
 	if input != "" {
 		var err error
 		output, err = uint256.FromHex(input)
 
 		if err != nil {
-			output = uint256.NewInt()
+			output = uint256.NewInt(0)
 		}
 	}
 
@@ -1304,16 +1305,16 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (map[BlockHash]*BlockNode, error) {
+func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash, *BlockNode], error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap := make(map[BlockHash]*BlockNode)
+	blockMap := collections.NewConcurrentMap[BlockHash, *BlockNode]()
 	for _, block := range blocks {
-		blockMap[*block.Hash] = &BlockNode{
+		blockMap.Set(*block.Hash, &BlockNode{
 			Hash:             block.Hash,
 			Height:           uint32(block.Height),
 			DifficultyTarget: block.DifficultyTarget,
@@ -1328,17 +1329,21 @@ func (postgres *Postgres) GetBlockIndex() (map[BlockHash]*BlockNode, error) {
 				ExtraNonce:            block.ExtraNonce,
 			},
 			Status: block.Status,
-		}
+		})
 	}
 
 	// Setup parent pointers
-	for _, blockNode := range blockMap {
+	blockMap.Iterate(func(key BlockHash, blockNode *BlockNode) {
 		// Genesis block has nil parent
 		parentHash := blockNode.Header.PrevBlockHash
 		if parentHash != nil {
-			blockNode.Parent = blockMap[*parentHash]
+			parent, exists := blockMap.Get(*parentHash)
+			if !exists {
+				glog.Fatal("Parent block not found in block map")
+			}
+			blockNode.Parent = parent
 		}
-	}
+	})
 
 	return blockMap, nil
 }
@@ -1439,8 +1444,12 @@ func (postgres *Postgres) InsertTransactionsTx(tx *pg.Tx, desoTxns []*MsgDeSoTxn
 		}
 
 		if txn.Signature.Sign != nil {
-			transaction.R = BigintToHash(txn.Signature.Sign.R)
-			transaction.S = BigintToHash(txn.Signature.Sign.S)
+			r := txn.Signature.Sign.R()
+			s := txn.Signature.Sign.S()
+			rBytes := (&r).Bytes()
+			sBytes := (&s).Bytes()
+			transaction.R = NewBlockHash(rBytes[:])
+			transaction.S = NewBlockHash(sBytes[:])
 			transaction.RecoveryId = uint32(txn.Signature.RecoveryId)
 			transaction.IsRecoverable = txn.Signature.IsRecoverable
 		}

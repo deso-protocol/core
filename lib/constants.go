@@ -85,10 +85,10 @@ const (
 	SnapshotBatchSize uint32 = 100 << 20 // 100MB
 
 	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
-	DatabaseCacheSize uint = 1000000 // 1M
+	DatabaseCacheSize uint32 = 1000000 // 1M
 
 	// HashToCurveCache is used to save computation on hashing to curve.
-	HashToCurveCache uint = 10000 // 10K
+	HashToCurveCache uint32 = 10000 // 10K
 
 	// MetadataRetryCount is used to retry updating data in badger just in case.
 	MetadataRetryCount int = 5
@@ -1822,7 +1822,12 @@ const (
 	// key represents who to pay the fee to and the value indicates how many basis points to charge. All fees are
 	// charged as "taker fees" and are paid to the pkid in the map in the *quote currency* of the market (typically
 	// DESO, USDC, or FOCUS).
-	TokenTradingFeesByPkidMapKey = "TokenTradingFeesByPkidMap"
+	TokenTradingFeesByPkidMapKey            = "TokenTradingFeesByPkidMap"
+	DisableTradingFeeUpdateKey              = "DisableTradingFeeUpdateKey"
+	CreatorRevsharePercentageBasisPointsKey = "CreatorRevsharePercentageBasisPoints"
+	DisableCreatorRevshareUpdateKey         = "DisableCreatorRevshareUpdateKey"
+	CoinCategoryExtraDataKey                = "CoinCategoryExtraDataKey"
+	DeSoTokenWhitelistAssociationKey        = "DeSoTokenWhitelistAssociationKey"
 
 	// Used to distinguish v3 messages from previous iterations
 	MessagesVersionString = "V"
@@ -1950,3 +1955,6 @@ const DefaultMainnetCheckpointProvider = "https://node.deso.org"
 const DefaultTestnetCheckpointProvider = "https://test.deso.org"
 
 const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
+
+// Constants that was removed from newer version of Btcec
+const BtcecPubKeyBytesLenUncompressed = 65

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"io"
 	"log"
 	"math"
@@ -21,9 +22,9 @@ import (
 
 	"github.com/holiman/uint256"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1137,7 +1138,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
-		snap.DatabaseCache.Add(keyString, value)
+		snap.DatabaseCache.Put(keyString, value)
 
 		if !snap.disableChecksum {
 			// We have to remove the previous value from the state checksum.
@@ -1178,8 +1179,8 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if val, exists := snap.DatabaseCache.Lookup(keyString); exists {
-			return val.([]byte), nil
+		if val, exists := snap.DatabaseCache.Get(keyString); exists {
+			return val, nil
 		}
 	}
 
@@ -2805,7 +2806,7 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if _, exists := snap.DatabaseCache.Lookup(keyString); exists {
+		if exists := snap.DatabaseCache.Exists(keyString); exists {
 			return true, nil
 		}
 	}
@@ -5470,8 +5471,11 @@ func GetBlockTipHeight(handle *badger.DB, bitcoinNodes bool) (uint64, error) {
 	return blockHeight, err
 }
 
-func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (map[BlockHash]*BlockNode, error) {
-	blockIndex := make(map[BlockHash]*BlockNode)
+func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
+	*collections.ConcurrentMap[BlockHash, *BlockNode],
+	error,
+) {
+	blockIndex := collections.NewConcurrentMap[BlockHash, *BlockNode]()
 
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
 
@@ -5503,7 +5507,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (ma
 
 			// If we got here it means we read a blockNode successfully. Store it
 			// into our node index.
-			blockIndex[*blockNode.Hash] = blockNode
+			blockIndex.Set(*blockNode.Hash, blockNode)
 
 			// Find the parent of this block, which should already have been read
 			// in and connect it. Skip the genesis block, which has height 0. Also
@@ -5517,7 +5521,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (ma
 			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
 				continue
 			}
-			if parent, ok := blockIndex[*blockNode.Header.PrevBlockHash]; ok {
+			if parent, ok := blockIndex.Get(*blockNode.Header.PrevBlockHash); ok {
 				// We found the parent node so connect it.
 				blockNode.Parent = parent
 			} else {
@@ -5540,7 +5544,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (ma
 	return blockIndex, nil
 }
 
-func GetBestChain(tipNode *BlockNode, blockIndex map[BlockHash]*BlockNode) ([]*BlockNode, error) {
+func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
 	for tipNode != nil {
 		if (tipNode.Status&StatusBlockValidated) == 0 &&
@@ -9148,7 +9152,7 @@ func DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(txn *badger.Txn, snap *Sna
 		return &BalanceEntry{
 			HODLerPKID:   hodlerPKID.NewPKID(),
 			CreatorPKID:  creatorPKID.NewPKID(),
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 	balanceEntryObj := &BalanceEntry{}
@@ -9224,7 +9228,7 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 
 	// If the balance is zero, then there is no point in storing this entry.
 	// We already placeholder a "zero" balance entry in connect logic.
-	if balanceEntry.BalanceNanos.Eq(uint256.NewInt()) && !balanceEntry.HasPurchased {
+	if balanceEntry.BalanceNanos.Eq(uint256.NewInt(0)) && !balanceEntry.HasPurchased {
 		return nil
 	}
 
@@ -9306,7 +9310,7 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, snap *Snap
 		return &BalanceEntry{
 			HODLerPKID:   holder.NewPKID(),
 			CreatorPKID:  creator.NewPKID(),
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 
@@ -10131,7 +10135,7 @@ const (
 // BadgerDB options that use much more RAM than the
 // default settings.
 func PerformanceBadgerOptions(dir string) badger.Options {
-	opts := badger.DefaultOptions(dir)
+	opts := DefaultBadgerOptions(dir)
 
 	// Use an extended table size for larger commits.
 	opts.MemTableSize = PerformanceMemTableSize
@@ -10141,8 +10145,7 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 }
 
 func DefaultBadgerOptions(dir string) badger.Options {
-	opts := badger.DefaultOptions(dir)
-	opts.Logger = nil
+	opts := badger.DefaultOptions(dir).WithLoggingLevel(badger.WARNING)
 	return opts
 }
 

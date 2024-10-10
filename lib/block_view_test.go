@@ -12,9 +12,9 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/decred/dcrd/lru"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/decred/dcrd/container/lru"
+	"github.com/dgraph-io/badger/v4"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
@@ -333,6 +333,11 @@ func setupTestDeSoEncoder(t *testing.T) {
 		{
 			for ii := 0; ii < testDeSoEncoderRetries; ii++ {
 				newVersionByte := encoder.GetVersionByte(blockHeight)
+				// If the version byte changes, we can't compare the encoding as we know that a
+				// fork height was changed underneath us.
+				if newVersionByte != versionByte {
+					continue
+				}
 				reEncodingBytes := encodeToBytes(blockHeight, encoder, skipMetadata...)
 				if !bytes.Equal(encodingBytes, reEncodingBytes) {
 					t.Fatalf("EncodeToBytes: Found non-deterministic encoding for a DeSoEncoder. Attempted "+
@@ -794,7 +799,7 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// We don't pass the chain's snapshot above to prevent certain concurrency issues. As a
 	// result, we need to reset the snapshot's db cache to get rid of stale data.
 	if tm.chain.snapshot != nil {
-		tm.chain.snapshot.DatabaseCache = lru.NewKVCache(DatabaseCacheSize)
+		tm.chain.snapshot.DatabaseCache = *lru.NewMap[string, []byte](DatabaseCacheSize)
 	}
 
 	// Note that unlike connecting test vectors, when disconnecting, we don't need to verify db entries.
@@ -2181,7 +2186,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 	require.NoError(err)
 	senderPrivBytes, _, err := Base58CheckDecode(senderPrivString)
 	require.NoError(err)
-	senderPrivKey, _ := btcec.PrivKeyFromBytes(btcec.S256(), senderPrivBytes)
+	senderPrivKey, _ := btcec.PrivKeyFromBytes(senderPrivBytes)
 	recipientPkBytes, _, err := Base58CheckDecode(recipientPkString)
 	require.NoError(err)
 
@@ -2233,9 +2238,13 @@ func TestBasicTransferSignatures(t *testing.T) {
 
 			// Now fetch all transactions from the db and verify their signatures have been properly persisted.
 			if postgres != nil {
+				r := txn.Signature.Sign.R()
+				rBytes := (&r).Bytes()
+				s := txn.Signature.Sign.S()
+				sBytes := (&s).Bytes()
 				pgTxn := postgres.GetTransactionByHash(transactionHash)
-				require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.R.Bytes(), HashToBigint(pgTxn.R).Bytes()))
-				require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.S.Bytes(), HashToBigint(pgTxn.S).Bytes()))
+				require.Equal(true, reflect.DeepEqual(rBytes, HashToBigint(pgTxn.R).Bytes()))
+				require.Equal(true, reflect.DeepEqual(sBytes, HashToBigint(pgTxn.S).Bytes()))
 				require.Equal(txn.Signature.RecoveryId, byte(pgTxn.RecoveryId))
 				require.Equal(txn.Signature.IsRecoverable, pgTxn.IsRecoverable)
 			} else {
@@ -2243,8 +2252,16 @@ func TestBasicTransferSignatures(t *testing.T) {
 				require.NoError(err)
 				for _, blockTxn := range dbBlock.Txns {
 					if reflect.DeepEqual(transactionHash.ToBytes(), blockTxn.Hash().ToBytes()) {
-						require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.R.Bytes(), blockTxn.Signature.Sign.R.Bytes()))
-						require.Equal(true, reflect.DeepEqual(txn.Signature.Sign.S.Bytes(), blockTxn.Signature.Sign.S.Bytes()))
+						rTxn := txn.Signature.Sign.R()
+						rTxnBytes := (&rTxn).Bytes()
+						sTxn := txn.Signature.Sign.S()
+						sTxnBytes := (&sTxn).Bytes()
+						rBlockTxn := blockTxn.Signature.Sign.R()
+						rBlockTxnBytes := (&rBlockTxn).Bytes()
+						sBlockTxn := blockTxn.Signature.Sign.S()
+						sBlockTxnBytes := (&sBlockTxn).Bytes()
+						require.Equal(true, reflect.DeepEqual(rTxnBytes[:], rBlockTxnBytes[:]))
+						require.Equal(true, reflect.DeepEqual(sTxnBytes[:], sBlockTxnBytes[:]))
 						require.Equal(txn.Signature.RecoveryId, blockTxn.Signature.RecoveryId)
 						require.Equal(txn.Signature.IsRecoverable, blockTxn.Signature.IsRecoverable)
 					}
@@ -2373,7 +2390,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		testRandomVector := [3]RuleError{
 			RuleErrorInvalidTransactionSignature, RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
 		}
-		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
 
@@ -2428,7 +2445,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		testRandomKeyVector := [3]RuleError{
 			RuleErrorInvalidTransactionSignature, RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
 		}
-		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
 		allTxns = append(allTxns, mempoolProcessAllSignatureCombinations(
@@ -2491,7 +2508,7 @@ func TestBasicTransferSignatures(t *testing.T) {
 		testMoneyRandomVector := [3]RuleError{
 			RuleErrorInvalidTransactionSignature, RuleErrorDerivedKeyNotAuthorized, RuleErrorDerivedKeyNotAuthorized,
 		}
-		randomPrivKey, err := btcec.NewPrivateKey(btcec.S256())
+		randomPrivKey, err := btcec.NewPrivateKey()
 		require.NoError(err)
 		randomPrivKeyBase58Check := Base58CheckEncode(randomPrivKey.Serialize(), true, params)
 

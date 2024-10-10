@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -134,15 +134,19 @@ func (bav *UtxoView) GetHoldings(pkid *PKID, fetchProfiles bool, isDAOCoin bool)
 	return entriesYouHold, profilesYouHold, nil
 }
 
-func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) (
-	[]*BalanceEntry, []*ProfileEntry, error) {
+// We introduce fetchProfiles and fetchLockedBalances for efficiency. If set to false, we
+// save a lot of processing time by skipping these operations.
+func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, fetchLockedBalances bool, isDAOCoin bool) (
+	_unlockedBalanceEntrys []*BalanceEntry, _unlockedProfiles []*ProfileEntry,
+	_lockedBalanceEntrymap map[PKID][]*LockedBalanceEntry, _lockedBalances map[PKID]*uint256.Int,
+	_err error) {
 	var holderEntries []*BalanceEntry
 	if bav.Postgres != nil {
 		holderEntries = bav.GetBalanceEntryHolders(pkid, isDAOCoin)
 	} else {
 		holders, err := DbGetBalanceEntriesHodlingYou(bav.Handle, bav.Snapshot, pkid, true, isDAOCoin)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		holderEntries = holders
 	}
@@ -165,17 +169,38 @@ func (bav *UtxoView) GetHolders(pkid *PKID, fetchProfiles bool, isDAOCoin bool) 
 		}
 	}
 
+	// Fetch all the locked entries if we're dealing with a dao coin
+	lockedBalanceEntrysByPkid := make(map[PKID][]*LockedBalanceEntry)
+	lockedBalancesByPkid := make(map[PKID]*uint256.Int)
+	if isDAOCoin && fetchLockedBalances {
+		allLockedBalanceEntrys, err := bav.GetAllLockedBalanceEntriesForHodlerPKID(pkid)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		for _, lockedBalanceEntry := range allLockedBalanceEntrys {
+			lockedBalanceEntrysByPkid[*lockedBalanceEntry.HODLerPKID] = append(
+				lockedBalanceEntrysByPkid[*lockedBalanceEntry.HODLerPKID], lockedBalanceEntry)
+
+			if _, ok := lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID]; !ok {
+				lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt(0)
+			}
+			lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID] = uint256.NewInt(0).Add(
+				lockedBalancesByPkid[*lockedBalanceEntry.HODLerPKID],
+				&lockedBalanceEntry.BalanceBaseUnits)
+		}
+	}
+
 	// Optionally fetch all the profile entries as well.
-	var profilesYouHold []*ProfileEntry
+	var profilesHodlingYou []*ProfileEntry
 	if fetchProfiles {
 		for _, balanceEntry := range holderEntries {
 			// In this case you're the hodler so the creator is the one whose profile we need to fetch.
 			currentProfileEntry := bav.GetProfileEntryForPKID(balanceEntry.CreatorPKID)
-			profilesYouHold = append(profilesYouHold, currentProfileEntry)
+			profilesHodlingYou = append(profilesHodlingYou, currentProfileEntry)
 		}
 	}
 
-	return holderEntries, profilesYouHold, nil
+	return holderEntries, profilesHodlingYou, lockedBalanceEntrysByPkid, lockedBalancesByPkid, nil
 }
 
 func (bav *UtxoView) GetHODLerPKIDCreatorPKIDToBalanceEntryMap(isDAOCoin bool) map[BalanceEntryMapKey]*BalanceEntry {
@@ -210,7 +235,7 @@ func (bav *UtxoView) GetBalanceEntry(holderPkid *PKID, creatorPkid *PKID, isDAOC
 		return &BalanceEntry{
 			CreatorPKID:  creatorPkid,
 			HODLerPKID:   holderPkid,
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 	return balanceEntry
@@ -276,7 +301,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		txMeta := txn.TxnMeta.(*CreatorCoinTransferMetadataa)
 		receiverPublicKey = txMeta.ReceiverPublicKey
 		profilePublicKey = txMeta.ProfilePublicKey
-		coinToTransferNanos = uint256.NewInt().SetUint64(txMeta.CreatorCoinToTransferNanos)
+		coinToTransferNanos = uint256.NewInt(txMeta.CreatorCoinToTransferNanos)
 	}
 
 	// Connect basic txn to get the total input and the total output without
@@ -298,7 +323,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	if len(receiverPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorCoinTransferInvalidReceiverPubKeySize
 	}
-	if _, err = btcec.ParsePubKey(receiverPublicKey, btcec.S256()); err != nil {
+	if _, err = btcec.ParsePubKey(receiverPublicKey); err != nil {
 		return 0, 0, nil, errors.Wrap(
 			RuleErrorCoinTransferInvalidReceiverPubKey, err.Error())
 	}
@@ -313,7 +338,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	if len(profilePublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorCoinTransferInvalidProfilePubKeySize
 	}
-	if _, err = btcec.ParsePubKey(profilePublicKey, btcec.S256()); err != nil {
+	if _, err = btcec.ParsePubKey(profilePublicKey); err != nil {
 		return 0, 0, nil, errors.Wrap(
 			RuleErrorCoinTransferInvalidProfilePubKey, err.Error())
 	}
@@ -394,7 +419,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		receiverBalanceEntry = &BalanceEntry{
 			HODLerPKID:   receiverPKID.PKID,
 			CreatorPKID:  creatorPKID.PKID,
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 
@@ -402,10 +427,10 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	prevSenderBalanceEntry := *senderBalanceEntry
 
 	// Subtract the number of coins being given from the sender and add them to the receiver.
-	senderBalanceEntry.BalanceNanos = *uint256.NewInt().Sub(
+	senderBalanceEntry.BalanceNanos = *uint256.NewInt(0).Sub(
 		&senderBalanceEntry.BalanceNanos,
 		coinToTransferNanos)
-	receiverBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+	receiverBalanceEntry.BalanceNanos = *uint256.NewInt(0).Add(
 		&receiverBalanceEntry.BalanceNanos,
 		coinToTransferNanos)
 
@@ -419,10 +444,10 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 		//
 		// CreatorCoins can't exceed a uint64
 		if senderBalanceEntry.BalanceNanos.Uint64() < bav.Params.CreatorCoinAutoSellThresholdNanos {
-			receiverBalanceEntry.BalanceNanos = *uint256.NewInt().Add(
+			receiverBalanceEntry.BalanceNanos = *uint256.NewInt(0).Add(
 				&receiverBalanceEntry.BalanceNanos,
 				&senderBalanceEntry.BalanceNanos)
-			senderBalanceEntry.BalanceNanos = *uint256.NewInt()
+			senderBalanceEntry.BalanceNanos = *uint256.NewInt(0)
 			senderBalanceEntry.HasPurchased = false
 		}
 	}
@@ -434,7 +459,7 @@ func (bav *UtxoView) HelpConnectCoinTransfer(
 	bav._deleteBalanceEntryMappings(receiverBalanceEntry, receiverPublicKey, profilePublicKey, isDAOCoin)
 
 	bav._setBalanceEntryMappings(receiverBalanceEntry, isDAOCoin)
-	if senderBalanceEntry.BalanceNanos.Gt(uint256.NewInt()) {
+	if senderBalanceEntry.BalanceNanos.Sign() > 0 {
 		bav._setBalanceEntryMappings(senderBalanceEntry, isDAOCoin)
 	}
 

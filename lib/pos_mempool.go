@@ -1,15 +1,16 @@
 package lib
 
 import (
+	"bytes"
 	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/decred/dcrd/lru"
+	"github.com/decred/dcrd/container/lru"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -182,11 +183,11 @@ type PosMempool struct {
 	// recentBlockTxnCache is an LRU KV cache used to track the transaction that have been included in blocks.
 	// This cache is used to power logic that waits for a transaction to either be validated in the mempool
 	// or be included in a block.
-	recentBlockTxnCache lru.KVCache
+	recentBlockTxnCache lru.Set[BlockHash]
 
 	// recentRejectedTxnCache is a cache to store the txns that were recently rejected so that we can return better
 	// errors for them.
-	recentRejectedTxnCache lru.KVCache
+	recentRejectedTxnCache lru.Map[BlockHash, error]
 }
 
 func NewPosMempool() *PosMempool {
@@ -233,8 +234,8 @@ func (mp *PosMempool) Init(
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.maxValidationViewConnects = maxValidationViewConnects
 	mp.transactionValidationRefreshIntervalMillis = transactionValidationRefreshIntervalMillis
-	mp.recentBlockTxnCache = lru.NewKVCache(100000)    // cache 100K latest txns from blocks.
-	mp.recentRejectedTxnCache = lru.NewKVCache(100000) // cache 100K rejected txns.
+	mp.recentBlockTxnCache = *lru.NewSet[BlockHash](100000)           // cache 100K latest txns from blocks.
+	mp.recentRejectedTxnCache = *lru.NewMap[BlockHash, error](100000) // cache 100K rejected txns.
 
 	// Recreate and initialize the transaction register and the nonce tracker.
 	mp.txnRegister = NewTransactionRegister()
@@ -485,7 +486,7 @@ func (mp *PosMempool) AddTransaction(txn *MsgDeSoTxn, txnTimestamp time.Time) er
 }
 
 func (mp *PosMempool) addTxnHashToRecentBlockCache(txnHash BlockHash) {
-	mp.recentBlockTxnCache.Add(txnHash, nil)
+	mp.recentBlockTxnCache.Put(txnHash)
 }
 
 func (mp *PosMempool) deleteTxnHashFromRecentBlockCache(txnHash BlockHash) {
@@ -846,7 +847,7 @@ func (mp *PosMempool) validateTransactions() error {
 			// Mark the txn as invalid and add an error to the cache so we can return it to the user if they
 			// try to resubmit it.
 			txn.SetValidated(false)
-			mp.recentRejectedTxnCache.Add(*txn.Hash, err)
+			mp.recentRejectedTxnCache.Put(*txn.Hash, err)
 
 			// Try to remove the transaction with a lock.
 			mp.removeTransaction(txn, true)
@@ -944,6 +945,15 @@ func (mp *PosMempool) UpdateLatestBlock(blockView *UtxoView, blockHeight uint64)
 // new minimum will be removed from the mempool. To safely handle this, this method re-creates the TransactionRegister
 // with the new global params and re-adds all transactions in the mempool to the new register.
 func (mp *PosMempool) UpdateGlobalParams(globalParams *GlobalParamsEntry) {
+	// If the global params haven't changed at all, then we don't need to do anything.
+	newGlobalParamBytes := globalParams.RawEncodeWithoutMetadata(mp.latestBlockHeight, true)
+	mp.RLock()
+	mpGlobalParamBytes := mp.globalParams.RawEncodeWithoutMetadata(mp.latestBlockHeight, true)
+	mp.RUnlock()
+	if bytes.Equal(newGlobalParamBytes, mpGlobalParamBytes) {
+		return
+	}
+
 	mp.Lock()
 	defer mp.Unlock()
 
@@ -1013,9 +1023,9 @@ func (mp *PosMempool) WaitForTxnValidation(txHash *BlockHash) error {
 		checkIntervalMillis = 1
 	}
 	for {
-		rejectionErr, wasRejected := mp.recentRejectedTxnCache.Lookup(*txHash)
+		rejectionErr, wasRejected := mp.recentRejectedTxnCache.Get(*txHash)
 		if wasRejected {
-			return rejectionErr.(error)
+			return rejectionErr
 		}
 		mtxn := mp.GetTransaction(txHash)
 		if mtxn == nil {
