@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/glog"
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
@@ -5024,7 +5024,7 @@ func (ce *CoinEntry) Copy() *CoinEntry {
 		CreatorBasisPoints:              ce.CreatorBasisPoints,
 		DeSoLockedNanos:                 ce.DeSoLockedNanos,
 		NumberOfHolders:                 ce.NumberOfHolders,
-		CoinsInCirculationNanos:         *uint256.NewInt().Set(&ce.CoinsInCirculationNanos),
+		CoinsInCirculationNanos:         *uint256.NewInt(0).Set(&ce.CoinsInCirculationNanos),
 		CoinWatermarkNanos:              ce.CoinWatermarkNanos,
 		MintingDisabled:                 ce.MintingDisabled,
 		TransferRestrictionStatus:       ce.TransferRestrictionStatus,
@@ -5687,7 +5687,7 @@ func VariableDecodeUint256(rr *bytes.Reader) (*uint256.Int, error) {
 		if err != nil {
 			return nil, errors.Wrapf(err, "DecodeUint256: Error reading uint256")
 		}
-		return uint256.NewInt().SetBytes(numberBytes), nil
+		return uint256.NewInt(0).SetBytes(numberBytes), nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "DecodeUint256: Error reading uint256")
 	} else {
@@ -6001,7 +6001,7 @@ func ComputeBaseUnitsToBuyUint256(
 	// If the quantity to sell is zero then return zero (selling
 	// zero means you should buy zero)
 	if quantityToSellBaseUnits.IsZero() {
-		return uint256.NewInt(), nil
+		return uint256.NewInt(0), nil
 	}
 
 	// Perform calculation.
@@ -6068,7 +6068,7 @@ func ComputeBaseUnitsToSellUint256(
 	// If the quantity to buy is zero then return zero (buying
 	// zero means you should sell zero)
 	if quantityToBuyBaseUnits.IsZero() {
-		return uint256.NewInt(), nil
+		return uint256.NewInt(0), nil
 	}
 
 	// Perform calculation.

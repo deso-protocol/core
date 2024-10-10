@@ -13,47 +13,47 @@ func TestSafeUint256(t *testing.T) {
 	var err error
 
 	// Test Add(): sad path
-	result, err = SafeUint256().Add(uint256.NewInt().SetUint64(1), MaxUint256)
+	result, err = SafeUint256().Add(uint256.NewInt(1), MaxUint256)
 	require.Nil(result)
 	require.Error(err)
 	require.Contains(err.Error(), "addition overflows uint256")
 
 	// Test Add(): happy path
-	result, err = SafeUint256().Add(uint256.NewInt().SetUint64(2), uint256.NewInt().SetUint64(2))
-	require.Equal(result, uint256.NewInt().SetUint64(4))
+	result, err = SafeUint256().Add(uint256.NewInt(2), uint256.NewInt(2))
+	require.Equal(result, uint256.NewInt(4))
 	require.NoError(err)
 
 	// Test Sub(): sad path
-	result, err = SafeUint256().Sub(uint256.NewInt().SetUint64(1), uint256.NewInt().SetUint64(2))
+	result, err = SafeUint256().Sub(uint256.NewInt(1), uint256.NewInt(2))
 	require.Nil(result)
 	require.Error(err)
 	require.Contains(err.Error(), "subtraction underflows uint256")
 
 	// Test Sub(): happy path
-	result, err = SafeUint256().Sub(uint256.NewInt().SetUint64(3), uint256.NewInt().SetUint64(2))
-	require.Equal(result, uint256.NewInt().SetUint64(1))
+	result, err = SafeUint256().Sub(uint256.NewInt(3), uint256.NewInt(2))
+	require.Equal(result, uint256.NewInt(1))
 	require.NoError(err)
 
 	// Test Mul(): sad path
-	result, err = SafeUint256().Mul(MaxUint256, uint256.NewInt().SetUint64(2))
+	result, err = SafeUint256().Mul(MaxUint256, uint256.NewInt(2))
 	require.Nil(result)
 	require.Error(err)
 	require.Contains(err.Error(), "multiplication overflows uint256")
 
 	// Test Mul(): happy path
-	result, err = SafeUint256().Mul(uint256.NewInt().SetUint64(3), uint256.NewInt().SetUint64(4))
-	require.Equal(result, uint256.NewInt().SetUint64(12))
+	result, err = SafeUint256().Mul(uint256.NewInt(3), uint256.NewInt(4))
+	require.Equal(result, uint256.NewInt(12))
 	require.NoError(err)
 
 	// Test Div(): sad path
-	result, err = SafeUint256().Div(uint256.NewInt().SetUint64(3), uint256.NewInt())
+	result, err = SafeUint256().Div(uint256.NewInt(3), uint256.NewInt(0))
 	require.Nil(result)
 	require.Error(err)
 	require.Contains(err.Error(), "division by zero")
 
 	// Test Div(): happy path
-	result, err = SafeUint256().Div(uint256.NewInt().SetUint64(9), uint256.NewInt().SetUint64(3))
-	require.Equal(result, uint256.NewInt().SetUint64(3))
+	result, err = SafeUint256().Div(uint256.NewInt(9), uint256.NewInt(3))
+	require.Equal(result, uint256.NewInt(3))
 	require.NoError(err)
 }
 

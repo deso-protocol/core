@@ -2,13 +2,14 @@ package lib
 
 import (
 	"bytes"
+	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"math"
 	"math/rand"
 	"sort"
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -386,9 +387,9 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 func _testGetRandomMempoolTxns(rand *rand.Rand, feeMin uint64, feeMax uint64, sizeMax uint64, timestampRange uint64, numTxns int) []*MempoolTx {
 	txnPool := []*MempoolTx{}
 	for ii := 0; ii < numTxns; ii++ {
-		randPriv, _ := btcec.NewPrivateKey(btcec.S256())
+		randPriv, _ := btcec.NewPrivateKey()
 		randMsg := RandomBytes(32)
-		randSig, _ := randPriv.Sign(randMsg)
+		randSig := ecdsa2.Sign(randPriv, randMsg)
 		fee := rand.Uint64()%(feeMax-feeMin) + feeMin
 
 		txnPool = append(txnPool, &MempoolTx{

@@ -878,11 +878,11 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 	validatorList := []Validator{
 		&validator{
 			publicKey:   validatorPrivateKey1.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(70),
+			stakeAmount: uint256.NewInt(70),
 		},
 		&validator{
 			publicKey:   validatorPrivateKey2.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(30),
+			stakeAmount: uint256.NewInt(30),
 		},
 	}
 
@@ -1064,11 +1064,11 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 	validatorList := []Validator{
 		&validator{
 			publicKey:   validatorPrivateKey1.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(70),
+			stakeAmount: uint256.NewInt(70),
 		},
 		&validator{
 			publicKey:   validatorPrivateKey2.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(30),
+			stakeAmount: uint256.NewInt(30),
 		},
 	}
 

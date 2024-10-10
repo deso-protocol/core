@@ -5,7 +5,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/holiman/uint256"
 )
 
@@ -53,6 +53,15 @@ func IntAdd(a *big.Int, b *big.Int) *big.Int {
 	// TODO(performance): We should do this without creating an int copy, but
 	// this is easier to understand and deal with for now.
 	return big.NewInt(0).Add(a, b)
+}
+
+// BigIntFromUint64 returns a big.Int from a uint64. It is 20x faster to
+// simply cast a uint64 to a big.Int than to use big.NewInt(0).SetUint64().
+func BigIntFromUint64(x uint64) *big.Int {
+	if x < math.MaxInt64 {
+		return big.NewInt(int64(x))
+	}
+	return big.NewInt(0).SetUint64(x)
 }
 
 func Sub(a *big.Float, b *big.Float) *big.Float {
@@ -173,10 +182,11 @@ func BigFloatExp(z *big.Float) *big.Float {
 
 	// reduce; computed as r = hi - lo for extra precision.
 	var k int64
+	zSign := z.Sign()
 	switch {
-	case z.Cmp(bigZero) < 0:
+	case zSign < 0:
 		k, _ = Sub(Mul(bigLog2e, z), bigHalf).Int64()
-	case z.Cmp(bigZero) > 0:
+	case zSign > 0:
 		k, _ = Add(Mul(bigLog2e, z), bigHalf).Int64()
 	}
 	hi := Sub(z, Mul(NewFloat().SetInt64(k), bigLn2Hi))
@@ -236,11 +246,11 @@ func SafeUint256() *_SafeUint256 {
 }
 
 func (safeUint256 *_SafeUint256) Add(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
-	if uint256.NewInt().Sub(MaxUint256, y).Lt(x) {
+	if uint256.NewInt(0).Sub(MaxUint256, y).Lt(x) {
 		return nil, fmt.Errorf("addition overflows uint256")
 	}
 
-	return uint256.NewInt().Add(x, y), nil
+	return uint256.NewInt(0).Add(x, y), nil
 }
 
 func (safeUint256 *_SafeUint256) Sub(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
@@ -248,15 +258,15 @@ func (safeUint256 *_SafeUint256) Sub(x *uint256.Int, y *uint256.Int) (*uint256.I
 		return nil, fmt.Errorf("subtraction underflows uint256")
 	}
 
-	return uint256.NewInt().Sub(x, y), nil
+	return uint256.NewInt(0).Sub(x, y), nil
 }
 
 func (safeUint256 *_SafeUint256) Mul(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
-	if uint256.NewInt().Div(MaxUint256, y).Lt(x) {
+	if uint256.NewInt(0).Div(MaxUint256, y).Lt(x) {
 		return nil, fmt.Errorf("multiplication overflows uint256")
 	}
 
-	return uint256.NewInt().Mul(x, y), nil
+	return uint256.NewInt(0).Mul(x, y), nil
 }
 
 func (safeUint256 *_SafeUint256) Div(x *uint256.Int, y *uint256.Int) (*uint256.Int, error) {
@@ -264,7 +274,7 @@ func (safeUint256 *_SafeUint256) Div(x *uint256.Int, y *uint256.Int) (*uint256.I
 		return nil, fmt.Errorf("division by zero")
 	}
 
-	return uint256.NewInt().Div(x, y), nil
+	return uint256.NewInt(0).Div(x, y), nil
 }
 
 // SafeUint64 allows for arithmetic operations that error

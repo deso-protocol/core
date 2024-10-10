@@ -406,7 +406,7 @@ func (nm *NetworkManager) processOutboundConnection(conn Connection) (*RemoteNod
 
 	if oc.failed {
 		return nil, fmt.Errorf("NetworkManager.handleOutboundConnection: Failed to connect to peer (%s:%v)",
-			oc.address.IP.String(), oc.address.Port)
+			oc.address.Addr.String(), oc.address.Port)
 	}
 
 	if !oc.isPersistent {
@@ -791,7 +791,7 @@ func (nm *NetworkManager) connectNonValidators() {
 }
 
 // getRandomUnconnectedAddress returns a random address from the address manager that we are not already connected to.
-func (nm *NetworkManager) getRandomUnconnectedAddress() *wire.NetAddress {
+func (nm *NetworkManager) getRandomUnconnectedAddress() *wire.NetAddressV2 {
 	for tries := 0; tries < 100; tries++ {
 		addr := nm.AddrMgr.GetAddress()
 		if addr == nil {
@@ -839,7 +839,7 @@ func (nm *NetworkManager) CreateValidatorConnection(ipStr string, publicKey *bls
 	remoteNode := nm.newRemoteNode(publicKey, true, false)
 	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
 		return errors.Wrapf(err, "NetworkManager.CreateValidatorConnection: Problem calling DialPersistentOutboundConnection "+
-			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
+			"for addr: (%s:%v)", netAddr.ToLegacy().IP.String(), netAddr.Port)
 	}
 	nm.setRemoteNode(remoteNode)
 	// Since we're initiating this connection, add the RemoteNode to the outbound validator index.
@@ -859,7 +859,7 @@ func (nm *NetworkManager) CreateNonValidatorPersistentOutboundConnection(ipStr s
 	remoteNode := nm.newRemoteNode(nil, true, true)
 	if err := remoteNode.DialPersistentOutboundConnection(netAddr); err != nil {
 		return 0, errors.Wrapf(err, "NetworkManager.CreateNonValidatorPersistentOutboundConnection: Problem calling DialPersistentOutboundConnection "+
-			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
+			"for addr: (%s:%v)", netAddr.ToLegacy().IP.String(), netAddr.Port)
 	}
 	nm.setRemoteNode(remoteNode)
 	nm.GetNonValidatorOutboundIndex().Set(remoteNode.GetId(), remoteNode)
@@ -874,7 +874,7 @@ func (nm *NetworkManager) CreateNonValidatorOutboundConnection(ipStr string) err
 	return nm.createNonValidatorOutboundConnection(netAddr)
 }
 
-func (nm *NetworkManager) createNonValidatorOutboundConnection(netAddr *wire.NetAddress) error {
+func (nm *NetworkManager) createNonValidatorOutboundConnection(netAddr *wire.NetAddressV2) error {
 	if netAddr == nil {
 		return fmt.Errorf("NetworkManager.CreateNonValidatorOutboundConnection: netAddr is nil")
 	}
@@ -882,14 +882,14 @@ func (nm *NetworkManager) createNonValidatorOutboundConnection(netAddr *wire.Net
 	remoteNode := nm.newRemoteNode(nil, true, false)
 	if err := remoteNode.DialOutboundConnection(netAddr); err != nil {
 		return errors.Wrapf(err, "NetworkManager.CreateNonValidatorOutboundConnection: Problem calling DialOutboundConnection "+
-			"for addr: (%s:%v)", netAddr.IP.String(), netAddr.Port)
+			"for addr: (%s:%v)", netAddr.ToLegacy().IP.String(), netAddr.Port)
 	}
 	nm.setRemoteNode(remoteNode)
 	nm.GetNonValidatorOutboundIndex().Set(remoteNode.GetId(), remoteNode)
 	return nil
 }
 
-func (nm *NetworkManager) AttachInboundConnection(conn net.Conn, na *wire.NetAddress) (*RemoteNode, error) {
+func (nm *NetworkManager) AttachInboundConnection(conn net.Conn, na *wire.NetAddressV2) (*RemoteNode, error) {
 
 	remoteNode := nm.newRemoteNode(nil, false, false)
 	if err := remoteNode.AttachInboundConnection(conn, na); err != nil {
@@ -903,7 +903,7 @@ func (nm *NetworkManager) AttachInboundConnection(conn net.Conn, na *wire.NetAdd
 }
 
 func (nm *NetworkManager) AttachOutboundConnection(
-	conn net.Conn, na *wire.NetAddress, remoteNodeId uint64, isPersistent bool,
+	conn net.Conn, na *wire.NetAddressV2, remoteNodeId uint64, isPersistent bool,
 ) (*RemoteNode, error) {
 
 	id := NewRemoteNodeId(remoteNodeId)
@@ -1319,12 +1319,12 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 // ## Helper Functions
 // ###########################
 
-func (nm *NetworkManager) ConvertIPStringToNetAddress(ipStr string) (*wire.NetAddress, error) {
+func (nm *NetworkManager) ConvertIPStringToNetAddress(ipStr string) (*wire.NetAddressV2, error) {
 	netAddr, err := IPToNetAddr(ipStr, nm.AddrMgr, nm.params)
 	if err != nil {
 		return nil, errors.Wrapf(err,
 			"NetworkManager.ConvertIPStringToNetAddress: Problem parsing "+
-				"ipString to wire.NetAddress")
+				"ipString to wire.NetAddressV2")
 	}
 	if netAddr == nil {
 		return nil, fmt.Errorf("NetworkManager.ConvertIPStringToNetAddress: " +
@@ -1333,7 +1333,7 @@ func (nm *NetworkManager) ConvertIPStringToNetAddress(ipStr string) (*wire.NetAd
 	return netAddr, nil
 }
 
-func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams) (*wire.NetAddress, error) {
+func IPToNetAddr(ipStr string, addrMgr *addrmgr.AddrManager, params *DeSoParams) (*wire.NetAddressV2, error) {
 	port := params.DefaultSocketPort
 	host, portstr, err := net.SplitHostPort(ipStr)
 	if err != nil {
@@ -1362,7 +1362,7 @@ func (nm *NetworkManager) isDuplicateInboundIPAddress(addr net.Addr) bool {
 		// is desired in this case.
 		glog.Warningf(errors.Wrapf(err,
 			"NetworkManager.isDuplicateInboundIPAddress: Problem parsing "+
-				"net.Addr to wire.NetAddress so marking as redundant and not "+
+				"net.Addr to wire.NetAddressV2 so marking as redundant and not "+
 				"making connection").Error())
 		return true
 	}
