@@ -42,7 +42,7 @@ require (
 	github.com/unrolled/secure v1.16.0
 	golang.org/x/crypto v0.28.0
 	golang.org/x/sync v0.8.0
-	gopkg.in/DataDog/dd-trace-go.v1 v1.66.0
+	gopkg.in/DataDog/dd-trace-go.v1 v1.68.0
 )
 
 require (
