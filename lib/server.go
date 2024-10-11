@@ -461,7 +461,9 @@ func NewServer(
 			_db,
 			_snapshotBlockHeightPeriod,
 			false,
-			false,
+			// If we aren't forcing the checksum to be correct, we set disableChecksum on the snapshot to true.
+			// This allows us to skip unnecessary checksum calculations.
+			!_forceChecksum,
 			_params,
 			_disableEncoderMigrations,
 			_hypersyncMaxQueueSize,
