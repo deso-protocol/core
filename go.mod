@@ -17,6 +17,7 @@ require (
 	github.com/decred/dcrd/container/lru v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/deso-protocol/go-merkle-tree v1.0.0
+	github.com/deso-protocol/uint256 v1.0.0
 	github.com/dgraph-io/badger/v4 v4.3.1
 	github.com/emirpasic/gods v1.18.1
 	github.com/ethereum/go-ethereum v1.14.11
@@ -25,7 +26,6 @@ require (
 	github.com/go-pg/pg/v10 v10.13.0
 	github.com/golang/glog v1.2.2
 	github.com/google/uuid v1.6.0
-	github.com/holiman/uint256 v1.3.1
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
 	github.com/onflow/crypto v0.25.2
@@ -88,6 +88,7 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20241009165004-a3522334989c // indirect
 	github.com/hashicorp/hcl v1.0.1-vault-5 // indirect
+	github.com/holiman/uint256 v1.3.1 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

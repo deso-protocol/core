@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/deso-protocol/uint256"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 
 	"github.com/deso-protocol/core/bls"

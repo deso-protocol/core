@@ -5,8 +5,8 @@ import (
 	"reflect"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/deso-protocol/uint256"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 

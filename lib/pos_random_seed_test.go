@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/deso-protocol/core/bls"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/stretchr/testify/require"
 )
 

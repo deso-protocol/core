@@ -1,7 +1,7 @@
 package lib
 
 import (
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/stretchr/testify/require"
 	"math"
 	"testing"

@@ -6,7 +6,7 @@ import (
 	"math/big"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 )
 
 // This library implements basic float functions using big.Float objects.

@@ -15,7 +15,7 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"golang.org/x/crypto/sha3"
 
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 

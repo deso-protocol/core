@@ -6,9 +6,9 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/deso-protocol/core/bls"
+	"github.com/deso-protocol/uint256"
 	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 

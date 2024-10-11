@@ -27,8 +27,8 @@ import (
 	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/deso-protocol/core/bls"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
+	"github.com/deso-protocol/uint256"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 

@@ -3,7 +3,7 @@ package lib
 import (
 	"crypto/sha256"
 
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/pkg/errors"
 )
 
