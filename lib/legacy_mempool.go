@@ -21,7 +21,7 @@ import (
 	"github.com/gernest/mention"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/go-deadlock"
+	"github.com/sasha-s/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )

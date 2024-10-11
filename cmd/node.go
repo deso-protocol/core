@@ -17,11 +17,11 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core/lib"
 	"github.com/deso-protocol/core/migrate"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"
+	"github.com/sasha-s/go-deadlock"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
