@@ -1315,6 +1315,9 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 			Succeeded: true,
 		})
 	}
+	// If we get here, then we've successfully processed the snapshot chunk
+	// and can free one slot in the operation queue semaphore.
+	snap.FreeOperationQueueSemaphore()
 
 	snap.timer.End("SetSnapshotChunk.Total")
 

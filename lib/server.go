@@ -1442,13 +1442,16 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
 	// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
-	srv.snapshot.FreeOperationQueueSemaphore()
+	// srv.snapshot.FreeOperationQueueSemaphore()
 
 	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
 	if msg.SnapshotMetadata.SnapshotBlockHeight > srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight &&
 		uint64(srv.blockchain.HeaderTip().Height) >= msg.SnapshotMetadata.SnapshotBlockHeight {
 
+		// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+		// by processing the snapshot chunk.
+		srv.snapshot.FreeOperationQueueSemaphore()
 		// TODO: Figure out how to handle header not reaching us, yet peer is telling us that the new epoch has started.
 		if srv.nodeMessageChannel != nil {
 			srv.nodeMessageChannel <- NodeRestart
@@ -1467,6 +1470,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if msg.SnapshotMetadata.SnapshotBlockHeight != srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight ||
 		!bytes.Equal(msg.SnapshotMetadata.CurrentEpochBlockHash[:], srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochBlockHash[:]) {
 
+		// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+		// by processing the snapshot chunk.
+		srv.snapshot.FreeOperationQueueSemaphore()
 		glog.Errorf("srv._handleSnapshot: blockheight (%v) and blockhash (%v) in msg do not match the expected "+
 			"hyper sync height (%v) and hash (%v)",
 			msg.SnapshotMetadata.SnapshotBlockHeight, msg.SnapshotMetadata.CurrentEpochBlockHash,
@@ -1485,6 +1491,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// If peer sent a message with an incorrect prefix, we should disconnect them.
 	if syncPrefixProgress == nil {
+		// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+		// by processing the snapshot chunk.
+		srv.snapshot.FreeOperationQueueSemaphore()
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("srv._handleSnapshot: Problem finding appropriate sync prefix progress "+
 			"disconnecting misbehaving peer (%v)", pp)
@@ -1492,6 +1501,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		return
 	}
 
+	// TODO: disable checksum support?
 	// If we haven't yet set the epoch checksum bytes in the hyper sync progress, we'll do it now.
 	// If we did set the checksum bytes, we will verify that they match the one that peer has sent us.
 	prevChecksumBytes := make([]byte, len(srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes))
@@ -1499,6 +1509,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	if len(srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes) == 0 {
 		srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = msg.SnapshotMetadata.CurrentEpochChecksumBytes
 	} else if !reflect.DeepEqual(srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes, msg.SnapshotMetadata.CurrentEpochChecksumBytes) {
+		// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+		// by processing the snapshot chunk.
+		srv.snapshot.FreeOperationQueueSemaphore()
 		// We should disconnect the peer because he is misbehaving
 		glog.Errorf("srv._handleSnapshot: HyperSyncProgress epoch checksum bytes does not match that received from peer, "+
 			"disconnecting misbehaving peer (%v)", pp)
@@ -1521,6 +1534,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// If this is the first message that we're receiving for this sync progress, the first entry in the chunk
 		// is going to be equal to the prefix.
 		if !bytes.HasPrefix(msg.SnapshotChunk[0].Key, msg.Prefix) {
+			// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+			// by processing the snapshot chunk.
+			srv.snapshot.FreeOperationQueueSemaphore()
 			// We should disconnect the peer because he is misbehaving.
 			glog.Errorf("srv._handleSnapshot: Snapshot chunk DBEntry key has mismatched prefix "+
 				"disconnecting misbehaving peer (%v)", pp)
@@ -1534,6 +1550,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		// should be identical to the first key in snapshot chunk. If it is not, then the peer either re-sent
 		// the same payload twice, a message was dropped by the network, or he is misbehaving.
 		if !bytes.Equal(syncPrefixProgress.LastReceivedKey, msg.SnapshotChunk[0].Key) {
+			// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+			// by processing the snapshot chunk.
+			srv.snapshot.FreeOperationQueueSemaphore()
 			glog.Errorf("srv._handleSnapshot: Received a snapshot chunk that's not in-line with the sync progress "+
 				"disconnecting misbehaving peer (%v)", pp)
 			srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes = prevChecksumBytes
@@ -1550,6 +1569,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		for ii := 1; ii < len(dbChunk); ii++ {
 			// Make sure that all dbChunk entries have the same prefix as in the message.
 			if !bytes.HasPrefix(dbChunk[ii].Key, msg.Prefix) {
+				// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+				// by processing the snapshot chunk.
+				srv.snapshot.FreeOperationQueueSemaphore()
 				// We should disconnect the peer because he is misbehaving
 				glog.Errorf("srv._handleSnapshot: DBEntry key has mismatched prefix "+
 					"disconnecting misbehaving peer (%v)", pp)
@@ -1559,6 +1581,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			}
 			// Make sure that the dbChunk is sorted increasingly.
 			if bytes.Compare(dbChunk[ii-1].Key, dbChunk[ii].Key) != -1 {
+				// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+				// by processing the snapshot chunk.
+				srv.snapshot.FreeOperationQueueSemaphore()
 				// We should disconnect the peer because he is misbehaving
 				glog.Errorf("srv._handleSnapshot: dbChunk entries are not sorted: first entry at index (%v) with "+
 					"value (%v) and second entry with index (%v) and value (%v) disconnecting misbehaving peer (%v)",
@@ -1659,6 +1684,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			"attempt to HyperSync from the beginning. Local db checksum %v; peer's snapshot checksum %v",
 			checksumBytes, srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
 		if srv.forceChecksum {
+			// Free up a slot in the operationQueueSemaphore, since we hit an error and it won't be freed
+			// by processing the snapshot chunk.
+			srv.snapshot.FreeOperationQueueSemaphore()
 			// If forceChecksum is true we signal an erasure of the state and return here,
 			// which will cut off the sync.
 			if srv.nodeMessageChannel != nil {
@@ -1680,6 +1708,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	//
 	// We split the db update into batches of 10,000 block nodes to avoid a single transaction
 	// being too large and possibly causing an error in badger.
+	glog.V(0).Infof("Server._handleSnapshot: Updating snapshot block nodes in the database")
 	var blockNodeBatch []*BlockNode
 	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
 		currentNode := srv.blockchain.bestHeaderChain[ii]
