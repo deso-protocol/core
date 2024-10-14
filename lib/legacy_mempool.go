@@ -792,7 +792,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	allTxns := mp.readOnlyUniversalTransactionList
 
 	tempMempoolDBDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
-	glog.Infof("OpenTempDBAndDumpTxns: Opening new temp db %v", tempMempoolDBDir)
+	glog.V(1).Infof("OpenTempDBAndDumpTxns: Opening new temp db %v", tempMempoolDBDir)
 	// Make the top-level folder if it doesn't exist.
 	err := MakeDirIfNonExistent(mp.mempoolDir)
 	if err != nil {
@@ -817,7 +817,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		// If we're at a multiple of 1k or we're at the end of the list
 		// then dump the txns to disk
 		if len(txnsToDump)%1000 == 0 || ii == len(allTxns)-1 {
-			glog.Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
+			glog.V(1).Infof("OpenTempDBAndDumpTxns: Dumping txns %v to %v", ii-len(txnsToDump)+1, ii)
 			err := tempMempoolDB.Update(func(txn *badger.Txn) error {
 				return FlushMempoolToDbWithTxn(txn, nil, blockHeight, txnsToDump, mp.bc.eventManager)
 			})
@@ -828,7 +828,7 @@ func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 		}
 	}
 	endTime := time.Now()
-	glog.Infof("OpenTempDBAndDumpTxns: Full txn dump of %v txns completed "+
+	glog.V(1).Infof("OpenTempDBAndDumpTxns: Full txn dump of %v txns completed "+
 		"in %v seconds. Safe to reboot node", len(allTxns), endTime.Sub(startTime).Seconds())
 	return nil
 }
@@ -2606,7 +2606,7 @@ func (mp *DeSoMempool) InefficientRemoveTransaction(tx *MsgDeSoTxn) {
 }
 
 func (mp *DeSoMempool) StartReadOnlyUtxoViewRegenerator() {
-	glog.Info("Calling StartReadOnlyUtxoViewRegenerator...")
+	glog.V(1).Info("Calling StartReadOnlyUtxoViewRegenerator...")
 
 	go func() {
 		var oldSeqNum int64
@@ -2697,7 +2697,7 @@ func (mp *DeSoMempool) StartMempoolDBDumper() {
 		for {
 			select {
 			case <-time.After(30 * time.Second):
-				glog.Info("StartMempoolDBDumper: Waking up! Dumping txns now...")
+				glog.V(1).Info("StartMempoolDBDumper: Waking up! Dumping txns now...")
 
 				// Dump the txns and time it.
 				mp.DumpTxnsToDB()
@@ -2734,7 +2734,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 	// If we make it this far, we found a mempool dump to load.  Woohoo!
 	tempMempoolDBOpts := mp.getBadgerOptions(savedTxnsDir)
 	tempMempoolDBOpts.ValueDir = savedTxnsDir
-	glog.Infof("LoadTxnsFrom: Opening new temp db %v", savedTxnsDir)
+	glog.V(1).Infof("LoadTxnsFrom: Opening new temp db %v", savedTxnsDir)
 	tempMempoolDB, err := badger.Open(tempMempoolDBOpts)
 	if err != nil {
 		glog.Infof("LoadTxnsFrom: Could not open temp db to dump mempool: %v", err)
@@ -2759,7 +2759,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 		}
 	}
 	endTime := time.Now()
-	glog.Infof("LoadTxnsFromDB: Loaded %v txns in %v seconds", len(dbMempoolTxnsOrderedByTime), endTime.Sub(startTime).Seconds())
+	glog.V(1).Infof("LoadTxnsFromDB: Loaded %v txns in %v seconds", len(dbMempoolTxnsOrderedByTime), endTime.Sub(startTime).Seconds())
 }
 
 func (mp *DeSoMempool) Stop() {
