@@ -1599,6 +1599,10 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		srv.snapshot.ProcessSnapshotChunk(srv.blockchain.db, &srv.blockchain.ChainLock, dbChunk,
 			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)
 		srv.timer.End("Server._handleSnapshot Process Snapshot")
+	} else {
+		// Free up a slot in the operationQueueSemaphore, since we had added one when we
+		// requested the snapshot chunk, but didn't end up calling ProcessSnapshotChunk.
+		srv.snapshot.FreeOperationQueueSemaphore()
 	}
 
 	// We will update the hyper sync progress tracker struct to reflect the newly added snapshot chunk.
