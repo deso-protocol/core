@@ -1917,7 +1917,7 @@ type SnapshotOperationChannel struct {
 	// from the MainDBSemaphore and the AncestralDBSemaphore which manage concurrency
 	// around flushes only.
 	StateSemaphore     int32
-	StateSemaphoreLock sync.Mutex
+	StateSemaphoreLock sync.RWMutex
 
 	mainDb          *badger.DB
 	snapshotDbMutex *sync.Mutex
@@ -2031,8 +2031,8 @@ func (opChan *SnapshotOperationChannel) FinishOperation() {
 }
 
 func (opChan *SnapshotOperationChannel) GetStatus() int32 {
-	opChan.StateSemaphoreLock.Lock()
-	defer opChan.StateSemaphoreLock.Unlock()
+	opChan.StateSemaphoreLock.RLock()
+	defer opChan.StateSemaphoreLock.RUnlock()
 
 	return opChan.StateSemaphore
 }
