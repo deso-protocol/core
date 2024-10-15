@@ -1292,7 +1292,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		//snap.timer.End("SetSnapshotChunk.Checksum")
 	}()
 	syncGroup.Wait()
-	mainDbMutex.Unlock()
+	//mainDbMutex.Unlock()
 
 	// If there's a problem setting the snapshot checksum, we'll reschedule this snapshot chunk set.
 	if err != nil {
