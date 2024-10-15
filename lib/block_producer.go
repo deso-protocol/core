@@ -374,7 +374,7 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem computing next difficulty: ")
 	}
 
-	glog.Infof("Produced block with %v txns with approx %v total txns in mempool",
+	glog.V(1).Infof("Produced block with %v txns with approx %v total txns in mempool",
 		len(blockRet.Txns), len(desoBlockProducer.mempool.readOnlyUniversalTransactionList))
 	return blockRet, diffTarget, lastNode, nil
 }
