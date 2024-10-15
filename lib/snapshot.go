@@ -1213,15 +1213,20 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	dbFlushId := uuid.New()
 
 	snap.timer.Start("SetSnapshotChunk.Total")
-	// If there's a problem retrieving the snapshot checksum, we'll reschedule this snapshot chunk set.
-	initialChecksumBytes, err := snap.Checksum.ToBytes()
-	if err != nil {
-		glog.Errorf("Snapshot.SetSnapshotChunk: Problem retrieving checksum bytes, error: (%v)", err)
-		snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk, blockHeight)
-		return err
+	var initialChecksumBytes []byte
+	if !snap.disableChecksum {
+		// If there's a problem retrieving the snapshot checksum, we'll reschedule this snapshot chunk set.
+		initialChecksumBytes, err = snap.Checksum.ToBytes()
+		if err != nil {
+			glog.Errorf("Snapshot.SetSnapshotChunk: Problem retrieving checksum bytes, error: (%v)", err)
+			snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk, blockHeight)
+			return err
+		}
 	}
 
-	mainDbMutex.Lock()
+	// TODO: I think we don't need to hold the chain lock. We can have multithreaded writes.
+	//mainDbMutex.Lock()
+
 	// We use badgerDb write batches as it's the fastest way to write multiple records to the db.
 	wb := mainDb.NewWriteBatch()
 	defer wb.Cancel()
@@ -1267,6 +1272,11 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	go func() {
 		defer syncGroup.Done()
 
+		// If we're disabling checksums, we don't need to add or remove bytes from the checksum
+		// when we're setting a snapshot chunk.
+		if snap.disableChecksum {
+			return
+		}
 		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
 			if localErr := snap.Checksum.AddOrRemoveBytesWithMigrations(dbEntry.Key, dbEntry.Value, blockHeight,
@@ -1284,7 +1294,7 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		//snap.timer.End("SetSnapshotChunk.Checksum")
 	}()
 	syncGroup.Wait()
-	mainDbMutex.Unlock()
+	//mainDbMutex.Unlock()
 
 	// If there's a problem setting the snapshot checksum, we'll reschedule this snapshot chunk set.
 	if err != nil {
@@ -1296,11 +1306,13 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		}
 		glog.Infof("Snapshot.SetSnapshotChunk: Problem setting the snapshot chunk, error (%v)", err)
 
-		// We reset the snapshot checksum so its initial value, so we won't overlap with processing the next snapshot chunk.
-		// If we've errored during a writeBatch set we'll redo this chunk in next SetSnapshotChunk so we're fine with overlaps.
-		if err := snap.Checksum.FromBytes(initialChecksumBytes); err != nil {
-			panic(fmt.Errorf("Snapshot.SetSnapshotChunk: Problem resetting checksum. This should never happen, "+
-				"error: (%v)", err))
+		if !snap.disableChecksum {
+			// We reset the snapshot checksum so its initial value, so we won't overlap with processing the next snapshot chunk.
+			// If we've errored during a writeBatch set we'll redo this chunk in next SetSnapshotChunk so we're fine with overlaps.
+			if err = snap.Checksum.FromBytes(initialChecksumBytes); err != nil {
+				panic(fmt.Errorf("Snapshot.SetSnapshotChunk: Problem resetting checksum. This should never happen, "+
+					"error: (%v)", err))
+			}
 		}
 		snap.ProcessSnapshotChunk(mainDb, mainDbMutex, chunk, blockHeight)
 		return err
@@ -1312,6 +1324,9 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 			Succeeded: true,
 		})
 	}
+	// If we get here, then we've successfully processed the snapshot chunk
+	// and can free one slot in the operation queue semaphore.
+	snap.FreeOperationQueueSemaphore()
 
 	snap.timer.End("SetSnapshotChunk.Total")
 
@@ -1911,7 +1926,7 @@ type SnapshotOperationChannel struct {
 	// from the MainDBSemaphore and the AncestralDBSemaphore which manage concurrency
 	// around flushes only.
 	StateSemaphore     int32
-	StateSemaphoreLock sync.Mutex
+	StateSemaphoreLock sync.RWMutex
 
 	mainDb          *badger.DB
 	snapshotDbMutex *sync.Mutex
@@ -2025,8 +2040,8 @@ func (opChan *SnapshotOperationChannel) FinishOperation() {
 }
 
 func (opChan *SnapshotOperationChannel) GetStatus() int32 {
-	opChan.StateSemaphoreLock.Lock()
-	defer opChan.StateSemaphoreLock.Unlock()
+	opChan.StateSemaphoreLock.RLock()
+	defer opChan.StateSemaphoreLock.RUnlock()
 
 	return opChan.StateSemaphore
 }

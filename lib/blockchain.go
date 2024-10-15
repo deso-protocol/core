@@ -2891,7 +2891,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		if *bc.blockView.TipHash != *currentTip.Hash {
 			//return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
 			//	"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
-			glog.Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
+			glog.V(1).Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
 				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
 
