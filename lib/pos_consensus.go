@@ -693,7 +693,7 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error hashing tip block: %v", err)
 	}
 
-	utxoViewAndUtxoOps, err := fc.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*tipBlockHash)
+	utxoViewAndUtxoOps, err := fc.blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(*tipBlockHash)
 	if err != nil {
 		return nil, errors.Errorf("Error fetching UtxoView for tip block: %v", err)
 	}
@@ -739,7 +739,7 @@ func (fc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	}
 
 	// Build a UtxoView at the parent block
-	parentUtxoViewAndUtxoOps, err := fc.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*parentBlockHash)
+	parentUtxoViewAndUtxoOps, err := fc.blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(*parentBlockHash)
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)
