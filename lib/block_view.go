@@ -4139,8 +4139,8 @@ func (bav *UtxoView) _connectSingleTxn(
 				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: CreatorCoinSnapshot is nil")
 			}
 			desoLockedDelta = big.NewInt(0).Sub(
-				BigIntFromUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
-				BigIntFromUint64(creatorCoinSnapshot.DeSoLockedNanos))
+				big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+				big.NewInt(0).SetUint64(creatorCoinSnapshot.DeSoLockedNanos))
 		}
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid ||
 			txn.TxnMeta.GetTxnType() == TxnTypeNFTBid {
@@ -4152,8 +4152,8 @@ func (bav *UtxoView) _connectSingleTxn(
 				}
 				desoLockedDelta = desoLockedDelta.Sub(desoLockedDelta,
 					big.NewInt(0).Sub(
-						BigIntFromUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
-						BigIntFromUint64(coinEntry.DeSoLockedNanos)),
+						big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+						big.NewInt(0).SetUint64(coinEntry.DeSoLockedNanos)),
 				)
 			}
 		}
@@ -4315,7 +4315,7 @@ func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]ui
 			balanceSnapshot[publicKey] = snapshotBalance
 		}
 		// New - Old
-		delta := big.NewInt(0).Sub(BigIntFromUint64(balance), BigIntFromUint64(snapshotBalance))
+		delta := big.NewInt(0).Sub(big.NewInt(0).SetUint64(balance), big.NewInt(0).SetUint64(snapshotBalance))
 		runningTotal = big.NewInt(0).Add(runningTotal, delta)
 	}
 	return runningTotal, nil

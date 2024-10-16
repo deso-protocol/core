@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 	"log"
 	"math"
 	"os"
@@ -2771,13 +2771,6 @@ func (mp *DeSoMempool) Stop() {
 func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string, useDefaultBadgerOptions bool) *DeSoMempool {
-
-	// We set the deadlock timeout to 10 minutes.
-	// We used to have a vendored version of the library, but it caused
-	// issues when upgrading to go 1.23 and the forked version was not
-	// kept up to date with the original library. We need to simply make
-	// the only significant change we made in the forked version here.
-	deadlock.Opts.DeadlockTimeout = 10 * time.Minute
 	utxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	backupUtxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	readOnlyUtxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)

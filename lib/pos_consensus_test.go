@@ -1,7 +1,7 @@
 package lib
 
 import (
-	"github.com/sasha-s/go-deadlock"
+	"github.com/deso-protocol/go-deadlock"
 	"sync"
 	"testing"
 
