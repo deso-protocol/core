@@ -32,7 +32,7 @@ require (
 	github.com/onflow/crypto v0.25.2
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
-	github.com/robinjoseph08/go-pg-migrations/v3 v3.0.0
+	github.com/robinjoseph08/go-pg-migrations/v3 v3.1.0
 	github.com/shibukawa/configdir v0.0.0-20170330084843-e180dbdc8da0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
@@ -67,7 +67,7 @@ require (
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/andygrunwald/go-jira v1.16.0 // indirect
-	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c // indirect
+	github.com/btcsuite/btclog v0.0.0-20241017175713-3428138b75c7 // indirect
 	github.com/bwesterb/go-ristretto v1.2.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
