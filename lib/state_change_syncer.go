@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/deso-protocol/go-deadlock"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"

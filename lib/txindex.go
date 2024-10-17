@@ -3,15 +3,15 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/go-deadlock"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
 
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 )
 

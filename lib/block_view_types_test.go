@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/brianvoe/gofakeit"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -437,8 +437,8 @@ func TestUtxoEntryEncodeDecode(t *testing.T) {
 
 func TestEncodingUint256s(t *testing.T) {
 	// Create three uint256.Ints.
-	num1 := uint256.NewInt()
-	num2 := uint256.NewInt().SetUint64(598128756)
+	num1 := uint256.NewInt(0)
+	num2 := uint256.NewInt(598128756)
 	num3 := MaxUint256
 
 	// Encode them to bytes using VariableEncodeUint256.

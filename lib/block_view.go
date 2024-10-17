@@ -13,12 +13,12 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 
 	"github.com/davecgh/go-spew/spew"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1854,7 +1854,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 	}
 	// If we got a derived key then try parsing it.
 	if isDerived {
-		derivedPk, err = btcec.ParsePubKey(derivedPkBytes, btcec.S256())
+		derivedPk, err = btcec.ParsePubKey(derivedPkBytes)
 		if err != nil {
 			return nil, fmt.Errorf("%v %v", RuleErrorDerivedKeyInvalidExtraData, RuleErrorDerivedKeyInvalidRecoveryId)
 		}
@@ -1862,7 +1862,7 @@ func (bav *UtxoView) _verifySignature(txn *MsgDeSoTxn, blockHeight uint32) (_der
 
 	// Get the owner public key and attempt turning it into *btcec.PublicKey.
 	ownerPkBytes := txn.PublicKey
-	ownerPk, err := btcec.ParsePubKey(ownerPkBytes, btcec.S256())
+	ownerPk, err := btcec.ParsePubKey(ownerPkBytes)
 	if err != nil {
 		return nil, errors.Wrapf(err, "_verifySignature: Problem parsing owner public key: ")
 	}
@@ -4124,7 +4124,7 @@ func (bav *UtxoView) _connectSingleTxn(
 	if txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 		txn.TxnMeta.GetTxnType() != TxnTypeBitcoinExchange &&
 		blockHeight >= bav.Params.ForkHeights.BalanceModelBlockHeight {
-		balanceDelta, _, err := bav._compareBalancesToSnapshot(balanceSnapshot)
+		balanceDelta, err := bav._compareBalancesToSnapshot(balanceSnapshot)
 		if err != nil {
 			return nil, 0, 0, 0, errors.Wrapf(err, "ConnectTransaction: error comparing current balances to snapshot")
 		}
@@ -4135,7 +4135,11 @@ func (bav *UtxoView) _connectSingleTxn(
 			if creatorProfile == nil || creatorProfile.IsDeleted() {
 				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: Profile for CreatorCoin being sold does not exist")
 			}
-			desoLockedDelta = big.NewInt(0).Sub(big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
+			if creatorCoinSnapshot == nil {
+				return nil, 0, 0, 0, fmt.Errorf("ConnectTransaction: CreatorCoinSnapshot is nil")
+			}
+			desoLockedDelta = big.NewInt(0).Sub(
+				big.NewInt(0).SetUint64(creatorProfile.CreatorCoinEntry.DeSoLockedNanos),
 				big.NewInt(0).SetUint64(creatorCoinSnapshot.DeSoLockedNanos))
 		}
 		if txn.TxnMeta.GetTxnType() == TxnTypeAcceptNFTBid ||
@@ -4165,7 +4169,7 @@ func (bav *UtxoView) _connectSingleTxn(
 					"ConnectTransaction: TxnTypeUnlockStake must correspond to OperationTypeUnlockStake",
 				)
 			}
-			totalLockedAmountNanos := uint256.NewInt()
+			totalLockedAmountNanos := uint256.NewInt(0)
 			for _, prevLockedStakeEntry := range utxoOp.PrevLockedStakeEntries {
 				totalLockedAmountNanos, err = SafeUint256().Add(
 					totalLockedAmountNanos, prevLockedStakeEntry.LockedAmountNanos,
@@ -4192,7 +4196,7 @@ func (bav *UtxoView) _connectSingleTxn(
 						"ConnectTransaction: TxnTypeCoinUnlock must correspond to OperationTypeCoinUnlock",
 					)
 				}
-				totalLockedDESOAmountNanos := uint256.NewInt()
+				totalLockedDESOAmountNanos := uint256.NewInt(0)
 				for _, prevLockedBalanceEntry := range utxoOp.PrevLockedBalanceEntries {
 					totalLockedDESOAmountNanos, err = SafeUint256().Add(
 						totalLockedDESOAmountNanos, &prevLockedBalanceEntry.BalanceBaseUnits)
@@ -4297,26 +4301,24 @@ func computeBMF(fee uint64) (_burnFee uint64, _utilityFee uint64) {
 }
 
 func (bav *UtxoView) _compareBalancesToSnapshot(balanceSnapshot map[PublicKey]uint64) (
-	*big.Int, map[PublicKey]*big.Int, error) {
+	*big.Int, error) {
 	runningTotal := big.NewInt(0)
-	balanceDeltasMap := make(map[PublicKey]*big.Int)
 	for publicKey, balance := range bav.PublicKeyToDeSoBalanceNanos {
 		snapshotBalance, exists := balanceSnapshot[publicKey]
 		if !exists {
 			// Get it from the DB
 			dbBalance, err := bav.GetDbAdapter().GetDeSoBalanceForPublicKey(publicKey.ToBytes())
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			snapshotBalance = dbBalance
 			balanceSnapshot[publicKey] = snapshotBalance
 		}
 		// New - Old
 		delta := big.NewInt(0).Sub(big.NewInt(0).SetUint64(balance), big.NewInt(0).SetUint64(snapshotBalance))
-		balanceDeltasMap[publicKey] = delta
 		runningTotal = big.NewInt(0).Add(runningTotal, delta)
 	}
-	return runningTotal, balanceDeltasMap, nil
+	return runningTotal, nil
 }
 
 func (bav *UtxoView) ConnectBlock(
@@ -4365,7 +4367,7 @@ func (bav *UtxoView) ConnectBlock(
 		}
 		var err error
 		blockRewardOutputPublicKey, err =
-			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey, btcec.S256())
+			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey)
 		if err != nil {
 			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
 		}
@@ -4405,7 +4407,7 @@ func (bav *UtxoView) ConnectBlock(
 		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
 			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 			txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey)
 			if err != nil {
 				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
 			}

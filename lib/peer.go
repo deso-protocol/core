@@ -2,16 +2,16 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/go-deadlock"
 	"net"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/decred/dcrd/lru"
+	"github.com/decred/dcrd/container/lru"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -75,7 +75,7 @@ type Peer struct {
 	serviceFlags           ServiceFlag
 	latestHeight           uint64
 	addrStr                string
-	netAddr                *wire.NetAddress
+	netAddr                *wire.NetAddressV2
 	minTxFeeRateNanosPerKB uint64
 	// Messages for which we are expecting a reply within a fixed
 	// amount of time. This list is always sorted by ExpectedTime,
@@ -111,7 +111,7 @@ type Peer struct {
 
 	// Inventory stuff.
 	// The inventory that we know the peer already has.
-	knownInventory lru.Cache
+	knownInventory lru.Set[InvVect]
 
 	// Whether the peer is ready to receive INV messages. For a peer that
 	// still needs a mempool download, this is false.
@@ -292,7 +292,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 	for _, invVect := range msg.InvList {
 		// No matter what, add the inv to the peer's known inventory.
-		pp.knownInventory.Add(*invVect)
+		pp.knownInventory.Put(*invVect)
 
 		// If this is a hash we are currently processing, no need to do anything.
 		// This check serves to fill the gap between the time when we've decided
@@ -339,7 +339,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 		// If we made it here, it means the inventory was added to one of the
 		// lists so mark it as processed on the Server.
-		pp.srv.inventoryBeingProcessed.Add(*invVect)
+		pp.srv.inventoryBeingProcessed.Put(*invVect)
 	}
 
 	// If there were any transactions we don't yet have, request them using
@@ -631,7 +631,7 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 }
 
 // NewPeer creates a new Peer object.
-func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
+func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddressV2,
 	_isPersistent bool, _stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	params *DeSoParams,
@@ -652,7 +652,7 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 		outputQueueChan:        make(chan DeSoMessage),
 		peerDisconnectedChan:   peerDisconnectedChan,
 		quit:                   make(chan interface{}),
-		knownInventory:         lru.NewCache(maxKnownInventory),
+		knownInventory:         *lru.NewSet[InvVect](maxKnownInventory),
 		blocksToSend:           make(map[BlockHash]bool),
 		stallTimeoutSeconds:    _stallTimeoutSeconds,
 		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
@@ -805,12 +805,12 @@ func (pp *Peer) Address() string {
 	return pp.addrStr
 }
 
-func (pp *Peer) NetAddress() *wire.NetAddress {
+func (pp *Peer) NetAddress() *wire.NetAddressV2 {
 	return pp.netAddr
 }
 
 func (pp *Peer) IP() string {
-	return pp.netAddr.IP.String()
+	return pp.netAddr.ToLegacy().IP.String()
 }
 
 func (pp *Peer) Port() uint16 {
@@ -978,7 +978,7 @@ out:
 
 				// Add the new inventory to the peer's knownInventory.
 				for _, invVect := range invMsg.InvList {
-					pp.knownInventory.Add(*invVect)
+					pp.knownInventory.Put(*invVect)
 				}
 			}
 

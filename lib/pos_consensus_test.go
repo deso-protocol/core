@@ -1,13 +1,13 @@
 package lib
 
 import (
+	"github.com/deso-protocol/go-deadlock"
 	"sync"
 	"testing"
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )

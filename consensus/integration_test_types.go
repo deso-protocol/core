@@ -7,7 +7,7 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 )
 
 // validatorNode is a simplified implementation of a Fast-HotStuff node that runs the Fast-HotStuff

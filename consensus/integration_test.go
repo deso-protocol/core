@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/deso-protocol/core/collections"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,10 +16,10 @@ import (
 func TestNetworkWithOfflineValidators(t *testing.T) {
 	// Create 4 nodes with equal stake. The network has super-majority of stake online
 	// as long as 3 out of 4 nodes are online.
-	node1 := newValidatorNode(uint256.NewInt().SetUint64(50), true)  // block proposer
-	node2 := newValidatorNode(uint256.NewInt().SetUint64(50), false) // validator
-	node3 := newValidatorNode(uint256.NewInt().SetUint64(50), false) // validator
-	node4 := newValidatorNode(uint256.NewInt().SetUint64(50), false) // validator
+	node1 := newValidatorNode(uint256.NewInt(50), true)  // block proposer
+	node2 := newValidatorNode(uint256.NewInt(50), false) // validator
+	node3 := newValidatorNode(uint256.NewInt(50), false) // validator
+	node4 := newValidatorNode(uint256.NewInt(50), false) // validator
 
 	allNodes := []*validatorNode{node1, node2, node3, node4}
 
@@ -104,10 +104,10 @@ func TestNetworkWithOfflineValidators(t *testing.T) {
 func TestNetworkWithOfflineBlockProposer(t *testing.T) {
 	// Create 4 nodes with equal stake. The network has super-majority of stake online
 	// as long as 3 out of 4 nodes are online.
-	node1 := newValidatorNode(uint256.NewInt().SetUint64(50), true)  // block proposer
-	node2 := newValidatorNode(uint256.NewInt().SetUint64(50), false) // validator
-	node3 := newValidatorNode(uint256.NewInt().SetUint64(50), false) // validator
-	node4 := newValidatorNode(uint256.NewInt().SetUint64(50), false) // validator
+	node1 := newValidatorNode(uint256.NewInt(50), true)  // block proposer
+	node2 := newValidatorNode(uint256.NewInt(50), false) // validator
+	node3 := newValidatorNode(uint256.NewInt(50), false) // validator
+	node4 := newValidatorNode(uint256.NewInt(50), false) // validator
 
 	allNodes := []*validatorNode{node1, node2, node3, node4}
 
@@ -181,9 +181,9 @@ func TestNetworkWithOfflineBlockProposer(t *testing.T) {
 func TestNetworkRecoveryAfterCatastrophicFailure(t *testing.T) {
 	// Create 3 nodes with equal stake. Node 3 has a super-majority of the the stake
 	// and needs to stay online for the network to remain live.
-	node1 := newValidatorNode(uint256.NewInt().SetUint64(10), true)  // block proposer
-	node2 := newValidatorNode(uint256.NewInt().SetUint64(10), false) // validator
-	node3 := newValidatorNode(uint256.NewInt().SetUint64(80), false) // validator
+	node1 := newValidatorNode(uint256.NewInt(10), true)  // block proposer
+	node2 := newValidatorNode(uint256.NewInt(10), false) // validator
+	node3 := newValidatorNode(uint256.NewInt(80), false) // validator
 
 	allNodes := []*validatorNode{node1, node2, node3}
 

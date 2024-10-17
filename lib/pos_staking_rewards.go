@@ -3,7 +3,7 @@ package lib
 import (
 	"math/big"
 
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -225,9 +225,9 @@ func (bav *UtxoView) distributeStakingReward(
 				IsValidatorCommission: isValidatorCommission,
 			},
 		}
-		stakeEntry.StakeAmountNanos = uint256.NewInt().Add(stakeEntry.StakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
+		stakeEntry.StakeAmountNanos = uint256.NewInt(0).Add(stakeEntry.StakeAmountNanos, uint256.NewInt(rewardNanos))
 		bav._setStakeEntryMappings(stakeEntry)
-		validatorEntry.TotalStakeAmountNanos = uint256.NewInt().Add(validatorEntry.TotalStakeAmountNanos, uint256.NewInt().SetUint64(rewardNanos))
+		validatorEntry.TotalStakeAmountNanos = uint256.NewInt(0).Add(validatorEntry.TotalStakeAmountNanos, uint256.NewInt(rewardNanos))
 		bav._setValidatorEntryMappings(validatorEntry)
 		return utxoOperation, nil
 	}

@@ -3,11 +3,12 @@ package lib
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/davecgh/go-spew/spew"
+	ecdsa2 "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
+	"github.com/deso-protocol/uint256"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
 	"reflect"
@@ -451,10 +452,10 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 			var err error
 			daoCoinsInCirculationNanos, err = uint256.FromHex(profile.DAOCoinCoinsInCirculationNanos)
 			if err != nil {
-				daoCoinsInCirculationNanos = uint256.NewInt()
+				daoCoinsInCirculationNanos = uint256.NewInt(0)
 			}
 		} else {
-			daoCoinsInCirculationNanos = uint256.NewInt()
+			daoCoinsInCirculationNanos = uint256.NewInt(0)
 		}
 		profileEntry = &ProfileEntry{
 			PublicKey:   profile.PublicKey.ToBytes(),
@@ -465,7 +466,7 @@ func (bav *UtxoView) setProfileMappings(profile *PGProfile) (*ProfileEntry, *PKI
 				CreatorBasisPoints:      profile.CreatorBasisPoints,
 				DeSoLockedNanos:         profile.DeSoLockedNanos,
 				NumberOfHolders:         profile.NumberOfHolders,
-				CoinsInCirculationNanos: *uint256.NewInt().SetUint64(profile.CoinsInCirculationNanos),
+				CoinsInCirculationNanos: *uint256.NewInt(profile.CoinsInCirculationNanos),
 				CoinWatermarkNanos:      profile.CoinWatermarkNanos,
 				MintingDisabled:         profile.MintingDisabled,
 			},
@@ -576,7 +577,7 @@ func (bav *UtxoView) _connectUpdateProfile(
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfilePublicKeySize, "_connectUpdateProfile: %#v", txMeta.ProfilePublicKey)
 		}
-		_, err := btcec.ParsePubKey(txMeta.ProfilePublicKey, btcec.S256())
+		_, err := btcec.ParsePubKey(txMeta.ProfilePublicKey)
 		if err != nil {
 			return 0, 0, nil, errors.Wrapf(RuleErrorProfileBadPublicKey, "_connectUpdateProfile: %v", err)
 		}
@@ -825,7 +826,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 	if len(fromPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorFromPublicKeyIsRequired
 	}
-	if _, err := btcec.ParsePubKey(fromPublicKey, btcec.S256()); err != nil {
+	if _, err := btcec.ParsePubKey(fromPublicKey); err != nil {
 		return 0, 0, nil, errors.Wrap(RuleErrorInvalidFromPublicKey, err.Error())
 	}
 
@@ -834,7 +835,7 @@ func (bav *UtxoView) _connectSwapIdentity(
 	if len(toPublicKey) != btcec.PubKeyBytesLenCompressed {
 		return 0, 0, nil, RuleErrorToPublicKeyIsRequired
 	}
-	if _, err := btcec.ParsePubKey(toPublicKey, btcec.S256()); err != nil {
+	if _, err := btcec.ParsePubKey(toPublicKey); err != nil {
 		return 0, 0, nil, errors.Wrap(RuleErrorInvalidToPublicKey, err.Error())
 	}
 
@@ -968,13 +969,13 @@ func _verifyDeSoSignature(signer, data, signature []byte) error {
 	bytes := Sha256DoubleHash(data)
 
 	// Convert signature to *btcec.Signature.
-	sign, err := btcec.ParseDERSignature(signature, btcec.S256())
+	sign, err := ecdsa2.ParseDERSignature(signature)
 	if err != nil {
 		return errors.Wrapf(err, "_verifyBytesSignature: Problem parsing access signature: ")
 	}
 
 	// Verify signature.
-	ownerPk, _ := btcec.ParsePubKey(signer, btcec.S256())
+	ownerPk, _ := btcec.ParsePubKey(signer)
 	if !sign.Verify(bytes[:], ownerPk) {
 		return fmt.Errorf("_verifyBytesSignature: Invalid signature")
 	}
@@ -994,17 +995,17 @@ func TextAndHash(data []byte) ([]byte, string) {
 func VerifyEthPersonalSignature(signer, data, signature []byte) error {
 	// Ethereum likes uncompressed public keys while we use compressed keys a lot. Make sure we have uncompressed pk bytes.
 	var uncompressedSigner []byte
-	pubKey, err := btcec.ParsePubKey(signer, btcec.S256())
+	pubKey, err := btcec.ParsePubKey(signer)
 	if err != nil {
 		return errors.Wrapf(err, "VerifyEthPersonalSignature: Problem parsing signer public key")
 	}
 	if len(signer) == btcec.PubKeyBytesLenCompressed {
 		uncompressedSigner = pubKey.SerializeUncompressed()
-	} else if len(signer) == btcec.PubKeyBytesLenUncompressed {
+	} else if len(signer) == BtcecPubKeyBytesLenUncompressed {
 		uncompressedSigner = signer
 	} else {
 		return fmt.Errorf("VerifyEthPersonalSignature: Public key has incorrect length. It should be either "+
-			"(%v) for compressed key or (%v) for uncompressed key", btcec.PubKeyBytesLenCompressed, btcec.PubKeyBytesLenUncompressed)
+			"(%v) for compressed key or (%v) for uncompressed key", btcec.PubKeyBytesLenCompressed, BtcecPubKeyBytesLenUncompressed)
 	}
 
 	// Change the data bytes into Ethereum's personal_sign message standard. This will prepend the message prefix and hash
@@ -1054,7 +1055,7 @@ func (bav *UtxoView) _disconnectUpdateProfile(
 		if len(txMeta.ProfilePublicKey) != btcec.PubKeyBytesLenCompressed {
 			return fmt.Errorf("_disconnectUpdateProfile: %#v", txMeta.ProfilePublicKey)
 		}
-		_, err := btcec.ParsePubKey(txMeta.ProfilePublicKey, btcec.S256())
+		_, err := btcec.ParsePubKey(txMeta.ProfilePublicKey)
 		if err != nil {
 			return fmt.Errorf("_disconnectUpdateProfile: %v", err)
 		}

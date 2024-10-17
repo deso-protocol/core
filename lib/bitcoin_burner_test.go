@@ -1,11 +1,10 @@
 package lib
 
 import (
-	"testing"
-
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 var (

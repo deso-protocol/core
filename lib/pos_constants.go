@@ -4,7 +4,7 @@ import (
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
 	"github.com/deso-protocol/core/consensus"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -39,7 +39,7 @@ func BuildProofOfStakeCutoverValidator() (consensus.Validator, error) {
 	}
 	validatorEntry := &ValidatorEntry{
 		VotingPublicKey:       blsPrivateKey.PublicKey(),
-		TotalStakeAmountNanos: uint256.NewInt().SetUint64(1e9),
+		TotalStakeAmountNanos: uint256.NewInt(1e9),
 	}
 	return validatorEntry, nil
 }

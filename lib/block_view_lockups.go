@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/deso-protocol/uint256"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -187,7 +187,7 @@ func (lockedBalanceEntry *LockedBalanceEntry) RawDecodeWithoutMetadata(blockHeig
 	if err != nil {
 		return errors.Wrap(err, "LockedBalanceEntry.Decode: Problem reading BalanceBaseUnits")
 	}
-	lockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt().SetBytes(balanceBaseUnitsBytes)
+	lockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt(0).SetBytes(balanceBaseUnitsBytes)
 
 	return nil
 }
@@ -1178,14 +1178,14 @@ func (bav *UtxoView) _connectCoinLockup(
 
 	// Spend the transactor's DAO coin balance.
 	transactorBalanceEntry.BalanceNanos =
-		*uint256.NewInt().Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
+		*uint256.NewInt(0).Sub(&transactorBalanceEntry.BalanceNanos, txMeta.LockupAmountBaseUnits)
 	bav._setDAOCoinBalanceEntryMappings(transactorBalanceEntry)
 
 	// Create a copy of the associated CoinEntry in the event we must roll back the transaction.
 	prevCoinEntry := profileEntry.DAOCoinEntry.Copy()
 
 	// Update CoinsInCirculation and NumberOfHolders associated with the DAO coin balance.
-	profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt().Sub(
+	profileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt(0).Sub(
 		&profileEntry.DAOCoinEntry.CoinsInCirculationNanos,
 		txMeta.LockupAmountBaseUnits)
 	if transactorBalanceEntry.BalanceNanos.IsZero() && !prevTransactorBalanceEntry.BalanceNanos.IsZero() {
@@ -1216,7 +1216,7 @@ func (bav *UtxoView) _connectCoinLockup(
 
 	// If this is an unvested lockup, compute any accrued yield.
 	// In the vested lockup case, the yield earned is always zero.
-	yieldFromTxn := uint256.NewInt()
+	yieldFromTxn := uint256.NewInt(0)
 	if profileEnablesYield && txMeta.UnlockTimestampNanoSecs == txMeta.VestingEndTimestampNanoSecs {
 		// Compute the lockup duration in nanoseconds.
 		lockupDurationNanoSeconds := txMeta.UnlockTimestampNanoSecs - blockTimestampNanoSecs
@@ -1251,8 +1251,8 @@ func (bav *UtxoView) _connectCoinLockup(
 		}
 
 		// Convert variables to a consistent uint256 representation. This is to use them in SafeUint256 math.
-		txnYieldBasisPoints256 := uint256.NewInt().SetUint64(txnYieldBasisPoints)
-		txnYieldEarningDurationNanoSecs256 := uint256.NewInt().SetUint64(uint64(txnYieldEarningDurationNanoSecs))
+		txnYieldBasisPoints256 := uint256.NewInt(txnYieldBasisPoints)
+		txnYieldEarningDurationNanoSecs256 := uint256.NewInt(uint64(txnYieldEarningDurationNanoSecs))
 
 		// Compute the yield associated with this operation, checking to ensure there's no overflow.
 		yieldFromTxn, err =
@@ -1300,7 +1300,7 @@ func (bav *UtxoView) _connectCoinLockup(
 				ProfilePKID:                 profilePKID,
 				UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
 				VestingEndTimestampNanoSecs: txMeta.VestingEndTimestampNanoSecs,
-				BalanceBaseUnits:            *uint256.NewInt(),
+				BalanceBaseUnits:            *uint256.NewInt(0),
 			}
 		}
 
@@ -1772,7 +1772,7 @@ func SplitVestedLockedBalanceEntry(
 	remainingLockedBalanceEntry.BalanceBaseUnits = *remainingValue
 
 	// Sanity check the split does not print money.
-	if uint256.NewInt().Add(
+	if uint256.NewInt(0).Add(
 		&splitLockedBalanceEntry.BalanceBaseUnits, &remainingLockedBalanceEntry.BalanceBaseUnits).
 		Gt(&lockedBalanceEntry.BalanceBaseUnits) {
 		return nil, nil,
@@ -1803,12 +1803,12 @@ func CalculateLockupValueOverElapsedDuration(
 	}
 
 	// Convert the elapsedDuration to an uint256
-	numerator := uint256.NewInt().SetUint64(uint64(elapsedDuration))
+	numerator := uint256.NewInt(uint64(elapsedDuration))
 
 	// Compute the time that passes over the duration of the locked balance entry
 	denominator, err := SafeUint256().Sub(
-		uint256.NewInt().SetUint64(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs)),
-		uint256.NewInt().SetUint64(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs)))
+		uint256.NewInt(uint64(lockedBalanceEntry.VestingEndTimestampNanoSecs)),
+		uint256.NewInt(uint64(lockedBalanceEntry.UnlockTimestampNanoSecs)))
 	if err != nil {
 		return nil, errors.Wrap(err, "CalculateLockupSplitValue: "+
 			"(lockedBalanceEntry.UnlockTimestamp - lockedBalanceEntry.VestingEndTimestamp) underflow")
@@ -1853,13 +1853,13 @@ func CalculateLockupYield(
 	// The SafeUint256 Library uses division to ensure there's no overflow. This leads to possible
 	// unnecessary false overflows in the event the duration or the yield is 0. Hence, we do a separate check here.
 	if apyYieldBasisPoints.IsZero() || durationNanoSecs.IsZero() {
-		return uint256.NewInt(), nil
+		return uint256.NewInt(0), nil
 	}
 
 	// Compute the denominators from the nanosecond to year conversion and the basis point computation.
 	denominators, err := SafeUint256().Mul(
-		uint256.NewInt().SetUint64(NanoSecsPerYear),
-		uint256.NewInt().SetUint64(10000))
+		uint256.NewInt(NanoSecsPerYear),
+		uint256.NewInt(10000))
 	if err != nil {
 		return nil,
 			errors.Wrap(RuleErrorCoinLockupCoinYieldOverflow, "CalculateLockupYield (nanoSecsPerYear * 10000)")
@@ -1930,7 +1930,7 @@ func (bav *UtxoView) _disconnectCoinLockup(
 				ProfilePKID:                 operationData.PrevLockedBalanceEntry.ProfilePKID,
 				UnlockTimestampNanoSecs:     operationData.PrevLockedBalanceEntry.UnlockTimestampNanoSecs,
 				VestingEndTimestampNanoSecs: operationData.PrevLockedBalanceEntry.VestingEndTimestampNanoSecs,
-				BalanceBaseUnits:            *uint256.NewInt(),
+				BalanceBaseUnits:            *uint256.NewInt(0),
 			}
 		}
 		if lockedBalanceEntry.BalanceBaseUnits.Lt(&operationData.PrevLockedBalanceEntry.BalanceBaseUnits) {
@@ -2308,7 +2308,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 			ProfilePKID:                 profilePKID,
 			UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
 			VestingEndTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:            *uint256.NewInt(),
+			BalanceBaseUnits:            *uint256.NewInt(0),
 		}
 	}
 	prevSenderLockedBalanceEntry := senderLockedBalanceEntry.Copy()
@@ -2320,7 +2320,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 	}
 
 	// Debit the sender's balance entry.
-	senderLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt().Sub(
+	senderLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt(0).Sub(
 		&senderLockedBalanceEntry.BalanceBaseUnits, txMeta.LockedCoinsToTransferBaseUnits)
 
 	// Fetch the recipient's balance entry.
@@ -2340,7 +2340,7 @@ func (bav *UtxoView) _connectCoinLockupTransfer(
 			ProfilePKID:                 profilePKID,
 			UnlockTimestampNanoSecs:     txMeta.UnlockTimestampNanoSecs,
 			VestingEndTimestampNanoSecs: txMeta.UnlockTimestampNanoSecs,
-			BalanceBaseUnits:            *uint256.NewInt(),
+			BalanceBaseUnits:            *uint256.NewInt(0),
 		}
 	}
 	prevReceiverLockedBalanceEntry := receiverLockedBalanceEntry.Copy()
@@ -2467,7 +2467,7 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 			ProfilePKID:                 operationData.PrevSenderLockedBalanceEntry.ProfilePKID,
 			UnlockTimestampNanoSecs:     operationData.PrevSenderLockedBalanceEntry.UnlockTimestampNanoSecs,
 			VestingEndTimestampNanoSecs: operationData.PrevSenderLockedBalanceEntry.VestingEndTimestampNanoSecs,
-			BalanceBaseUnits:            *uint256.NewInt(),
+			BalanceBaseUnits:            *uint256.NewInt(0),
 		}
 	}
 	receiverLockedBalanceEntry, err :=
@@ -2485,7 +2485,7 @@ func (bav *UtxoView) _disconnectCoinLockupTransfer(
 			ProfilePKID:                 operationData.PrevReceiverLockedBalanceEntry.ProfilePKID,
 			UnlockTimestampNanoSecs:     operationData.PrevReceiverLockedBalanceEntry.UnlockTimestampNanoSecs,
 			VestingEndTimestampNanoSecs: operationData.PrevReceiverLockedBalanceEntry.VestingEndTimestampNanoSecs,
-			BalanceBaseUnits:            *uint256.NewInt(),
+			BalanceBaseUnits:            *uint256.NewInt(0),
 		}
 	}
 
@@ -2596,7 +2596,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 	}
 
 	// Create an unlockedBalance uint256 to track what will be given back to the user.
-	unlockedBalance := uint256.NewInt()
+	unlockedBalance := uint256.NewInt(0)
 
 	// Unlock all unvested unlockable locked balance entries.
 	var prevLockedBalanceEntries []*LockedBalanceEntry
@@ -2612,7 +2612,7 @@ func (bav *UtxoView) _connectCoinUnlock(
 		prevLockedBalanceEntries = append(prevLockedBalanceEntries, unlockableLockedBalanceEntry.Copy())
 
 		// Update the LockedBalanceEntry and delete the record.
-		unlockableLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt()
+		unlockableLockedBalanceEntry.BalanceBaseUnits = *uint256.NewInt(0)
 		bav._deleteLockedBalanceEntry(unlockableLockedBalanceEntry)
 	}
 
@@ -2721,7 +2721,7 @@ func CalculateVestedEarnings(
 ) {
 	// Check if this lockup should not be unlocked right now.
 	if blockTimestampNanoSecs <= lockedBalanceEntry.UnlockTimestampNanoSecs {
-		return uint256.NewInt(), nil
+		return uint256.NewInt(0), nil
 	}
 
 	// Check if this lockup should be fully unlocked.
@@ -2734,14 +2734,14 @@ func CalculateVestedEarnings(
 		lockedBalanceEntry,
 		blockTimestampNanoSecs-lockedBalanceEntry.UnlockTimestampNanoSecs)
 	if err != nil {
-		return uint256.NewInt(),
+		return uint256.NewInt(0),
 			errors.Wrap(err, "CalculateVestedEarnings failed to compute vestedEarnings")
 	}
 
 	// Sanity check that vestedEarnings < BalanceBaseUnits
 	if vestedEarnings.Gt(&lockedBalanceEntry.BalanceBaseUnits) ||
 		vestedEarnings.Eq(&lockedBalanceEntry.BalanceBaseUnits) {
-		return uint256.NewInt(),
+		return uint256.NewInt(0),
 			errors.New("ComputeVestedEarnings: " +
 				"vested earnings >= outstanding balance; this shouldn't be possible")
 	}
@@ -2804,7 +2804,7 @@ func (bav *UtxoView) _disconnectCoinUnlock(
 				ProfilePKID:                 prevLockedBalanceEntry.ProfilePKID,
 				UnlockTimestampNanoSecs:     prevLockedBalanceEntry.UnlockTimestampNanoSecs,
 				VestingEndTimestampNanoSecs: prevLockedBalanceEntry.VestingEndTimestampNanoSecs,
-				BalanceBaseUnits:            *uint256.NewInt(),
+				BalanceBaseUnits:            *uint256.NewInt(0),
 			}
 		}
 		if prevLockedBalanceEntry.BalanceBaseUnits.Lt(&lockedBalanceEntry.BalanceBaseUnits) {
