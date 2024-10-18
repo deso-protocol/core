@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/deso-protocol/uint256"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -54,7 +54,7 @@ func (bav *UtxoView) getAdjustedDAOCoinBalanceForUserInBaseUnits(
 			return nil, err
 		}
 		return adjustBalance(
-			uint256.NewInt().SetUint64(transactorDESOBalanceNanos), delta)
+			uint256.NewInt(transactorDESOBalanceNanos), delta)
 	}
 
 	// If we get here, we know we're dealing with a DAO coin now.
@@ -63,7 +63,7 @@ func (bav *UtxoView) getAdjustedDAOCoinBalanceForUserInBaseUnits(
 
 	// If the balance entry doesn't exist or is deleted then return zero
 	if transactorBalanceEntry == nil || transactorBalanceEntry.isDeleted {
-		return adjustBalance(uint256.NewInt(), delta)
+		return adjustBalance(uint256.NewInt(0), delta)
 	}
 
 	// Make a copy and return just to be safe
@@ -129,7 +129,7 @@ func (bav *UtxoView) balanceChange(
 					oldBalanceEntry = &BalanceEntry{
 						HODLerPKID:   userPKID,
 						CreatorPKID:  daoCoinPKID,
-						BalanceNanos: *uint256.NewInt(),
+						BalanceNanos: *uint256.NewInt(0),
 					}
 				}
 			}
@@ -484,7 +484,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 			}
 			if updatedTransactorOrderQuantityToFill.IsZero() {
 				// Transactor's order was fully filled.
-				transactorOrder.QuantityToFillInBaseUnits = uint256.NewInt()
+				transactorOrder.QuantityToFillInBaseUnits = uint256.NewInt(0)
 				orderFilled = true
 				transactorOrderFilledOrder.IsFulfilled = true
 			} else {
@@ -917,7 +917,7 @@ func (bav *UtxoView) _connectDAOCoinLimitOrder(
 					newBalanceEntry = &BalanceEntry{
 						HODLerPKID:   &userPKID,
 						CreatorPKID:  &daoCoinPKID,
-						BalanceNanos: *uint256.NewInt(),
+						BalanceNanos: *uint256.NewInt(0),
 					}
 				} else {
 					// Otherwise, we create a copy of the previous balance entry before updating.
@@ -1253,7 +1253,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 			transactorQuantityToFillInBaseUnits.Eq(matchingOrderQuantityToBuy) {
 			// The matching order fully fills the transactor's order, so there won't be anything
 			// left to fill after this order is matched.
-			updatedTransactorQuantityToFillInBaseUnits := uint256.NewInt()
+			updatedTransactorQuantityToFillInBaseUnits := uint256.NewInt(0)
 
 			// The transactor quantity specifies the amount of coin they want to sell
 			// and their order is fully filled. We use the matching order's exchange
@@ -1297,7 +1297,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 		// than the other way around.
 
 		// There is nothing left in the matching order
-		updatedMatchingQuantityToFillInBaseUnits := uint256.NewInt()
+		updatedMatchingQuantityToFillInBaseUnits := uint256.NewInt(0)
 
 		// We calculate what is left over for the transactor's order. Note that matchingOrderQuantityToBuy
 		// can't overflow because we checked it earlier.
@@ -1336,7 +1336,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 		if transactorQuantityToFillInBaseUnits.Lt(matchingOrderQuantityToSell) ||
 			transactorQuantityToFillInBaseUnits.Eq(matchingOrderQuantityToSell) {
 			// The matching order fulfills the transactor's order.
-			updatedTransactorQuantityToFillInBaseUnits := uint256.NewInt()
+			updatedTransactorQuantityToFillInBaseUnits := uint256.NewInt(0)
 
 			// The transactor quantity specifies the amount of coin they want to buy
 			// and their order is fully fulfilled.
@@ -1371,7 +1371,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 		// in terms of quantity.
 
 		// The matching order has no quantity left after this match.
-		updatedMatchingQuantityToFillInBaseUnits := uint256.NewInt()
+		updatedMatchingQuantityToFillInBaseUnits := uint256.NewInt(0)
 
 		// We calculate what is left over for the transactor's order.
 		updatedTransactorQuantityToFillInBaseUnits, err := SafeUint256().Sub(
@@ -1401,7 +1401,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 	if transactorQuantityToFillInBaseUnits.Lt(matchingOrder.QuantityToFillInBaseUnits) ||
 		transactorQuantityToFillInBaseUnits.Eq(matchingOrder.QuantityToFillInBaseUnits) {
 		// The matching order will fully fill the transactor's order.
-		updatedTransactorQuantityToFillInBaseUnits := uint256.NewInt()
+		updatedTransactorQuantityToFillInBaseUnits := uint256.NewInt(0)
 
 		// We calculate what is left for the matching order.
 		updatedMatchingQuantityToFillInBaseUnits, err := SafeUint256().Sub(
@@ -1446,7 +1446,7 @@ func _calculateDAOCoinsTransferredInLimitOrderMatch(
 	}
 
 	// If we get here, the transactor's order fully covers the matching order.
-	updatedMatchingQuantityToFillInBaseUnits := uint256.NewInt()
+	updatedMatchingQuantityToFillInBaseUnits := uint256.NewInt(0)
 
 	// We calculate what is left for the transactor.
 	updatedTransactorQuantityToFillInBaseUnits, err := SafeUint256().Sub(
@@ -1786,7 +1786,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	if err != nil {
 		return err
 	}
-	if baseUnitsToBuy.Eq(uint256.NewInt()) {
+	if baseUnitsToBuy.Eq(uint256.NewInt(0)) {
 		return errors.Wrapf(RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano, "baseUnitsToBuy: ")
 	}
 	// If buying $DESO, validate that qty to buy is less than the max uint64.
@@ -1799,7 +1799,7 @@ func (bav *UtxoView) IsValidDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) err
 	if err != nil {
 		return err
 	}
-	if baseUnitsToSell.Eq(uint256.NewInt()) {
+	if baseUnitsToSell.Eq(uint256.NewInt(0)) {
 		return errors.Wrapf(RuleErrorDAOCoinLimitOrderTotalCostIsLessThanOneNano, "baseUnitsToSell: ")
 	}
 
@@ -1992,7 +1992,7 @@ func ScaleFloatFormatStringToUint256(floatStr string, scaleFactor *uint256.Int) 
 	}
 	newWholePart := big.NewInt(0).Mul(wholePart, scaleFactor.ToBig())
 	newDecimalPart := big.NewInt(0).Mul(decimalPart, big.NewInt(0).Exp(
-		big.NewInt(0).SetUint64(10), big.NewInt(0).SetUint64(uint64(decimalExponent)), nil))
+		big.NewInt(10), big.NewInt(int64(decimalExponent)), nil))
 
 	sumBig := big.NewInt(0).Add(newWholePart, newDecimalPart)
 	ret, overflow := uint256.FromBig(sumBig)
@@ -2014,7 +2014,7 @@ func (bav *UtxoView) GetDESONanosToFillOrder(transactorOrder *DAOCoinLimitOrderE
 	// and add that as an additional fee when adding inputs and outputs.
 	var lastSeenOrder *DAOCoinLimitOrderEntry
 
-	desoNanosToFulfillOrders := uint256.NewInt()
+	desoNanosToFulfillOrders := uint256.NewInt(0)
 	transactorQuantityToFill := transactorOrder.QuantityToFillInBaseUnits.Clone()
 
 	for transactorQuantityToFill.GtUint64(0) {

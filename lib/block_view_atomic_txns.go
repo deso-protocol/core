@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/pkg/errors"
 )
 
@@ -450,7 +450,7 @@ func filterOutBlockRewardRecipientFees(txns []*MsgDeSoTxn, publicRewardPublicKey
 	for _, txn := range txns {
 		// If the transaction is performed by any public key other than block reward recipient transaction,
 		// add the fees to the total.
-		transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey, btcec.S256())
+		transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey)
 		if err != nil {
 			return 0, errors.Wrap(err, "filterBlockRewardRecipientFees: failed to parse public key")
 		}

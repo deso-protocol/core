@@ -7,7 +7,7 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections/bitset"
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 	"github.com/stretchr/testify/require"
 )
 
@@ -878,11 +878,11 @@ func TestVoteQCConstructionSignal(t *testing.T) {
 	validatorList := []Validator{
 		&validator{
 			publicKey:   validatorPrivateKey1.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(70),
+			stakeAmount: uint256.NewInt(70),
 		},
 		&validator{
 			publicKey:   validatorPrivateKey2.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(30),
+			stakeAmount: uint256.NewInt(30),
 		},
 	}
 
@@ -1064,11 +1064,11 @@ func TestTimeoutQCConstructionSignal(t *testing.T) {
 	validatorList := []Validator{
 		&validator{
 			publicKey:   validatorPrivateKey1.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(70),
+			stakeAmount: uint256.NewInt(70),
 		},
 		&validator{
 			publicKey:   validatorPrivateKey2.PublicKey(),
-			stakeAmount: uint256.NewInt().SetUint64(30),
+			stakeAmount: uint256.NewInt(30),
 		},
 	}
 
