@@ -10,8 +10,8 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/container/lru"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 )
 
 // connection_manager.go contains most of the logic for creating and managing
@@ -53,7 +53,7 @@ type ConnectionManager struct {
 	// TODO: seems like we don't use this.
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
-	sentNonces lru.Set[any]
+	sentNonces *lru.Cache[uint64, struct{}]
 
 	// This section defines the data structures for storing all the
 	// peers we're aware of.
@@ -126,13 +126,14 @@ func NewConnectionManager(
 
 	ValidateHyperSyncFlags(_hyperSync, _syncType)
 
+	sentNoncesCache, _ := lru.New[uint64, struct{}](1000)
 	return &ConnectionManager{
 		srv:       _srv,
 		params:    _params,
 		listeners: _listeners,
 		// We keep track of the last N nonces we've sent in order to detect
 		// self connections.
-		sentNonces: *lru.NewSet[any](1000),
+		sentNonces: sentNoncesCache,
 		//newestBlock: _newestBlock,
 
 		// Initialize the peer data structures.

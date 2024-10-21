@@ -208,6 +208,7 @@ func (desoMiner *DeSoMiner) MineAndProcessSingleBlock(threadIndex uint32, mempoo
 		desoMiner.BlockProducer.chain.blockTip().Header)
 	scs := spew.ConfigState{DisableMethods: true, Indent: "  ", DisablePointerAddresses: true}
 	glog.V(1).Infof(scs.Sdump(blockToMine))
+
 	// Sanitize the block for the comparison we're about to do. We need to do
 	// this because the comparison function below will think they're different
 	// if one has nil and one has an empty list. Annoying, but this solves the

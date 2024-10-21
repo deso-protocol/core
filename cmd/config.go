@@ -94,7 +94,8 @@ type Config struct {
 func GetStringSliceWorkaround(flagName string) []string {
 	value := viper.GetString(flagName)
 	if value == "" || value == " " {
-		return []string{}
+		values := viper.GetStringSlice(flagName)
+		return values
 	}
 	return strings.Split(value, ",")
 }
@@ -147,7 +148,6 @@ func LoadConfig() *Config {
 
 	// Peers
 	config.ConnectIPs = GetStringSliceWorkaround("connect-ips")
-	glog.V(2).Infof("Connect IPs read in: %v", config.ConnectIPs)
 	config.AddIPs = GetStringSliceWorkaround("add-ips")
 	config.AddSeeds = GetStringSliceWorkaround("add-seeds")
 	config.TargetOutboundPeers = viper.GetUint32("target-outbound-peers")
@@ -266,6 +266,7 @@ func (config *Config) Print() {
 		glog.Infof("MaxSyncBlockHeight: %v", config.MaxSyncBlockHeight)
 	}
 
+	glog.Infof("Connect IPs: %s", config.ConnectIPs)
 	if len(config.ConnectIPs) > 0 {
 		glog.Infof("Connect IPs: %s", config.ConnectIPs)
 	}

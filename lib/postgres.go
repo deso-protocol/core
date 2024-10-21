@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
+	"github.com/hashicorp/golang-lru/v2"
 	"net/url"
 	"regexp"
 	"strings"
@@ -1298,6 +1298,8 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 	// The genesis block has a nil parent
 	if blockNode.Parent != nil {
 		block.ParentHash = blockNode.Parent.Hash
+	} else if !blockNode.Header.PrevBlockHash.IsEqual(GenesisBlockHash) {
+		block.ParentHash = blockNode.Header.PrevBlockHash
 	}
 
 	_, err := tx.Model(block).WherePK().OnConflict("(hash) DO UPDATE").Insert()
@@ -1305,16 +1307,16 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash, *BlockNode], error) {
+func (postgres *Postgres) GetBlockIndex() (*lru.Cache[BlockHash, *BlockNode], error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap := collections.NewConcurrentMap[BlockHash, *BlockNode]()
+	blockMap, _ := lru.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	for _, block := range blocks {
-		blockMap.Set(*block.Hash, &BlockNode{
+		blockMap.Add(*block.Hash, &BlockNode{
 			Hash:             block.Hash,
 			Height:           uint32(block.Height),
 			DifficultyTarget: block.DifficultyTarget,
@@ -1333,17 +1335,18 @@ func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash,
 	}
 
 	// Setup parent pointers
-	blockMap.Iterate(func(key BlockHash, blockNode *BlockNode) {
+	for _, key := range blockMap.Keys() {
+		blockNode, _ := blockMap.Get(key)
 		// Genesis block has nil parent
 		parentHash := blockNode.Header.PrevBlockHash
 		if parentHash != nil {
 			parent, exists := blockMap.Get(*parentHash)
-			if !exists {
+			if !exists && blockNode.Height > 0 {
 				glog.Fatal("Parent block not found in block map")
 			}
 			blockNode.Parent = parent
 		}
-	})
+	}
 
 	return blockMap, nil
 }

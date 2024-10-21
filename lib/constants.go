@@ -1956,5 +1956,7 @@ const DefaultTestnetCheckpointProvider = "https://test.deso.org"
 
 const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
 
-// Constants that was removed from newer version of Btcec
+const BlockIndexMigrationFileName = "block_index_migration.txt"
+
+// BtcecPubKeyBytesLenUncompressed is a constant that was removed from newer version of Btcec
 const BtcecPubKeyBytesLenUncompressed = 65
