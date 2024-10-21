@@ -20,11 +20,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1138,7 +1138,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
-		snap.DatabaseCache.Add(keyString, value)
+		snap.DatabaseCache.Put(keyString, value)
 
 		if !snap.disableChecksum {
 			// We have to remove the previous value from the state checksum.
@@ -1179,8 +1179,8 @@ func DBGetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte) ([]byte, error) {
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if val, exists := snap.DatabaseCache.Lookup(keyString); exists {
-			return val.([]byte), nil
+		if val, exists := snap.DatabaseCache.Get(keyString); exists {
+			return val, nil
 		}
 	}
 
@@ -2806,7 +2806,7 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if _, exists := snap.DatabaseCache.Lookup(keyString); exists {
+		if exists := snap.DatabaseCache.Exists(keyString); exists {
 			return true, nil
 		}
 	}
@@ -9152,7 +9152,7 @@ func DBGetBalanceEntryForHODLerAndCreatorPKIDsWithTxn(txn *badger.Txn, snap *Sna
 		return &BalanceEntry{
 			HODLerPKID:   hodlerPKID.NewPKID(),
 			CreatorPKID:  creatorPKID.NewPKID(),
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 	balanceEntryObj := &BalanceEntry{}
@@ -9228,7 +9228,7 @@ func DBPutBalanceEntryMappingsWithTxn(txn *badger.Txn, snap *Snapshot, blockHeig
 
 	// If the balance is zero, then there is no point in storing this entry.
 	// We already placeholder a "zero" balance entry in connect logic.
-	if balanceEntry.BalanceNanos.Eq(uint256.NewInt()) && !balanceEntry.HasPurchased {
+	if balanceEntry.BalanceNanos.Eq(uint256.NewInt(0)) && !balanceEntry.HasPurchased {
 		return nil
 	}
 
@@ -9310,7 +9310,7 @@ func DbGetHolderPKIDCreatorPKIDToBalanceEntryWithTxn(txn *badger.Txn, snap *Snap
 		return &BalanceEntry{
 			HODLerPKID:   holder.NewPKID(),
 			CreatorPKID:  creator.NewPKID(),
-			BalanceNanos: *uint256.NewInt(),
+			BalanceNanos: *uint256.NewInt(0),
 		}
 	}
 

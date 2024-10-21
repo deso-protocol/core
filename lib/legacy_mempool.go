@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/deso-protocol/go-deadlock"
 	"log"
 	"math"
 	"os"
@@ -16,12 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcutil"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/gernest/mention"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/deso-protocol/go-deadlock"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -2771,7 +2771,6 @@ func (mp *DeSoMempool) Stop() {
 func NewDeSoMempool(_bc *Blockchain, _rateLimitFeerateNanosPerKB uint64,
 	_minFeerateNanosPerKB uint64, _blockCypherAPIKey string,
 	_runReadOnlyViewUpdater bool, _dataDir string, _mempoolDumpDir string, useDefaultBadgerOptions bool) *DeSoMempool {
-
 	utxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	backupUtxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)
 	readOnlyUtxoView := NewUtxoView(_bc.db, _bc.params, _bc.postgres, _bc.snapshot, _bc.eventManager)

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/deso-protocol/uint256"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 
 	"github.com/deso-protocol/core/bls"
@@ -695,8 +695,8 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	votesByValidator := fe.votesSeenByBlockHash[voteSignaturePayload]
 
 	// Compute the total stake and total stake with votes
-	totalStake := uint256.NewInt()
-	totalVotingStake := uint256.NewInt()
+	totalStake := uint256.NewInt(0)
+	totalVotingStake := uint256.NewInt(0)
 
 	// Track the signatures and signers list for the chain tip
 	signersList := bitset.NewBitset()
@@ -705,7 +705,7 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 	// Iterate through the entire validator list and check if each one has voted for the tip block. Track
 	// all voters and their stakes.
 	for ii, validator := range validatorList {
-		totalStake = uint256.NewInt().Add(totalStake, validator.GetStakeAmount())
+		totalStake = uint256.NewInt(0).Add(totalStake, validator.GetStakeAmount())
 
 		// Skip the validator if it hasn't voted for the block
 		vote, hasVoted := votesByValidator[validator.GetPublicKey().ToString()]
@@ -714,7 +714,7 @@ func (fe *fastHotStuffEventLoop) tryConstructVoteQCInCurrentView() *FastHotStuff
 		}
 
 		// Track the vote's signature, stake, and place in the validator list
-		totalVotingStake = uint256.NewInt().Add(totalVotingStake, validator.GetStakeAmount())
+		totalVotingStake = uint256.NewInt(0).Add(totalVotingStake, validator.GetStakeAmount())
 		signersList.Set(ii, true)
 		signatures = append(signatures, vote.GetSignature())
 	}
@@ -819,8 +819,8 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	}
 
 	// Compute the total stake and total stake with timeouts
-	totalStake := uint256.NewInt()
-	totalTimedOutStake := uint256.NewInt()
+	totalStake := uint256.NewInt(0)
+	totalTimedOutStake := uint256.NewInt(0)
 
 	// Track the high QC view for each validator
 	highQCViews := make([]uint64, len(validatorList))
@@ -835,7 +835,7 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 	// for the signersList bitset. In practice, the validator list is expected to be <= 1000 in size, so
 	// this loop will be fast.
 	for ii, validator := range validatorList {
-		totalStake = uint256.NewInt().Add(totalStake, validator.GetStakeAmount())
+		totalStake = uint256.NewInt(0).Add(totalStake, validator.GetStakeAmount())
 
 		// Skip the validator if it hasn't timed out for the previous view
 		timeout, hasTimedOut := timeoutsByValidator[validator.GetPublicKey().ToString()]
@@ -844,7 +844,7 @@ func (fe *fastHotStuffEventLoop) tryConstructTimeoutQCInCurrentView() *FastHotSt
 		}
 
 		// Track the signatures, timed out stake, and high QC views for the validator
-		totalTimedOutStake = uint256.NewInt().Add(totalTimedOutStake, validator.GetStakeAmount())
+		totalTimedOutStake = uint256.NewInt(0).Add(totalTimedOutStake, validator.GetStakeAmount())
 		signersList.Set(ii, true)
 		signatures = append(signatures, timeout.GetSignature())
 		highQCViews[ii] = timeout.GetHighQC().GetView()

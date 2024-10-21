@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/go-deadlock"
 	"math"
 	"reflect"
 	"runtime"
@@ -13,9 +14,8 @@ import (
 	"time"
 
 	"github.com/cloudflare/circl/group"
-	"github.com/decred/dcrd/lru"
-	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/decred/dcrd/container/lru"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/fatih/color"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
@@ -313,7 +313,7 @@ type Snapshot struct {
 	// DatabaseCache is used to store most recent DB records that we've read/written.
 	// This is a low-level optimization for ancestral records that
 	// saves us read time when we're writing to the DB during UtxoView flush.
-	DatabaseCache lru.KVCache
+	DatabaseCache lru.Map[string, []byte]
 
 	// AncestralFlushCounter is used to offset ancestral records flush to occur only after x blocks.
 	AncestralFlushCounter uint64
@@ -487,7 +487,7 @@ func NewSnapshot(
 	snap := &Snapshot{
 		mainDb:                       mainDb,
 		SnapshotDbMutex:              &snapshotDbMutex,
-		DatabaseCache:                lru.NewKVCache(DatabaseCacheSize),
+		DatabaseCache:                *lru.NewMap[string, []byte](DatabaseCacheSize),
 		AncestralFlushCounter:        uint64(0),
 		snapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
@@ -1409,7 +1409,7 @@ type StateChecksum struct {
 	ctx context.Context
 
 	// hashToCurveCache is a cache of computed hashToCurve mappings
-	hashToCurveCache lru.KVCache
+	hashToCurveCache lru.Map[string, group.Element]
 
 	// When we want to add a database record to the state checksum, we will first have to
 	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
@@ -1437,7 +1437,7 @@ func (sc *StateChecksum) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mut
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
 
 	// Set the hashToCurveCache
-	sc.hashToCurveCache = lru.NewKVCache(HashToCurveCache)
+	sc.hashToCurveCache = *lru.NewMap[string, group.Element](HashToCurveCache)
 
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
@@ -1502,13 +1502,13 @@ func (sc *StateChecksum) HashToCurve(bytes []byte) group.Element {
 
 	// Check if we've already mapped this element, if so we will save some computation this way.
 	bytesStr := hex.EncodeToString(bytes)
-	if elem, exists := sc.hashToCurveCache.Lookup(bytesStr); exists {
+	if elem, exists := sc.hashToCurveCache.Get(bytesStr); exists {
 		hashElement = elem.(group.Element)
 	} else {
 		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
 		hashElement = sc.curve.HashToElement(bytes, sc.dst)
 		// Also add to the hashToCurveCache
-		sc.hashToCurveCache.Add(bytesStr, hashElement)
+		sc.hashToCurveCache.Put(bytesStr, hashElement)
 	}
 
 	return hashElement

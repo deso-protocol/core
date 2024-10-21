@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )

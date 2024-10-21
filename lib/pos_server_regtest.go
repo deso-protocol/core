@@ -1,8 +1,8 @@
 package lib
 
 import (
+	"github.com/deso-protocol/uint256"
 	"github.com/golang/glog"
-	"github.com/holiman/uint256"
 )
 
 func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
@@ -68,7 +68,7 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		stakeTxnMeta := StakeMetadata{
 			ValidatorPublicKey: NewPublicKey(transactorPubKey),
 			RewardMethod:       StakingRewardMethodPayToBalance,
-			StakeAmountNanos:   uint256.NewInt().SetUint64(10 * 1e6),
+			StakeAmountNanos:   uint256.NewInt(10 * 1e6),
 		}
 
 		stakeTxn, _, _, _, err := srv.blockProducer.chain.CreateStakeTxn(
