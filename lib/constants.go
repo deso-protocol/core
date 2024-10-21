@@ -14,7 +14,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/holiman/uint256"
+	"github.com/deso-protocol/uint256"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -85,10 +85,10 @@ const (
 	SnapshotBatchSize uint32 = 100 << 20 // 100MB
 
 	// DatabaseCacheSize is used to save read operations when fetching records from the main Db.
-	DatabaseCacheSize uint = 1000000 // 1M
+	DatabaseCacheSize uint32 = 1000000 // 1M
 
 	// HashToCurveCache is used to save computation on hashing to curve.
-	HashToCurveCache uint = 10000 // 10K
+	HashToCurveCache uint32 = 10000 // 10K
 
 	// MetadataRetryCount is used to retry updating data in badger just in case.
 	MetadataRetryCount int = 5
@@ -1957,3 +1957,6 @@ const DefaultTestnetCheckpointProvider = "https://test.deso.org"
 const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
 
 const BlockIndexMigrationFileName = "block_index_migration.txt"
+
+// BtcecPubKeyBytesLenUncompressed is a constant that was removed from newer version of Btcec
+const BtcecPubKeyBytesLenUncompressed = 65

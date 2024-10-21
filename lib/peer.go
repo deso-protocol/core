@@ -2,17 +2,16 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/go-deadlock"
 	"net"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2"
-
 	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -75,7 +74,7 @@ type Peer struct {
 	serviceFlags           ServiceFlag
 	latestHeight           uint64
 	addrStr                string
-	netAddr                *wire.NetAddress
+	netAddr                *wire.NetAddressV2
 	minTxFeeRateNanosPerKB uint64
 	// Messages for which we are expecting a reply within a fixed
 	// amount of time. This list is always sorted by ExpectedTime,
@@ -636,7 +635,7 @@ func (pp *Peer) StartDeSoMessageProcessor() {
 }
 
 // NewPeer creates a new Peer object.
-func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddress,
+func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAddressV2,
 	_isPersistent bool, _stallTimeoutSeconds uint64,
 	_minFeeRateNanosPerKB uint64,
 	params *DeSoParams,
@@ -810,12 +809,12 @@ func (pp *Peer) Address() string {
 	return pp.addrStr
 }
 
-func (pp *Peer) NetAddress() *wire.NetAddress {
+func (pp *Peer) NetAddress() *wire.NetAddressV2 {
 	return pp.netAddr
 }
 
 func (pp *Peer) IP() string {
-	return pp.netAddr.IP.String()
+	return pp.netAddr.ToLegacy().IP.String()
 }
 
 func (pp *Peer) Port() uint16 {

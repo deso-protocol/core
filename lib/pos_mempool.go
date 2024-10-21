@@ -8,10 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2"
-
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/golang/glog"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -1025,7 +1024,7 @@ func (mp *PosMempool) WaitForTxnValidation(txHash *BlockHash) error {
 	for {
 		rejectionErr, wasRejected := mp.recentRejectedTxnCache.Get(*txHash)
 		if wasRejected {
-			return rejectionErr.(error)
+			return rejectionErr
 		}
 		mtxn := mp.GetTransaction(txHash)
 		if mtxn == nil {

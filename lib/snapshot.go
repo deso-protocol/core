@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/cloudflare/circl/group"
+
 	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 	"github.com/fatih/color"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
@@ -487,9 +488,10 @@ func NewSnapshot(
 
 	// Set the snapshot.
 	snap := &Snapshot{
-		mainDb:                       mainDb,
-		SnapshotDbMutex:              &snapshotDbMutex,
-		DatabaseCache:                databaseCache,
+		mainDb:          mainDb,
+		SnapshotDbMutex: &snapshotDbMutex,
+		DatabaseCache:   databaseCache,
+
 		AncestralFlushCounter:        uint64(0),
 		snapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
@@ -1267,6 +1269,11 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 	go func() {
 		defer syncGroup.Done()
 
+		// If we're disabling checksums, we don't need to add or remove bytes from the checksum
+		// when we're setting a snapshot chunk.
+		if snap.disableChecksum {
+			return
+		}
 		//snap.timer.Start("SetSnapshotChunk.Checksum")
 		for _, dbEntry := range chunk {
 			if localErr := snap.Checksum.AddOrRemoveBytesWithMigrations(dbEntry.Key, dbEntry.Value, blockHeight,
