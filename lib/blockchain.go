@@ -1255,6 +1255,8 @@ func (bc *Blockchain) LatestLocator(tip *BlockNode) []*BlockHash {
 }
 
 func (bc *Blockchain) HeaderLocatorWithNodeHash(blockHash *BlockHash) ([]*BlockHash, error) {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	node, exists := bc.blockIndexByHash.Get(*blockHash)
 	if !exists {
 		return nil, fmt.Errorf("Blockchain.HeaderLocatorWithNodeHash: Node for hash %v is not in our blockIndexByHash", blockHash)
@@ -1266,6 +1268,8 @@ func (bc *Blockchain) HeaderLocatorWithNodeHash(blockHash *BlockHash) ([]*BlockH
 // LatestHeaderLocator calls LatestLocator in order to fetch a locator
 // for the best header chain.
 func (bc *Blockchain) LatestHeaderLocator() []*BlockHash {
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	headerTip := bc.headerTip()
 
 	return bc.LatestLocator(headerTip)
