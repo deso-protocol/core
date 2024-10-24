@@ -1440,8 +1440,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
-	// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
-	// srv.snapshot.FreeOperationQueueSemaphore()
 
 	// This is ugly but the alternative is to meticulously call FreeOperationQueueSemaphore every time
 	// we return with an error, which is worse.
@@ -1469,7 +1467,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		} else {
 			glog.Errorf(CLog(Red, "srv._handleSnapshot: Trying to restart the node but nodeMessageChannel is empty, "+
 				"this should never happen."))
-			// FIXME: Don't we want a return here? I think we do.
 			return
 		}
 	}
@@ -1588,11 +1585,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)
 		srv.timer.End("Server._handleSnapshot Process Snapshot")
 	}
-
-	// FIXME: I don't think we need to call FreeOperationQueueSempahore before this point, and in
-	// fact it seems like a bug right? Because right above here we either call ProcessSnapshotChunk,
-	// which seems like it handles it, OR we call FreeOperationQueueSempahore when we defer (or in the
-	// "else" in your previous code). So no matter what we're covered on the semaphore by the time we get here.
 
 	// We will update the hyper sync progress tracker struct to reflect the newly added snapshot chunk.
 	// In particular, we want to update the last received key to the last key in the received chunk.
