@@ -1255,6 +1255,11 @@ func (bc *Blockchain) LatestLocator(tip *BlockNode) []*BlockHash {
 }
 
 func (bc *Blockchain) HeaderLocatorWithNodeHash(blockHash *BlockHash) ([]*BlockHash, error) {
+	// We can acquire the ChainLock because the only place this is called currently is from
+	// _handleHeaderBundle, which doesn't have the lock.
+	// If we do not acquire the lock, we may hit a concurrent map read write error which causes panic.
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	node, exists := bc.blockIndexByHash.Get(*blockHash)
 	if !exists {
 		return nil, fmt.Errorf("Blockchain.HeaderLocatorWithNodeHash: Node for hash %v is not in our blockIndexByHash", blockHash)
@@ -1266,6 +1271,11 @@ func (bc *Blockchain) HeaderLocatorWithNodeHash(blockHash *BlockHash) ([]*BlockH
 // LatestHeaderLocator calls LatestLocator in order to fetch a locator
 // for the best header chain.
 func (bc *Blockchain) LatestHeaderLocator() []*BlockHash {
+	// We can acquire the ChainLock here because all calls to this function happen in peer.go
+	// and server.go, which don't hold the lock.
+	// If we do not acquire the lock, we may hit a concurrent map read write error which causes panic.
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	headerTip := bc.headerTip()
 
 	return bc.LatestLocator(headerTip)
@@ -2574,7 +2584,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		if *bc.blockView.TipHash != *currentTip.Hash {
 			//return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
 			//	"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
-			glog.Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
+			glog.V(1).Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
 				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
 
