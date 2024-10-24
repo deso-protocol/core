@@ -1222,9 +1222,6 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		}
 	}
 
-	// TODO: I think we don't need to hold the chain lock. We can have multithreaded writes.
-	//mainDbMutex.Lock()
-
 	// We use badgerDb write batches as it's the fastest way to write multiple records to the db.
 	wb := mainDb.NewWriteBatch()
 	defer wb.Cancel()
