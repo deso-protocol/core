@@ -2353,7 +2353,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	// Process the first block
 	err = testMeta.miner.BlockProducer.SignBlock(blk1)
 	require.NoError(t, err)
-	_, _, _, err = testMeta.chain.ProcessBlock(blk1, false)
+	_, _, _, err = testMeta.chain.ProcessBlock(blk1, nil, false)
 	require.NoError(t, err)
 
 	// Validate state update
@@ -2417,7 +2417,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	// Process the second block
 	err = testMeta.miner.BlockProducer.SignBlock(blk2)
 	require.NoError(t, err)
-	_, _, _, err = testMeta.chain.ProcessBlock(blk2, false)
+	_, _, _, err = testMeta.chain.ProcessBlock(blk2, nil, false)
 	require.NoError(t, err)
 
 	// Validate state update

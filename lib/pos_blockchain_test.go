@@ -2,7 +2,6 @@ package lib
 
 import (
 	"bytes"
-	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -372,9 +371,9 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 			},
 		},
 	}
-	blockNode, err := bc.storeBlockInBlockIndex(block)
-	require.NoError(t, err)
 	newHash, err := block.Hash()
+	require.NoError(t, err)
+	blockNode, err := bc.storeBlockInBlockIndex(block, newHash)
 	require.NoError(t, err)
 	// Check the block index by hash
 	blockNodeFromIndex, exists := bc.blockIndexByHash.Get(*newHash)
@@ -399,7 +398,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, bytes.Equal(uncommittedBytes, origBlockBytes))
 	// Okay now we update the status of the block to include validated.
-	blockNode, err = bc.storeValidatedBlockInBlockIndex(block)
+	blockNode, err = bc.storeValidatedBlockInBlockIndex(block, newHash)
 	require.NoError(t, err)
 	blockNodeFromIndex, exists = bc.blockIndexByHash.Get(*newHash)
 	require.True(t, exists)
@@ -425,7 +424,7 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	require.False(t, updatedBlockHash.IsEqual(newHash))
 
 	// Okay now put this new block in there.
-	blockNode, err = bc.storeBlockInBlockIndex(block)
+	blockNode, err = bc.storeBlockInBlockIndex(block, updatedBlockHash)
 	require.NoError(t, err)
 	// Make sure the blockIndexByHash is correct.
 	updatedBlockNode, exists := bc.blockIndexByHash.Get(*updatedBlockHash)
@@ -446,7 +445,10 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	// If we're missing a field in the header, we should get an error
 	// as we can't compute the hash.
 	block.Header.ProposerVotingPublicKey = nil
-	_, err = bc.storeBlockInBlockIndex(block)
+	missingFieldHash, err := block.Header.Hash()
+	require.Error(t, err)
+	require.Nil(t, missingFieldHash)
+	_, err = bc.storeBlockInBlockIndex(block, missingFieldHash)
 	require.Error(t, err)
 }
 
@@ -1776,10 +1778,16 @@ func TestProcessBlockPoS(t *testing.T) {
 // 4. Process a regular block that reorgs from the previous tip
 // 5. Process an orphan, which tests the block's storage and the return value of missingBlockHashes
 func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
+	var err error
+	var success bool
+	var isOrphan bool
+	var missingBlockHashes []*BlockHash
 	{
 		// Create a bad block and try to process it.
 		dummyBlock := _generateDummyBlock(testMeta, 12, 12, 887)
-		success, isOrphan, missingBlockHashes, err := testMeta.chain.ProcessBlockPoS(dummyBlock, 12, true)
+		dummyBlockHash, err := dummyBlock.Header.Hash()
+		require.NoError(t, err)
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(dummyBlock, dummyBlockHash, 12, true)
 		require.False(t, success)
 		require.False(t, isOrphan)
 		require.Len(t, missingBlockHashes, 0)
@@ -1790,7 +1798,9 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	{
 		var realBlock *MsgDeSoBlock
 		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
-		success, isOrphan, missingBlockHashes, err := testMeta.chain.ProcessBlockPoS(realBlock, 12, true)
+		blockHash1, err = realBlock.Hash()
+		require.NoError(t, err)
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(realBlock, blockHash1, 12, true)
 		require.True(t, success)
 		require.False(t, isOrphan)
 		require.Len(t, missingBlockHashes, 0)
@@ -1798,8 +1808,6 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 
 		// Okay now we can check the best chain.
 		// We expect the block to be uncommitted.
-		blockHash1, err = realBlock.Hash()
-		require.NoError(t, err)
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{}, []*BlockHash{blockHash1}, nil)
 		_verifyRandomSeedHashHelper(testMeta, realBlock)
 	}
@@ -1809,20 +1817,18 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Now let's try adding two more blocks on top of this one to make sure commit rule works properly.
 		var realBlock2 *MsgDeSoBlock
 		realBlock2 = _generateRealBlock(testMeta, 13, 13, 950, blockHash1, false)
-		success, _, _, err := testMeta.chain.ProcessBlockPoS(realBlock2, 13, true)
-		require.True(t, success)
 		blockHash2, err = realBlock2.Hash()
 		require.NoError(t, err)
+		success, _, _, err = testMeta.chain.ProcessBlockPoS(realBlock2, blockHash2, 13, true)
+		require.True(t, success)
 
 		var realBlock3 *MsgDeSoBlock
 		realBlock3 = _generateRealBlock(testMeta, 14, 14, 378, blockHash2, false)
-
-		success, _, _, err = testMeta.chain.ProcessBlockPoS(realBlock3, 14, true)
-		require.True(t, success)
-		// Okay now we expect blockHash1 to be committed, but blockHash2 and 3 to not be committed.
 		blockHash3, err = realBlock3.Hash()
 		require.NoError(t, err)
-
+		success, _, _, err = testMeta.chain.ProcessBlockPoS(realBlock3, blockHash3, 14, true)
+		require.True(t, success)
+		// Okay now we expect blockHash1 to be committed, but blockHash2 and 3 to not be committed.
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1}, []*BlockHash{blockHash2, blockHash3}, blockHash1)
 		_verifyRandomSeedHashHelper(testMeta, realBlock3)
 
@@ -1830,14 +1836,13 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		var futureBlock *MsgDeSoBlock
 		futureBlock = _generateRealBlockWithTimestampOffset(testMeta, 15, 15, 870, blockHash3, false, time.Hour)
 
-		success, isOrphan, missingBlockHashes, err := testMeta.chain.ProcessBlockPoS(futureBlock, 15, true)
+		futureBlockHash, err = futureBlock.Hash()
+		require.NoError(t, err)
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(futureBlock, futureBlockHash, 15, true)
 		require.False(t, success)
 		require.False(t, isOrphan)
 		require.Len(t, missingBlockHashes, 0)
 		require.Error(t, err)
-
-		futureBlockHash, err = futureBlock.Hash()
-		require.NoError(t, err)
 
 		futureBlockNode, exists := testMeta.chain.blockIndexByHash.Get(*futureBlockHash)
 		require.True(t, exists)
@@ -1852,12 +1857,11 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Okay let's timeout view 15
 		var timeoutBlock *MsgDeSoBlock
 		timeoutBlock = _generateRealBlock(testMeta, 15, 16, 381, blockHash3, true)
-		success, _, _, err := testMeta.chain.ProcessBlockPoS(timeoutBlock, 15, true)
-		fmt.Println(err)
-		require.True(t, success)
 		timeoutBlockHash, err = timeoutBlock.Hash()
 		require.NoError(t, err)
-
+		success, _, _, err = testMeta.chain.ProcessBlockPoS(timeoutBlock, timeoutBlockHash, 15, true)
+		require.NoError(t, err)
+		require.True(t, success)
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, timeoutBlockHash}, blockHash2)
 	}
 
@@ -1866,9 +1870,10 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Okay let's introduce a reorg. New block at view 15 with block 3 as its parent.
 		var reorgBlock *MsgDeSoBlock
 		reorgBlock = _generateRealBlock(testMeta, 15, 15, 373, blockHash3, false)
-		success, _, _, err := testMeta.chain.ProcessBlockPoS(reorgBlock, 15, true)
-		require.True(t, success)
 		reorgBlockHash, err = reorgBlock.Hash()
+		require.NoError(t, err)
+		success, _, _, err = testMeta.chain.ProcessBlockPoS(reorgBlock, reorgBlockHash, 15, true)
+		require.True(t, success)
 		require.NoError(t, err)
 		// We expect blockHash1 and blockHash2 to be committed, but blockHash3 and reorgBlockHash to not be committed.
 		// Timeout block will no longer be in best chain, and will still be in an uncommitted state in the block index
@@ -1885,7 +1890,6 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	{
 		// Let's process an orphan block.
 		var dummyParentBlock *MsgDeSoBlock
-		var err error
 		dummyParentBlock = _generateRealBlock(testMeta, 16, 16, 272, reorgBlockHash, false)
 		dummyParentBlockHash, err = dummyParentBlock.Hash()
 		require.NoError(t, err)
@@ -1899,7 +1903,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		updateProposerVotePartialSignatureForBlock(testMeta, orphanBlock)
 		orphanBlockHash, err = orphanBlock.Hash()
 		require.NoError(t, err)
-		success, isOrphan, missingBlockHashes, err := testMeta.chain.ProcessBlockPoS(orphanBlock, 17, true)
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(orphanBlock, orphanBlockHash, 17, true)
 		require.False(t, success)
 		require.True(t, isOrphan)
 		require.Len(t, missingBlockHashes, 1)
@@ -1912,7 +1916,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		require.False(t, orphanBlockInIndex.IsValidated())
 
 		// Okay now if we process the parent block, the orphan should get updated to be validated.
-		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(dummyParentBlock, 16, true)
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(dummyParentBlock, dummyParentBlockHash, 16, true)
 		require.True(t, success)
 		require.False(t, isOrphan)
 		require.Len(t, missingBlockHashes, 0)
@@ -1937,7 +1941,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		updateProposerVotePartialSignatureForBlock(testMeta, malformedOrphanBlock)
 		malformedOrphanBlockHash, err := malformedOrphanBlock.Hash()
 		require.NoError(t, err)
-		success, isOrphan, missingBlockHashes, err := testMeta.chain.ProcessBlockPoS(malformedOrphanBlock, 18, true)
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(malformedOrphanBlock, malformedOrphanBlockHash, 18, true)
 		require.False(t, success)
 		require.True(t, isOrphan)
 		require.Len(t, missingBlockHashes, 1)
@@ -1952,7 +1956,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// If a block can't be hashed, we expect to get an error.
 		malformedOrphanBlock.Header.Version = HeaderVersion2
 		malformedOrphanBlock.Header.ProposerVotingPublicKey = nil
-		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(malformedOrphanBlock, 18, true)
+		success, isOrphan, missingBlockHashes, err = testMeta.chain.ProcessBlockPoS(malformedOrphanBlock, nil, 18, true)
 		require.False(t, success)
 		require.False(t, isOrphan)
 		require.Len(t, missingBlockHashes, 0)
@@ -1962,10 +1966,10 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 	{
 		var blockWithFailingTxn *MsgDeSoBlock
 		blockWithFailingTxn = _generateRealBlockWithFailingTxn(testMeta, 18, 18, 123722, orphanBlockHash, false, 1, 0)
-		success, _, _, err := testMeta.chain.ProcessBlockPoS(blockWithFailingTxn, 18, true)
-		require.True(t, success)
 		blockWithFailingTxnHash, err = blockWithFailingTxn.Hash()
 		require.NoError(t, err)
+		success, _, _, err = testMeta.chain.ProcessBlockPoS(blockWithFailingTxn, blockWithFailingTxnHash, 18, true)
+		require.True(t, success)
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2, blockHash3, reorgBlockHash, dummyParentBlockHash},
 			[]*BlockHash{orphanBlockHash, blockWithFailingTxnHash}, dummyParentBlockHash)
 	}
@@ -1986,7 +1990,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	block1Hash, err := block1.Hash()
 	require.NoError(t, err)
 	// Add block 1 w/ stored and validated
-	bn1, err := testMeta.chain.storeValidatedBlockInBlockIndex(block1)
+	bn1, err := testMeta.chain.storeValidatedBlockInBlockIndex(block1, block1Hash)
 	require.NoError(t, err)
 	require.True(t, bn1.Hash.IsEqual(block1Hash))
 	// Create block 2 w/ block 1 as parent and add it to the block index w/ stored & validated
@@ -1994,23 +1998,23 @@ func TestGetSafeBlocks(t *testing.T) {
 	block2 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+1), uint64(testMeta.savedHeight+1), 1293, block1Hash, false)
 	block2Hash, err := block2.Hash()
 	require.NoError(t, err)
-	bn2, err := testMeta.chain.storeValidatedBlockInBlockIndex(block2)
+	bn2, err := testMeta.chain.storeValidatedBlockInBlockIndex(block2, block2Hash)
 	require.NoError(t, err)
 	require.True(t, bn2.Hash.IsEqual(block2Hash))
 	// Add block 3 only as stored and validated
 	var block3 *MsgDeSoBlock
 	block3 = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+2), 1372, block2Hash, false)
-	bn3, err := testMeta.chain.storeValidatedBlockInBlockIndex(block3)
-	require.NoError(t, err)
 	block3Hash, err := block3.Hash()
+	require.NoError(t, err)
+	bn3, err := testMeta.chain.storeValidatedBlockInBlockIndex(block3, block3Hash)
 	require.NoError(t, err)
 	require.True(t, bn3.Hash.IsEqual(block3Hash))
 	// Add block 3' only as stored
 	var block3Prime *MsgDeSoBlock
 	block3Prime = _generateRealBlock(testMeta, uint64(testMeta.savedHeight+2), uint64(testMeta.savedHeight+3), 137175, block2Hash, false)
-	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime)
-	require.NoError(t, err)
 	block3PrimeHash, err := block3Prime.Hash()
+	require.NoError(t, err)
+	bn3Prime, err := testMeta.chain.storeBlockInBlockIndex(block3Prime, block3PrimeHash)
 	require.NoError(t, err)
 	require.True(t, bn3Prime.Hash.IsEqual(block3PrimeHash))
 	// Add block 5 as Stored & Validated (this could never really happen, but it illustrates a point!)
@@ -2019,7 +2023,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	block5.Header.Height = uint64(testMeta.savedHeight + 5)
 	block5Hash, err := block5.Hash()
 	require.NoError(t, err)
-	_, err = testMeta.chain.storeValidatedBlockInBlockIndex(block5)
+	_, err = testMeta.chain.storeValidatedBlockInBlockIndex(block5, block5Hash)
 	require.NoError(t, err)
 	// Okay let's get the safe blocks.
 	safeBlocks, err := testMeta.chain.GetSafeBlocks()
@@ -2040,7 +2044,7 @@ func TestGetSafeBlocks(t *testing.T) {
 	require.False(t, _checkSafeBlocksForBlockHash(block5Hash, safeBlocks))
 
 	// Update block 3 prime to be validated and it should now be a safe block.
-	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime)
+	bn3Prime, err = testMeta.chain.storeValidatedBlockInBlockIndex(block3Prime, block3PrimeHash)
 	require.NoError(t, err)
 	require.True(t, bn3Prime.IsValidated())
 	safeBlocks, err = testMeta.chain.GetSafeBlocks()
@@ -2062,11 +2066,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Give the block a random parent, so it is truly an orphan.
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
-		err := testMeta.chain.processOrphanBlockPoS(realBlock)
-		require.NoError(t, err)
-		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(realBlock, blockHash)
+		require.NoError(t, err)
+		// Get the block node from the block index.
 		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
@@ -2083,11 +2087,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		realBlock.Header.Version = 1
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err := testMeta.chain.processOrphanBlockPoS(realBlock)
-		require.NoError(t, err)
-		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(realBlock, blockHash)
+		require.NoError(t, err)
+		// Get the block node from the block index.
 		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
@@ -2110,11 +2114,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err = testMeta.chain.processOrphanBlockPoS(realBlock)
-		require.NoError(t, err)
-		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(realBlock, blockHash)
+		require.NoError(t, err)
+		// Get the block node from the block index.
 		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.False(t, exists)
 	}
@@ -2162,11 +2166,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		}
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err = testMeta.chain.processOrphanBlockPoS(realBlock)
-		require.NoError(t, err)
-		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(realBlock, blockHash)
+		require.NoError(t, err)
+		// Get the block node from the block index.
 		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.False(t, exists)
 	}
@@ -2180,11 +2184,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
-		require.NoError(t, err)
-		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, blockHash)
+		require.NoError(t, err)
+		// Get the block node from the block index.
 		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
@@ -2205,11 +2209,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
-		require.NoError(t, err)
-		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, blockHash)
+		require.NoError(t, err)
+		// Get the block node from the block index.
 		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.False(t, exists)
 	}
@@ -2224,7 +2228,9 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		// Update the QC to not have a supermajority.
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		nextEpochBlockHash, err := nextEpochBlock.Hash()
+		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, nextEpochBlockHash)
 		require.NoError(t, err)
 		// Update the QC to not have a supermajority.
 		// Get all the bls keys for the validators that aren't the leader.
@@ -2256,11 +2262,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 			Signature:   aggregatedSignature,
 		}
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
-		require.NoError(t, err)
-		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, blockHash)
+		require.NoError(t, err)
+		// Get the block node from the block index.
 		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.False(t, exists)
 	}
@@ -2285,11 +2291,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		twoEpochsInFutureBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, twoEpochsInFutureBlock)
 		// We should get an error that this block is too far in the future.
-		err = testMeta.chain.processOrphanBlockPoS(twoEpochsInFutureBlock)
-		require.Error(t, err)
-		// The block shouldn't be in the block index.
 		blockHash, err := twoEpochsInFutureBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(twoEpochsInFutureBlock, blockHash)
+		require.Error(t, err)
+		// The block shouldn't be in the block index.
 		_, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.False(t, exists)
 	}
@@ -2302,11 +2308,11 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		require.NoError(t, err)
 		var prevEpochBlock *MsgDeSoBlock
 		prevEpochBlock = _generateRealBlock(testMeta, prevEpochEntry.FinalBlockHeight, prevEpochEntry.FinalBlockHeight, 17283, testMeta.chain.BlockTip().Hash, false)
-		err = testMeta.chain.processOrphanBlockPoS(prevEpochBlock)
-		require.NoError(t, err)
-		// The block should be in the block index.
 		blockHash, err := prevEpochBlock.Hash()
 		require.NoError(t, err)
+		err = testMeta.chain.processOrphanBlockPoS(prevEpochBlock, blockHash)
+		require.NoError(t, err)
+		// The block should be in the block index.
 		blockNode, exists := testMeta.chain.blockIndexByHash.Get(*blockHash)
 		require.True(t, exists)
 		require.True(t, blockNode.IsStored())
@@ -2320,10 +2326,12 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	// Generate a real block and make sure it doesn't hit any errors.
 	var realBlock *MsgDeSoBlock
 	realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
+	realBlockHash, err := realBlock.Hash()
+	require.NoError(t, err)
 	utxoView := _newUtxoView(testMeta)
 	snapshotEpochNumber, err := utxoView.GetCurrentSnapshotEpochNumber()
 	require.NoError(t, err)
-	isValid, err := utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+	isValid, err := utxoView.hasValidProposerPartialSignaturePoS(realBlock, realBlockHash, snapshotEpochNumber)
 	require.NoError(t, err)
 	require.True(t, isValid)
 
@@ -2331,7 +2339,9 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 	realVotingPublicKey := realBlock.Header.ProposerVotingPublicKey
 	{
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		realBlockHash, err = realBlock.Hash()
+		require.NoError(t, err)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, realBlockHash, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 		// Reset the proposer voting public key
@@ -2343,20 +2353,23 @@ func TestHasValidProposerPartialSignaturePoS(t *testing.T) {
 		incorrectPayload := consensus.GetVoteSignaturePayload(13, testMeta.chain.BlockTip().Hash)
 		realBlock.Header.ProposerVotePartialSignature, err =
 			testMeta.blsPubKeyToBLSKeyMap[realBlock.Header.ProposerVotingPublicKey.ToString()].Sign(incorrectPayload[:])
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		realBlockHash, err = realBlock.Hash()
+		require.NoError(t, err)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, realBlockHash, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
 
 	// Signature on correct payload from wrong public key should fail.
 	{
-		var realBlockHash *BlockHash
 		realBlockHash, err = realBlock.Hash()
 		require.NoError(t, err)
 		correctPayload := consensus.GetVoteSignaturePayload(12, realBlockHash)
 		wrongPrivateKey := _generateRandomBLSPrivateKey(t)
 		realBlock.Header.ProposerVotePartialSignature, err = wrongPrivateKey.Sign(correctPayload[:])
-		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, snapshotEpochNumber)
+		realBlockHash, err = realBlock.Hash()
+		require.NoError(t, err)
+		isValid, err = utxoView.hasValidProposerPartialSignaturePoS(realBlock, realBlockHash, snapshotEpochNumber)
 		require.NoError(t, err)
 		require.False(t, isValid)
 	}
@@ -2371,9 +2384,9 @@ func TestHasValidProposerRandomSeedSignaturePoS(t *testing.T) {
 	isValid, err := testMeta.chain.hasValidProposerRandomSeedSignaturePoS(realBlock.Header)
 	require.NoError(t, err)
 	require.True(t, isValid)
-	_, _, _, err = testMeta.chain.ProcessBlockPoS(realBlock, 12, true)
-	require.NoError(t, err)
 	realBlockHash, err := realBlock.Hash()
+	require.NoError(t, err)
+	_, _, _, err = testMeta.chain.ProcessBlockPoS(realBlock, realBlockHash, 12, true)
 	require.NoError(t, err)
 	realBlockNode, exists := testMeta.chain.blockIndexByHash.Get(*realBlockHash)
 	require.True(t, exists)
@@ -2521,7 +2534,7 @@ func _generateDummyBlock(testMeta *TestMeta, blockHeight uint64, view uint64, se
 	require.NoError(testMeta.t, err)
 
 	// Add block to block index.
-	blockNode, err := testMeta.chain.storeBlockInBlockIndex(msgDesoBlock)
+	blockNode, err := testMeta.chain.storeBlockInBlockIndex(msgDesoBlock, newBlockHash)
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
 	_, exists := testMeta.chain.blockIndexByHash.Get(*newBlockHash)
@@ -2543,7 +2556,7 @@ func _generateBlockAndAddToBestChain(testMeta *TestMeta, blockHeight uint64, vie
 	newBlockHash, err := msgDesoBlock.Hash()
 	require.NoError(testMeta.t, err)
 	// Add block to block index.
-	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock)
+	blockNode, err := testMeta.chain.storeValidatedBlockInBlockIndex(msgDesoBlock, newBlockHash)
 	require.NoError(testMeta.t, err)
 	require.True(testMeta.t, blockNode.IsStored())
 	require.True(testMeta.t, blockNode.IsValidated())
