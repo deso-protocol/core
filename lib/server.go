@@ -2318,14 +2318,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 			"Server._handleBlock: Processing block %v with FastHotStuffConsensus with SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
-		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
+		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk, blockHash)
 		isOrphan = len(blockHashesToRequest) > 0
 	} else if !verifySignatures {
 		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v WITHOUT signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
-		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, false)
+		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, blockHash, false)
 	} else {
 		// TODO: Signature checking slows things down because it acquires the ChainLock.
 		// The optimal solution is to check signatures in a way that doesn't acquire the
@@ -2334,7 +2334,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 			"Server._handleBlock: Processing block %v WITH signature checking because SyncState=%v for peer %v",
 			blk, srv.blockchain.chainState(), pp,
 		)))
-		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, true)
+		_, isOrphan, blockHashesToRequest, err = srv.blockchain.ProcessBlock(blk, blockHash, true)
 	}
 
 	// If we hit an error then abort mission entirely. We should generally never

@@ -618,7 +618,7 @@ func TestBasicTransferReorg(t *testing.T) {
 	// Process all of the fork blocks on the original chain to make it
 	// experience a reorg.
 	for _, forkBlock := range forkBlocks {
-		_, _, _, err := chain1.ProcessBlock(forkBlock, true /*verifySignatures*/)
+		_, _, _, err := chain1.ProcessBlock(forkBlock, nil, true /*verifySignatures*/)
 		require.NoError(err)
 	}
 
@@ -661,7 +661,7 @@ func _shouldConnectBlock(blk *MsgDeSoBlock, t *testing.T, chain *Blockchain) {
 	blockHash, _ := blk.Hash()
 
 	verifySignatures := true
-	isMainChain, isOrphan, _, err := chain.ProcessBlock(blk, verifySignatures)
+	isMainChain, isOrphan, _, err := chain.ProcessBlock(blk, blockHash, verifySignatures)
 	require.NoError(err)
 	require.Falsef(isOrphan, "Block %v should not be an orphan", blockHash)
 	require.Truef(isMainChain, "Block %v should be on the main chain", blockHash)
@@ -826,7 +826,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 		// Block b1
 		fmt.Println("Connecting block b1")
 		require.Equal(uint64(3), GetUtxoNumEntries(db, chain.snapshot))
-		isMainChain, isOrphan, _, err := chain.ProcessBlock(blockB1, verifySignatures)
+		isMainChain, isOrphan, _, err := chain.ProcessBlock(blockB1, nil, verifySignatures)
 		require.NoError(err)
 		require.Falsef(isOrphan, "Block b1 should not be an orphan")
 		require.Falsef(isMainChain, "Block b1 should not be on the main chain")
@@ -842,7 +842,7 @@ func TestProcessBlockReorgBlocks(t *testing.T) {
 		// Block b2
 		fmt.Println("Connecting block b2")
 		require.Equal(uint64(3), GetUtxoNumEntries(db, chain.snapshot))
-		isMainChain, isOrphan, _, err := chain.ProcessBlock(blockB2, verifySignatures)
+		isMainChain, isOrphan, _, err := chain.ProcessBlock(blockB2, nil, verifySignatures)
 		require.NoError(err)
 		require.Falsef(isOrphan, "Block b2 should not be an orphan")
 		require.Falsef(isMainChain, "Block b2 should not be on the main chain")
@@ -1672,7 +1672,7 @@ func TestBadBlockSignature(t *testing.T) {
 
 	// A bad signature with the right public key should fail.
 	finalBlock1.BlockProducerInfo.PublicKey = senderPkBytes
-	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, nil, true)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorInvalidBlockProducerSIgnature)
 
@@ -1681,20 +1681,20 @@ func TestBadBlockSignature(t *testing.T) {
 	require.NoError(err)
 	finalBlock1.BlockProducerInfo.PublicKey = blockSignerPkBytes
 	finalBlock1.BlockProducerInfo.Signature = nil
-	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, nil, true)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorMissingBlockProducerSignature)
 
 	// If all the BlockProducerInfo is missing, things should fail
 	finalBlock1.BlockProducerInfo = nil
-	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, nil, true)
 	require.Error(err)
 	require.Contains(err.Error(), RuleErrorMissingBlockProducerSignature)
 
 	// Now let's add blockSignerPK to the map of trusted keys and confirm that the block processes.
 	chain.trustedBlockProducerPublicKeys[MakePkMapKey(blockSignerPkBytes)] = true
 	finalBlock1.BlockProducerInfo = blockProducerInfoCopy
-	_, _, _, err = chain.ProcessBlock(finalBlock1, true)
+	_, _, _, err = chain.ProcessBlock(finalBlock1, nil, true)
 	require.NoError(err)
 
 	_, _ = finalBlock1, db
