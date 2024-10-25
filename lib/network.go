@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -3502,6 +3503,46 @@ func SignRecoverable(bb []byte, privateKey *btcec.PrivateKey) *DeSoSignature {
 		RecoveryId:    recoveryId,
 		IsRecoverable: true,
 	}
+}
+
+// Need this because the ecdsa2.Signature library made R and S private, which broke
+// "automatic" JSON serialization.
+func (msg DeSoSignature) MarshalJSON() ([]byte, error) {
+	// ToBytes() requires Sign to be non-nil
+	if msg.Sign == nil {
+		return json.Marshal(nil)
+	}
+
+	// Get the raw bytes and encode them in base64
+	signatureBytes := msg.ToBytes()
+	encoded := base64.StdEncoding.EncodeToString(signatureBytes)
+
+	// Marshal the base64 encoded string as JSON
+	return json.Marshal(encoded)
+}
+
+// Need this because the ecdsa2.Signature library made R and S private, which broke
+// "automatic" JSON serialization.
+func (msg *DeSoSignature) UnmarshalJSON(data []byte) error {
+	// If data is "null", handle it as nil
+	if string(data) == "null" {
+		return nil
+	}
+
+	// Decode the base64 encoded string from JSON
+	var encoded string
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		return err
+	}
+
+	// Decode the base64 string back into raw bytes
+	signatureBytes, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+
+	// Populate the signature object using the decoded bytes
+	return msg.FromBytes(signatureBytes)
 }
 
 // DeSoNonce is a nonce that can be used to prevent replay attacks. It is used in the DeSo protocol
