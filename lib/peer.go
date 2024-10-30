@@ -1359,6 +1359,9 @@ func (pp *Peer) Disconnect(reason string) {
 
 	glog.V(2).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 
+	// Free the cache of known inventory.
+	pp.knownInventory.Clear()
+
 	// Close the connection object.
 	pp.Conn.Close()
 
