@@ -789,6 +789,10 @@ func MakeDirIfNonExistent(filePath string) error {
 
 func (mp *DeSoMempool) OpenTempDBAndDumpTxns() error {
 	blockHeight := uint64(mp.bc.blockTip().Height + 1)
+	if mp.bc.params.IsPoSBlockHeight(blockHeight) {
+		glog.V(2).Infof("OpenTempDBAndDumpTxns: Not dumping mempool txns for PoS block %v", blockHeight)
+		return nil
+	}
 	allTxns := mp.readOnlyUniversalTransactionList
 
 	tempMempoolDBDir := filepath.Join(mp.mempoolDir, "temp_mempool_dump")
