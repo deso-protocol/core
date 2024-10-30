@@ -1359,16 +1359,15 @@ func (pp *Peer) Disconnect(reason string) {
 
 	glog.V(2).Infof("Peer.Disconnect: Running Disconnect for the first time for Peer %v", pp)
 
-	// Free the cache of known inventory.
-	pp.knownInventory.Clear()
-
-	pp.knownInventory = nil
-
 	// Close the connection object.
 	pp.Conn.Close()
 
 	// Signaling the quit channel allows all the other goroutines to stop running.
 	close(pp.quit)
+
+	// Free the cache of known inventory.
+	pp.knownInventory.Clear()
+	pp.knownInventory = nil
 
 	// Add the Peer to donePeers so that the ConnectionManager and Server can do any
 	// cleanup they need to do.
