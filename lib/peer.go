@@ -111,7 +111,7 @@ type Peer struct {
 
 	// Inventory stuff.
 	// The inventory that we know the peer already has.
-	knownInventory lru.Set[InvVect]
+	knownInventory *lru.Set[InvVect]
 
 	// Whether the peer is ready to receive INV messages. For a peer that
 	// still needs a mempool download, this is false.
@@ -652,7 +652,7 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 		outputQueueChan:        make(chan DeSoMessage),
 		peerDisconnectedChan:   peerDisconnectedChan,
 		quit:                   make(chan interface{}),
-		knownInventory:         *lru.NewSet[InvVect](maxKnownInventory),
+		knownInventory:         lru.NewSet[InvVect](maxKnownInventory),
 		blocksToSend:           make(map[BlockHash]bool),
 		stallTimeoutSeconds:    _stallTimeoutSeconds,
 		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
@@ -1361,6 +1361,8 @@ func (pp *Peer) Disconnect(reason string) {
 
 	// Free the cache of known inventory.
 	pp.knownInventory.Clear()
+
+	pp.knownInventory = nil
 
 	// Close the connection object.
 	pp.Conn.Close()
