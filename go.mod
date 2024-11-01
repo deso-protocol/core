@@ -27,6 +27,7 @@ require (
 	github.com/go-pg/pg/v10 v10.13.0
 	github.com/golang/glog v1.2.2
 	github.com/google/uuid v1.6.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/oleiade/lane v1.0.1
 	github.com/onflow/crypto v0.25.2
