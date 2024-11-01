@@ -732,6 +732,11 @@ func (mp *DeSoMempool) isUnconnectedTxnInPool(hash *BlockHash) bool {
 }
 
 func (mp *DeSoMempool) DumpTxnsToDB() {
+	blockHeight := uint64(mp.bc.blockTip().Height + 1)
+	if mp.bc.params.IsPoSBlockHeight(blockHeight) {
+		glog.V(2).Infof("DumpTxnsToDB: Not dumping mempool txns for PoS block %v", blockHeight)
+		return
+	}
 	// Dump all mempool txns into data_dir_path/temp_mempool_dump.
 	err := mp.OpenTempDBAndDumpTxns()
 	if err != nil {
