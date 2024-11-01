@@ -2012,7 +2012,7 @@ func (srv *Server) _relayTransactions() {
 			// Add the transaction to the peer's known inventory. We do
 			// it here when we enqueue the message to the peers outgoing
 			// message queue so that we don't have remember to do it later.
-			pp.knownInventory.Put(*invVect)
+			pp.knownInventory.Add(*invVect, struct{}{})
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {

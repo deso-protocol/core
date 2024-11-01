@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/decred/dcrd/container/lru"
+	"github.com/hashicorp/golang-lru/v2"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang/glog"
@@ -111,7 +111,7 @@ type Peer struct {
 
 	// Inventory stuff.
 	// The inventory that we know the peer already has.
-	knownInventory *lru.Set[InvVect]
+	knownInventory *lru.Cache[InvVect, struct{}]
 
 	// Whether the peer is ready to receive INV messages. For a peer that
 	// still needs a mempool download, this is false.
@@ -292,7 +292,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 	for _, invVect := range msg.InvList {
 		// No matter what, add the inv to the peer's known inventory.
-		pp.knownInventory.Put(*invVect)
+		pp.knownInventory.Add(*invVect, struct{}{})
 
 		// If this is a hash we are currently processing, no need to do anything.
 		// This check serves to fill the gap between the time when we've decided
@@ -640,6 +640,8 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 	_syncType NodeSyncType,
 	peerDisconnectedChan chan *Peer) *Peer {
 
+	knownInventoryCache, _ := lru.New[InvVect, struct{}](maxKnownInventory)
+
 	pp := Peer{
 		ID:                     _id,
 		cmgr:                   _cmgr,
@@ -652,7 +654,7 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 		outputQueueChan:        make(chan DeSoMessage),
 		peerDisconnectedChan:   peerDisconnectedChan,
 		quit:                   make(chan interface{}),
-		knownInventory:         lru.NewSet[InvVect](maxKnownInventory),
+		knownInventory:         knownInventoryCache,
 		blocksToSend:           make(map[BlockHash]bool),
 		stallTimeoutSeconds:    _stallTimeoutSeconds,
 		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
@@ -978,7 +980,7 @@ out:
 
 				// Add the new inventory to the peer's knownInventory.
 				for _, invVect := range invMsg.InvList {
-					pp.knownInventory.Put(*invVect)
+					pp.knownInventory.Add(*invVect, struct{}{})
 				}
 			}
 
@@ -1366,8 +1368,7 @@ func (pp *Peer) Disconnect(reason string) {
 	close(pp.quit)
 
 	// Free the cache of known inventory.
-	pp.knownInventory.Clear()
-	pp.knownInventory = nil
+	pp.knownInventory.Purge()
 
 	// Add the Peer to donePeers so that the ConnectionManager and Server can do any
 	// cleanup they need to do.
