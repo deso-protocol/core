@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 
 	chainlib "github.com/btcsuite/btcd/blockchain"
 	"github.com/golang/glog"
