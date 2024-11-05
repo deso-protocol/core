@@ -1015,6 +1015,8 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	}
 	var hasSeenCheckpointBlockHash bool
 	var checkpointBlockNode *BlockNode
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
 	if isHeaderChain {
 		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
 	} else {
@@ -1047,6 +1049,9 @@ func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
 		return "<No checkpoint block info>"
 	}
 	hasSeenCheckPointBlockHash := false
+	// TODO: do we need to acquire the chain lock to safely read from these? I think we do, which is sad.
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
 	if isHeaders {
 		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
 	} else {
@@ -1692,6 +1697,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// being too large and possibly causing an error in badger.
 	glog.V(0).Infof("Server._handleSnapshot: Updating snapshot block nodes in the database")
 	var blockNodeBatch []*BlockNode
+	// TODO: do we need to acquire the chain lock here so we can safely update the best chain?
 	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
 		currentNode := srv.blockchain.bestHeaderChain[ii]
 		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.

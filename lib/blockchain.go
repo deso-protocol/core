@@ -1175,6 +1175,8 @@ func (bc *Blockchain) LocateBestBlockChainHeaders(
 	// TODO: Shouldn't we hold a ChainLock here? I think it's fine though because the place
 	// where it's currently called is single-threaded via a channel in server.go. Going to
 	// avoid messing with it for now.
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	headers := locateHeaders(locator, stopHash, maxHeaders,
 		bc.blockIndexByHash, bc.bestChain, bc.bestChainMap)
 
@@ -1422,6 +1424,8 @@ func (bc *Blockchain) GetBlockNodeWithHash(hash *BlockHash) *BlockNode {
 	if hash == nil {
 		return nil
 	}
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	return bc.bestChainMap[*hash]
 }
 
