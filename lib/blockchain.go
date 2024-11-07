@@ -1172,9 +1172,6 @@ func locateHeaders(locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32,
 func (bc *Blockchain) LocateBestBlockChainHeaders(
 	locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32) []*MsgDeSoHeader {
 
-	// TODO: Shouldn't we hold a ChainLock here? I think it's fine though because the place
-	// where it's currently called is single-threaded via a channel in server.go. Going to
-	// avoid messing with it for now.
 	bc.ChainLock.RLock()
 	defer bc.ChainLock.RUnlock()
 	headers := locateHeaders(locator, stopHash, maxHeaders,
