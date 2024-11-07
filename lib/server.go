@@ -1015,6 +1015,8 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	}
 	var hasSeenCheckpointBlockHash bool
 	var checkpointBlockNode *BlockNode
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
 	if isHeaderChain {
 		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
 	} else {
@@ -1047,6 +1049,8 @@ func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
 		return "<No checkpoint block info>"
 	}
 	hasSeenCheckPointBlockHash := false
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
 	if isHeaders {
 		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
 	} else {
@@ -1692,6 +1696,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// being too large and possibly causing an error in badger.
 	glog.V(0).Infof("Server._handleSnapshot: Updating snapshot block nodes in the database")
 	var blockNodeBatch []*BlockNode
+	// acquire the chain lock while we update the best chain and best chain map.
+	srv.blockchain.ChainLock.Lock()
 	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
 		currentNode := srv.blockchain.bestHeaderChain[ii]
 		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
@@ -1749,6 +1755,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// Update the snapshot status in the DB.
 	srv.snapshot.Status.CurrentBlockHeight = msg.SnapshotMetadata.SnapshotBlockHeight
 	srv.snapshot.Status.SaveStatus()
+
+	// Unlock chain lock now that we're done modifying the chain state.
+	srv.blockchain.ChainLock.Unlock()
 
 	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v) (%v)",
 		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes,
