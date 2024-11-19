@@ -170,4 +170,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://pearl.app",
 		Owner: "pearl",
 	},
+	30: {
+		Name:  "Focus",
+		URL:   "https://focus.xyz/",
+		Owner: "focus",
+	},
 }
