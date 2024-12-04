@@ -1699,16 +1699,6 @@ func (ss SyncState) String() string {
 //
 // This function MUST be called with the ChainLock held (for reads).
 func (bc *Blockchain) chainState() SyncState {
-	// If the header is not current, then we're in the SyncStateSyncingHeaders.
-	headerTip := bc.headerTip()
-	if headerTip == nil {
-		return SyncStateSyncingHeaders
-	}
-
-	if !bc.isTipCurrent(headerTip) {
-		return SyncStateSyncingHeaders
-	}
-
 	// If the header tip is current and the block tip is far in the past, then we're in the SyncStateSyncingSnapshot state.
 	if bc.syncingState {
 		return SyncStateSyncingSnapshot
@@ -1728,12 +1718,6 @@ func (bc *Blockchain) chainState() SyncState {
 	blockTip := bc.blockTip()
 	if !bc.isTipCurrent(blockTip) {
 		return SyncStateSyncingBlocks
-	}
-
-	// If the header tip is current and the block tip is current but the block
-	// tip is not equal to the header tip then we're in SyncStateNeedBlocks.
-	if *blockTip.Hash != *headerTip.Hash {
-		return SyncStateNeedBlocksss
 	}
 
 	// If none of the checks above returned it means we're current.

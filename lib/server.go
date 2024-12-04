@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v4"
 	"net"
 	"path/filepath"
 	"reflect"
@@ -756,6 +755,16 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	glog.V(1).Infof("Server._handleGetHeadersMessage: called with locator: (%v), "+
 		"stopHash: (%v) from Peer %v", msg.BlockLocator, msg.StopHash, pp)
 
+	// FIXME: We can eliminate the call to LocateBestBlockChainHeaders and do a much
+	// simpler "shortcut" version that doesn't require complicated tree-traversal bs.
+	// The shortcut would be to just return all headers starting from msg.BlockLocator[0]
+	// up to msg.StopHash or maxHeadersPerMsg, whichever comes first. This would allow
+	// other nodes to sync from us and *keep* in sync with us, while allowing us to delete
+	// ALL of the complicated logic around locators and the best header chain. This all works
+	// because msg.BlockLocator[0] is the requesting-node's tip hash. The rest of the
+	// hashes, and all of the locator bs, are only needed to resolve forks, which can't
+	// happen with PoS anymore.
+
 	// Find the most recent known block in the best block chain based
 	// on the block locator and fetch all of the headers after it until either
 	// MaxHeadersPerMsg have been fetched or the provided stop
@@ -936,13 +945,9 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 				blockNodesToFetch = append(blockNodesToFetch, currentNode)
 			}
 
-			var hashList []*BlockHash
-			for _, node := range blockNodesToFetch {
-				hashList = append(hashList, node.Hash)
-				pp.requestedBlocks[*node.Hash] = true
-			}
 			pp.AddDeSoMessage(&MsgDeSoGetBlocks{
-				HashList: hashList,
+				StartHeight: srv.blockchain.lowestBlockNotStored + 1,
+				NumBlocks:   0,
 			}, false)
 
 			glog.V(1).Infof("GetBlocksToStore: Downloading blocks to store for header %v from peer %v",
@@ -958,30 +963,16 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 // GetBlocks computes what blocks we need to fetch and asks for them from the
 // corresponding peer. It is typically called after we have exited
 // SyncStateSyncingHeaders.
-func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
-	numBlocksToFetch := srv.getMaxBlocksInFlight(pp) - len(pp.requestedBlocks)
-	blockNodesToFetch := srv.blockchain.GetBlockNodesToFetch(
-		numBlocksToFetch, maxHeight, pp.requestedBlocks,
-	)
-	if len(blockNodesToFetch) == 0 {
-		// This can happen if, for example, we're already requesting the maximum
-		// number of blocks we can. Just return in this case.
-		return
-	}
+func (srv *Server) RequestMaxBlocks(pp *Peer) {
+	blockTip := srv.blockchain.BlockTip()
+	pp.AddDeSoMessage(&MsgDeSoGetBlocks{
+		StartHeight: uint64(blockTip.Height + 1),
+		NumBlocks:   0,
+	}, false)
 
-	// If we're here then we have some blocks to fetch so fetch them.
-	hashList := []*BlockHash{}
-	for _, node := range blockNodesToFetch {
-		hashList = append(hashList, node.Hash)
-		pp.requestedBlocks[*node.Hash] = true
-	}
-
-	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: hashList}, false)
-
-	glog.V(1).Infof("GetBlocks: Downloading %d blocks from header %v to header %v from peer %v",
-		len(blockNodesToFetch),
-		blockNodesToFetch[0].Header,
-		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
+	glog.V(1).Infof("GetBlocks: Downloading blocks from height %v and hash %v from peer %v",
+		blockTip.Height,
+		blockTip.Hash.String(),
 		pp,
 	)
 }
@@ -1219,6 +1210,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// syncing state either through hyper sync or block sync. First let's check if the peer
 		// supports hypersync and if our block tip is old enough so that it makes sense to sync state.
 
+		// FIXME: This hypersync logic needs to run in _startSync somehow that we don't sync headers
 		if NodeCanHypersyncState(srv.cmgr.SyncType) && srv.blockchain.isHyperSyncCondition() {
 			// If hypersync conditions are satisfied, we will be syncing state. This assignment results
 			// in srv.blockchain.chainState() to be equal to SyncStateSyncingSnapshot
@@ -1229,6 +1221,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// snapshot height.
 		currentHeaderTipHeight := uint64(srv.blockchain.headerTip().Height)
 
+		// FIXME: This hypersync logic needs to run in _startSync somehow that we don't sync headers
 		if srv.blockchain.chainState() == SyncStateSyncingSnapshot {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* state starting at "+
 				"height %v from peer %v", srv.blockchain.headerTip().Header.Height, pp)
@@ -1346,9 +1339,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* blocks starting at "+
 				"height %d out of %d from peer %v",
 				blockTip.Header.Height+1, msg.TipHeight, pp)
-			maxHeight := -1
+			//maxHeight := -1
 			srv.blockchain.updateCheckpointBlockInfo()
-			srv.RequestBlocksUpToHeight(pp, maxHeight)
+			srv.RequestMaxBlocks(pp)
 			return
 		}
 
@@ -1380,7 +1373,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			glog.V(1).Infof("Server._handleHeaderBundle: *Downloading* blocks starting at "+
 				"block tip %v out of %d from peer %v",
 				blockTip.Header, msg.TipHeight, pp)
-			srv.RequestBlocksUpToHeight(pp, int(msg.TipHeight))
+			srv.RequestMaxBlocks(pp)
 			return
 		}
 
@@ -1824,8 +1817,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		return
 	}
 
-	headerTip := srv.blockchain.headerTip()
-	srv.RequestBlocksUpToHeight(pp, int(headerTip.Height))
+	srv.RequestMaxBlocks(pp)
 }
 
 func (srv *Server) _startSync() {
@@ -1891,10 +1883,12 @@ func (srv *Server) _startSync() {
 	// Send a GetHeaders message to the Peer to start the headers sync.
 	// Note that we include an empty BlockHash as the stopHash to indicate we want as
 	// many headers as the Peer can give us.
-	locator := srv.blockchain.LatestHeaderLocator()
-	bestPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
-		StopHash:     &BlockHash{},
-		BlockLocator: locator,
+	//locator := srv.blockchain.LatestHeaderLocator()
+	bestPeer.AddDeSoMessage(&MsgDeSoGetBlocks{
+		//StopHash:     &BlockHash{},
+		//BlockLocator: locator,
+		StartHeight: uint64(bestHeight + 1),
+		NumBlocks:   0,
 	}, false)
 	glog.V(1).Infof("Server._startSync: Downloading headers for blocks starting at "+
 		"header tip height %v from peer %v", bestHeight, bestPeer)
@@ -2310,7 +2304,7 @@ func (srv *Server) _logAndDisconnectPeer(pp *Peer, blockMsg *MsgDeSoBlock, suffi
 // isLastBlock indicates that this is the last block in the list of blocks we received back
 // via a MsgDeSoBlockBundle message. When we receive a single block, isLastBlock will automatically
 // be true, which will give it its old single-block behavior.
-func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
+func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock) {
 	srv.timer.Start("Server._handleBlock: General")
 
 	// Pull out the header for easy access.
@@ -2334,14 +2328,6 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	blockHash, err := blk.Header.Hash()
 	if err != nil {
 		srv._logAndDisconnectPeer(pp, blk, "Problem computing block hash")
-		return
-	}
-
-	// Unless we're running a PoS validator, we should not expect to see a block that we did not request. If
-	// we see such a block, then we log an error and disconnect from the peer.
-	_, isRequestedBlock := pp.requestedBlocks[*blockHash]
-	if srv.fastHotStuffConsensus == nil && !isRequestedBlock {
-		srv._logAndDisconnectPeer(pp, blk, "Getting a block that we haven't requested before")
 		return
 	}
 
@@ -2414,11 +2400,9 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	// see an error with a block from a peer.
 	if err != nil {
 		if strings.Contains(err.Error(), "RuleErrorDuplicateBlock") {
-			// Just warn on duplicate blocks but don't disconnect the peer.
-			// TODO: This assuages a bug similar to the one referenced in the duplicate
-			// headers comment above but in the future we should probably try and figure
-			// out a way to be more strict about things.
-			glog.Warningf("Got duplicate block %v from peer %v", blk, pp)
+			// Ignore duplicate blocks. They can happen because of how we've changed the
+			// way we request blocks from the peer.
+			return
 		} else if strings.Contains(err.Error(), RuleErrorFailedSpamPreventionsCheck.Error()) {
 			// If the block fails the spam prevention check, then it must be signed by the
 			// bad block proposer signature or it has a bad QC. In either case, we should
@@ -2437,13 +2421,8 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 	srv.timer.Print("Server._handleBlock: General")
 	srv.timer.Print("Server._handleBlock: Process Block")
 
-	// If we're not at the last block yet, then we're done. The rest of this code is only
-	// relevant after we've connected the last block, and it generally involves fetching
-	// more data from our peer.
-	if !isLastBlock {
-		return
-	}
-
+	// TODO: Is it OK to do this in the middle of a block bundle? I think it's fine, and possibly more
+	// correct this way.
 	if isOrphan {
 		// It's possible to receive an orphan block from the peer for a variety of reasons. If we
 		// see an orphan block, we do one of two things:
@@ -2471,85 +2450,12 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 
 		return
 	}
-
-	// We shouldn't be receiving blocks while syncing headers, but we can end up here
-	// if it took longer than MaxTipAge to sync blocks to this point. We'll revert to
-	// syncing headers and then resume syncing blocks once we're current again.
-	if srv.blockchain.chainState() == SyncStateSyncingHeaders {
-		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
-		glog.Infof("Requesting headers: %v", pp)
-
-		locator := srv.blockchain.LatestHeaderLocator()
-		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
-			StopHash:     &BlockHash{},
-			BlockLocator: locator,
-		}, false)
-		glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
-			"header tip %v from peer %v",
-			srv.blockchain.HeaderTip(), pp)
-		return
-	}
-
-	if srv.blockchain.chainState() == SyncStateSyncingHistoricalBlocks {
-		srv.GetBlocksToStore(pp)
-		if srv.blockchain.downloadingHistoricalBlocks {
-			return
-		}
-	}
-
-	// If we're syncing blocks, call GetBlocks and try to get as many blocks
-	// from our peer as we can. This allows the initial block download to be
-	// more incremental since every time we're able to accept a block (or
-	// group of blocks) we indicate this to our peer so they can send us more.
-	if srv.blockchain.chainState() == SyncStateSyncingBlocks {
-		// Setting maxHeight = -1 gets us as many blocks as we can get from our
-		// peer, which is OK because we can assume the peer has all of them when
-		// we're syncing.
-		maxHeight := -1
-		srv.RequestBlocksUpToHeight(pp, maxHeight)
-		return
-	}
-
-	if srv.blockchain.chainState() == SyncStateNeedBlocksss {
-		// If we don't have any blocks to wait for anymore, hit the peer with
-		// a GetHeaders request to see if there are any more headers we should
-		// be aware of. This will generally happen in two cases:
-		// - With our sync peer after we’re almost at the end of syncing blocks.
-		//   In this case, calling GetHeaders once the requestedblocks is almost
-		//   gone will result in us getting all of the remaining blocks right up
-		//   to the tip and then stopping, which is exactly what we want.
-		// - With a peer that sent us an inv. In this case, the peer could have
-		//   more blocks for us or it could not. Either way, it’s good to check
-		//   and worst case the peer will return an empty header bundle that will
-		//   result in us not sending anything back because there won’t be any new
-		//   blocks to request.
-		locator := srv.blockchain.LatestHeaderLocator()
-		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
-			StopHash:     &BlockHash{},
-			BlockLocator: locator,
-		}, false)
-		return
-	}
-
-	// If we get here, it means we're in SyncStateFullyCurrent, which is great.
-	// In this case we shoot a MEMPOOL message over to the peer to bootstrap the mempool.
-	srv._tryRequestMempoolFromPeer(pp)
-
-	// Exit early if the chain isn't SyncStateFullyCurrent.
-	if srv.blockchain.chainState() != SyncStateFullyCurrent {
-		return
-	}
-
-	// If the chain is current, then try to transition to the FastHotStuff consensus.
-	srv.tryTransitionToFastHotStuffConsensus()
 }
 
 func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 	if len(bundle.Blocks) == 0 {
-		glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received EMPTY block bundle "+
-			"at header height ( %v ) from Peer %v. Disconnecting peer since this should never happen.",
-			srv.blockchain.headerTip().Height, pp)))
-		pp.Disconnect("Received empty block bundle.")
+		// We will receive an empty block bundle if we are fully in-sync with the peer.
+		// Return early in this case so that we don't request more blocks from the peer.
 		return
 	}
 	glog.Infof(CLog(Cyan, fmt.Sprintf("Server._handleBlockBundle: Received blocks ( %v->%v / %v ) from Peer %v. "+
@@ -2572,7 +2478,7 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 		// _handleBlock is a legacy function that doesn't support erroring out. It's not a big deal
 		// though as we'll just connect all the blocks after the failed one and those blocks will also
 		// gracefully fail.
-		srv._handleBlock(pp, blk, ii == len(bundle.Blocks)-1 /*isLastBlock*/)
+		srv._handleBlock(pp, blk)
 		numLogBlocks := 100
 		if srv.params.IsPoSBlockHeight(blk.Header.Height) ||
 			srv.params.NetworkType == NetworkType_TESTNET {
@@ -2594,6 +2500,39 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 			}
 		}
 	}
+
+	if srv.blockchain.chainState() == SyncStateSyncingHistoricalBlocks {
+		srv.GetBlocksToStore(pp)
+		if srv.blockchain.downloadingHistoricalBlocks {
+			return
+		}
+	}
+
+	// We need to keep requesting blocks until the peer has given us everything that it has.
+	// This condition is implicitly met when we receive a request for blocks that has fewer
+	// than the maximum possible number of blocks in it.
+	if len(bundle.Blocks) >= MaxBlocksInFlightPoS {
+		srv.RequestMaxBlocks(pp)
+		return
+	}
+
+	// If we get here, it means we're finally in the steady-state and we're done syncing.
+
+	// Try to request the mempool from the peer if we haven't already. This function is OK
+	// to call every time we get a block bundle, even in the steady-state, because it will
+	// just exit after the first time we've requested the mempool.
+	srv._tryRequestMempoolFromPeer(pp)
+
+	// If the chain is current, then try to transition to the FastHotStuff consensus.
+	// This function is safe to call every time we get a block bundle, even in the steady-state,
+	// because it will just exit after the first time we've transitioned to FastHotStuff.
+	srv.tryTransitionToFastHotStuffConsensus()
+
+	// Even though we're in the steady-state here, it generally doesn't hurt to follow up with a
+	// request for any remaining blocks from the peer. In the steady-state, this will return
+	// zero blocks, and we will exit the _handleBlockBundle function early at the top without
+	// requesting any more.
+	srv.RequestMaxBlocks(pp)
 }
 
 func (srv *Server) _handleInv(peer *Peer, msg *MsgDeSoInv) {
@@ -2923,7 +2862,7 @@ func (srv *Server) _handlePeerMessages(serverMessage *ServerMessage) {
 		srv._handleGetBlocks(serverMessage.Peer, msg)
 	case *MsgDeSoBlock:
 		// isLastBlock is always true when we get a legacy single-block message.
-		srv._handleBlock(serverMessage.Peer, msg, true)
+		srv._handleBlock(serverMessage.Peer, msg)
 	case *MsgDeSoGetSnapshot:
 		srv._handleGetSnapshot(serverMessage.Peer, msg)
 	case *MsgDeSoSnapshotData:
