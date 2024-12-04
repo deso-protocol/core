@@ -756,6 +756,16 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	glog.V(1).Infof("Server._handleGetHeadersMessage: called with locator: (%v), "+
 		"stopHash: (%v) from Peer %v", msg.BlockLocator, msg.StopHash, pp)
 
+	// FIXME: We can eliminate the call to LocateBestBlockChainHeaders and do a much
+	// simpler "shortcut" version that doesn't require complicated tree-traversal bs.
+	// The shortcut would be to just return all headers starting from msg.BlockLocator[0]
+	// up to msg.StopHash or maxHeadersPerMsg, whichever comes first. This would allow
+	// other nodes to sync from us and *keep* in sync with us, while allowing us to delete
+	// ALL of the complicated logic around locators and the best header chain. This all works
+	// because msg.BlockLocator[0] is the requesting-node's tip hash. The rest of the
+	// hashes, and all of the locator bs, are only needed to resolve forks, which can't
+	// happen with PoS anymore.
+
 	// Find the most recent known block in the best block chain based
 	// on the block locator and fetch all of the headers after it until either
 	// MaxHeadersPerMsg have been fetched or the provided stop
