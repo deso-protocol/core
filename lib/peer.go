@@ -329,6 +329,8 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 		} else if invVect.Type == InvTypeBlock {
 			// For blocks, we check that the hash isn't known to us either in our
 			// main header chain or in side chains.
+			// I think this check still works even though we don't explicitly sync headers because
+			// processing a block implicitly processes its header.
 			exists, err := pp.srv.blockchain.HasHeader(&currentHash)
 			if exists {
 				continue
@@ -366,21 +368,17 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 	}
 
 	// If the peer has sent us any block hashes that are new to us then send
-	// a GetHeaders message to her to get back in sync with her. The flow
+	// a GetBlocks message to her to get back in sync with her. The flow
 	// for this is generally:
 	// - Receive an inv message from a peer for a block we don't have.
-	// - Send them a GetHeaders message with our most up-to-date block locator.
-	// - Receive back from them all the headers they're aware of that can be
+	// - Send them a GetBlocks message with our most up-to-date block as our StartHeight.
+	// - Receive back from them all the blocks they're aware of that can be
 	//   accepted into our chain.
-	// - We will then request from them all of the block data for the new headers
-	//   we have if they affect our main chain.
-	// - When the blocks come in, we process them by adding them to the chain
-	//   one-by-one.
+	// - We process them by adding them to the chain one-by-one.
 	if len(blockHashList) > 0 {
-		locator := pp.srv.blockchain.LatestHeaderLocator()
-		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
-			StopHash:     &BlockHash{},
-			BlockLocator: locator,
+		pp.AddDeSoMessage(&MsgDeSoGetBlocks{
+			StartHeight: uint64(pp.srv.blockchain.BlockTip().Height + 1),
+			NumBlocks:   0,
 		}, false /*inbound*/)
 	}
 }
@@ -402,6 +400,26 @@ func (pp *Peer) HandleInv(msg *MsgDeSoInv) {
 }
 
 func (pp *Peer) HandleGetBlocks(msg *MsgDeSoGetBlocks) {
+	// Note: Genesis block has index zero, and we will never request it from a peer so
+	// we can safely interpret StartHeight = 0 as "unset".
+	if msg.StartHeight != 0 {
+		numBlocks := msg.NumBlocks
+		if numBlocks == 0 || numBlocks > MaxBlocksInFlightPoS {
+			numBlocks = MaxBlocksInFlightPoS
+		}
+
+		allBlocks := MsgDeSoBlockBundle{}
+
+		// FIXME: Look up all the blocks from StartHeight to StartHeight+numBlocks and send
+		// them back to the peer in a MsgDeSoBlockBundle
+
+		pp.AddDeSoMessage(&allBlocks, false)
+
+		return
+	}
+	// If we get here, then we have StartHeight = 0, meaning we fall back to the
+	// HashList in the message.
+
 	// Nothing to do if the request is empty.
 	if len(msg.HashList) == 0 {
 		glog.V(1).Infof("Server._handleGetBlocks: Received empty GetBlocks "+

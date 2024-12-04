@@ -1155,6 +1155,9 @@ func (msg *MsgDeSoBlockBundle) String() string {
 
 type MsgDeSoGetBlocks struct {
 	HashList []*BlockHash
+
+	StartHeight uint64
+	NumBlocks   uint64
 }
 
 func (msg *MsgDeSoGetBlocks) GetMsgType() MsgType {
