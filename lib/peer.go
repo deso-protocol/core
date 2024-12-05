@@ -389,7 +389,7 @@ func (pp *Peer) HandleInv(msg *MsgDeSoInv) {
 	// Ignore invs while we're still syncing and before we've requested
 	// all mempool transactions from one of our peers to bootstrap.
 	if pp.srv.blockchain.isSyncing() {
-		glog.Infof("Server._handleInv: Ignoring INV while syncing from Peer %v", pp)
+		glog.V(1).Infof("Server._handleInv: Ignoring INV while syncing from Peer %v", pp)
 		return
 	}
 
@@ -643,7 +643,9 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 	_cmgr *ConnectionManager, _srv *Server,
 	_syncType NodeSyncType,
 	peerDisconnectedChan chan *Peer) *Peer {
-	knownInventory, _ := lru.New[InvVect, struct{}](maxKnownInventory)
+
+	knownInventoryCache, _ := lru.New[InvVect, struct{}](maxKnownInventory)
+
 	pp := Peer{
 		ID:                     _id,
 		cmgr:                   _cmgr,
@@ -656,7 +658,7 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 		outputQueueChan:        make(chan DeSoMessage),
 		peerDisconnectedChan:   peerDisconnectedChan,
 		quit:                   make(chan interface{}),
-		knownInventory:         knownInventory,
+		knownInventory:         knownInventoryCache,
 		blocksToSend:           make(map[BlockHash]bool),
 		stallTimeoutSeconds:    _stallTimeoutSeconds,
 		minTxFeeRateNanosPerKB: _minFeeRateNanosPerKB,
@@ -1368,6 +1370,9 @@ func (pp *Peer) Disconnect(reason string) {
 
 	// Signaling the quit channel allows all the other goroutines to stop running.
 	close(pp.quit)
+
+	// Free the cache of known inventory.
+	pp.knownInventory.Purge()
 
 	// Add the Peer to donePeers so that the ConnectionManager and Server can do any
 	// cleanup they need to do.

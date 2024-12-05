@@ -9,7 +9,7 @@ import (
 
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1943,7 +1943,7 @@ func (bc *Blockchain) getCachedBlockViewAndUtxoOps(blockHash BlockHash) (*BlockV
 	return viewAndUtxoOpsAtHash, exists
 }
 
-// getUtxoViewAndUtxoOpsAtBlockHash builds a UtxoView to the block provided and returns a BlockViewAndUtxoOps
+// GetUtxoViewAndUtxoOpsAtBlockHash builds a UtxoView to the block provided and returns a BlockViewAndUtxoOps
 // struct containing UtxoView, the UtxoOperations that resulted from connecting the block, and the full
 // block (MsgDeSoBlock) for convenience that came from connecting the block. It does this by identifying
 // all uncommitted ancestors of this block. Then it checks the block view cache to see if we have already
@@ -1956,7 +1956,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	uncommittedAncestors := []*BlockNode{}
 	currentBlock, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(&blockHash, blockHeight)
 	if currentBlock == nil {
-		return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", blockHash)
+		return nil, errors.Errorf("GetUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", blockHash)
 	}
 
 	highestCommittedBlock, exists := bc.GetCommittedTip()
@@ -1969,22 +1969,22 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	if currentBlock.IsCommitted() {
 		if !highestCommittedBlock.Hash.IsEqual(&blockHash) {
 			return nil, errors.Errorf(
-				"getUtxoViewAndUtxoOpsAtBlockHash: Block %v is committed but not the committed tip", blockHash)
+				"GetUtxoViewAndUtxoOpsAtBlockHash: Block %v is committed but not the committed tip", blockHash)
 		}
 	}
 	for !currentBlock.IsCommitted() {
 		uncommittedAncestors = append(uncommittedAncestors, currentBlock)
 		currentParentHash := currentBlock.Header.PrevBlockHash
 		if currentParentHash == nil {
-			return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
+			return nil, errors.Errorf("GetUtxoViewAndUtxoOpsAtBlockHash: Block %v has nil PrevBlockHash", currentBlock.Hash)
 		}
 		currentBlock, _ = bc.blockIndex.GetBlockNodeByHashAndHeight(currentParentHash, currentBlock.Header.Height-1)
 		if currentBlock == nil {
-			return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", currentParentHash)
+			return nil, errors.Errorf("GetUtxoViewAndUtxoOpsAtBlockHash: Block %v not found in block index", currentParentHash)
 		}
 		if currentBlock.IsCommitted() && !currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			return nil, errors.Errorf(
-				"getUtxoViewAndUtxoOpsAtBlockHash: extends from a committed block that isn't the committed tip")
+				"GetUtxoViewAndUtxoOpsAtBlockHash: extends from a committed block that isn't the committed tip")
 		}
 	}
 	viewAndUtxoOpsAtHash, exists := bc.getCachedBlockViewAndUtxoOps(blockHash)

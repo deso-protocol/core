@@ -30,7 +30,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	merkletree "github.com/deso-protocol/go-merkle-tree"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -1339,9 +1339,8 @@ func (bc *Blockchain) locateHeaders(locator []*BlockHash, stopHash *BlockHash, m
 func (bc *Blockchain) LocateBestBlockChainHeaders(
 	locator []*BlockHash, stopHash *BlockHash, maxHeaders uint32) []*MsgDeSoHeader {
 
-	// TODO: Shouldn't we hold a ChainLock here? I think it's fine though because the place
-	// where it's currently called is single-threaded via a channel in server.go. Going to
-	// avoid messing with it for now.
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	headers := bc.locateHeaders(locator, stopHash, maxHeaders)
 
 	return headers
@@ -1435,6 +1434,11 @@ func (bc *Blockchain) LatestLocator(tip *BlockNode) []*BlockHash {
 }
 
 func (bc *Blockchain) HeaderLocatorWithNodeHash(blockHash *BlockHash) ([]*BlockHash, error) {
+	// We can acquire the ChainLock because the only place this is called currently is from
+	// _handleHeaderBundle, which doesn't have the lock.
+	// If we do not acquire the lock, we may hit a concurrent map read write error which causes panic.
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	node, exists, err := bc.blockIndex.GetBlockNodeByHashOnly(blockHash)
 	if err != nil {
 		return nil, fmt.Errorf("Blockchain.HeaderLocatorWithNodeHash: Problem getting node for hash %v: %v", blockHash, err)
@@ -1449,6 +1453,11 @@ func (bc *Blockchain) HeaderLocatorWithNodeHash(blockHash *BlockHash) ([]*BlockH
 // LatestHeaderLocator calls LatestLocator in order to fetch a locator
 // for the best header chain.
 func (bc *Blockchain) LatestHeaderLocator() []*BlockHash {
+	// We can acquire the ChainLock here because all calls to this function happen in peer.go
+	// and server.go, which don't hold the lock.
+	// If we do not acquire the lock, we may hit a concurrent map read write error which causes panic.
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	headerTip := bc.headerTip()
 
 	return bc.LatestLocator(headerTip)
@@ -1595,6 +1604,8 @@ func (bc *Blockchain) GetBlockNodeWithHash(hash *BlockHash) *BlockNode {
 	if hash == nil {
 		return nil
 	}
+	bc.ChainLock.RLock()
+	defer bc.ChainLock.RUnlock()
 	bn, bnExists, err := bc.blockIndex.GetBlockNodeByHashOnly(hash)
 	if !bnExists || err != nil {
 		return nil
@@ -2893,7 +2904,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		if *bc.blockView.TipHash != *currentTip.Hash {
 			//return false, false, fmt.Errorf("ProcessBlock: Tip hash for utxo view (%v) is "+
 			//	"not the current tip hash (%v)", utxoView.TipHash, currentTip.Hash)
-			glog.Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
+			glog.V(1).Infof("ProcessBlock: Tip hash for utxo view (%v) is "+
 				"not the current tip hash (%v)", bc.blockView.TipHash, currentTip.Hash)
 		}
 

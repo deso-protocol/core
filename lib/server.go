@@ -20,7 +20,7 @@ import (
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
 	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
@@ -1051,6 +1051,8 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	var hasSeenCheckpointBlockHash bool
 	var checkpointBlockNode *BlockNode
 	var err error
+	srv.blockchain.ChainLock.RLock()
+	defer srv.blockchain.ChainLock.RUnlock()
 	if isHeaderChain {
 		checkpointBlockNode, hasSeenCheckpointBlockHash, err = srv.blockchain.GetBlockFromBestChainByHash(
 			checkpointBlockInfo.Hash, true)
@@ -1496,8 +1498,16 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		"<%v>, Last entry: <%v>), (number of entries: %v), metadata (%v), and isEmpty (%v), from Peer %v",
 		msg.SnapshotChunk[0].Key, msg.SnapshotChunk[len(msg.SnapshotChunk)-1].Key, len(msg.SnapshotChunk),
 		msg.SnapshotMetadata, msg.SnapshotChunk[0].IsEmpty(), pp)))
-	// Free up a slot in the operationQueueSemaphore, now that a chunk has been processed.
-	srv.snapshot.FreeOperationQueueSemaphore()
+
+	// This is ugly but the alternative is to meticulously call FreeOperationQueueSemaphore every time
+	// we return with an error, which is worse.
+	chunkProcessed := false
+	freeSempahoreIfChunkNotProcessed := func() {
+		if !chunkProcessed {
+			srv.snapshot.FreeOperationQueueSemaphore()
+		}
+	}
+	defer freeSempahoreIfChunkNotProcessed()
 
 	// There is a possibility that during hypersync the network entered a new snapshot epoch. We handle this case by
 	// restarting the node and starting hypersync from scratch.
@@ -1515,6 +1525,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		} else {
 			glog.Errorf(CLog(Red, "srv._handleSnapshot: Trying to restart the node but nodeMessageChannel is empty, "+
 				"this should never happen."))
+			return
 		}
 	}
 
@@ -1547,6 +1558,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		return
 	}
 
+	// TODO: disable checksum support?
 	// If we haven't yet set the epoch checksum bytes in the hyper sync progress, we'll do it now.
 	// If we did set the checksum bytes, we will verify that they match the one that peer has sent us.
 	prevChecksumBytes := make([]byte, len(srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes))
@@ -1626,6 +1638,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 
 		// Process the DBEntries from the msg and add them to the db.
 		srv.timer.Start("Server._handleSnapshot Process Snapshot")
+		chunkProcessed = true
 		srv.snapshot.ProcessSnapshotChunk(srv.blockchain.db, &srv.blockchain.ChainLock, dbChunk,
 			srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight)
 		srv.timer.End("Server._handleSnapshot Process Snapshot")
@@ -1743,7 +1756,10 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	//
 	// We split the db update into batches of 10,000 block nodes to avoid a single transaction
 	// being too large and possibly causing an error in badger.
+	glog.V(0).Infof("Server._handleSnapshot: Updating snapshot block nodes in the database")
 	var blockNodeBatch []*BlockNode
+	// acquire the chain lock while we update the best chain and best chain map.
+	srv.blockchain.ChainLock.Lock()
 	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
 		currentNode, currentNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(ii, true)
 		if err != nil {
@@ -1808,6 +1824,9 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// Update the snapshot status in the DB.
 	srv.snapshot.Status.CurrentBlockHeight = msg.SnapshotMetadata.SnapshotBlockHeight
 	srv.snapshot.Status.SaveStatus()
+
+	// Unlock chain lock now that we're done modifying the chain state.
+	srv.blockchain.ChainLock.Unlock()
 
 	glog.Infof("server._handleSnapshot: FINAL snapshot checksum is (%v) (%v)",
 		srv.snapshot.CurrentEpochSnapshotMetadata.CurrentEpochChecksumBytes,
@@ -2072,7 +2091,6 @@ func (srv *Server) _relayTransactions() {
 			// it here when we enqueue the message to the peers outgoing
 			// message queue so that we don't have to remember to do it later.
 			pp.knownInventory.Add(*invVect, struct{}{})
-
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
