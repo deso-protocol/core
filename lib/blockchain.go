@@ -1770,7 +1770,6 @@ func (bc *Blockchain) checkArchivalMode() bool {
 	}
 
 	firstSnapshotHeight := bc.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight
-	_ = firstSnapshotHeight
 	// @diamondhands - can we spot check just a few blocks such as firstSnapshotHeight - 1,
 	// firstSnapshotHeight / 2 - 1, and firstSnapshotHeight / 4 - 1 to see if they are stored?
 	// We take a sampling of blocks to determine if we've downloaded all the blocks up to the first snapshot height.
