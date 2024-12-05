@@ -59,7 +59,9 @@ const (
 	// have room for multiple forks each an entire history's length with this value). If
 	// each node takes up 100 bytes of space this amounts to around 500MB, which also seems
 	// like a reasonable size.
-	MaxBlockIndexNodes = 50000000 // TODO: trim this down somehow...
+	// UPDATE: now that we don't keep everything in memory, we reduced this value from
+	// 50000000 to 1000000
+	MaxBlockIndexNodes = 1000000 // TODO: trim this down somehow...
 )
 
 type BlockStatus uint32
