@@ -1124,6 +1124,9 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 		}
 		return false, false
 	}
+	// TODO: @diamondhands - why can't we move this up in this function? It seems like we can avoid
+	// checking if we have the checkpoint block node if the header we're processing is below the height.
+	// This will save us 17-18% of the time it takes to process headers.
 	// If the current header has a height below the checkpoint block height, we should skip signature verification
 	// even if we've seen the checkpoint block hash.
 	if header.Height < checkpointBlockInfo.Height {
@@ -1210,6 +1213,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 		// If we get here then we have a header we haven't seen before.
 		// check if we need to verify signatures
+		// TODO: we can add some logic into should verify signatures to avoid trying to get the checkpoint block node.
 		verifySignatures, shouldDisconnect := srv.shouldVerifySignatures(headerReceived, true)
 		if shouldDisconnect {
 			glog.Errorf("Server._handleHeaderBundle: Disconnecting peer %v in state %s because a mismatch was "+
@@ -1476,18 +1480,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// even if the peer has a long fork with more work than our current header
 	// chain.
 	lastHash, _ := msg.Headers[len(msg.Headers)-1].Hash()
-	locator, err := srv.blockchain.HeaderLocatorWithNodeHash(lastHash)
-	if err != nil {
-		glog.Warningf("Server._handleHeaderBundle: Disconnecting peer %v because "+
-			"she indicated that she has more headers but the last hash %v in "+
-			"the header bundle does not correspond to a block in our index.",
-			pp, lastHash)
-		pp.Disconnect("Last hash in header bundle not in our index")
-		return
-	}
 	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
-		BlockLocator: locator,
+		BlockLocator: []*BlockHash{lastHash},
 	}, false)
 	headerTip := srv.blockchain.headerTip()
 	glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
