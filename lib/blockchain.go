@@ -2249,7 +2249,7 @@ func (bc *Blockchain) processHeaderPoW(
 		bc.blockIndex.setHeaderTip(newNode)
 	}
 
-	return blockNode, isMainChain, false, nil
+	return newNode, isMainChain, false, nil
 }
 
 // ProcessHeader is a wrapper around processHeaderPoW and processHeaderPoS, which do the leg-work.
