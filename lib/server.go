@@ -1852,6 +1852,14 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
 		srv.blockchain.blockIndex.setTip(currentNode)
 		blockNodeBatch = append(blockNodeBatch, currentNode)
+		if currentNode.Height%100000 == 0 {
+			glog.V(0).Infof("Time to process %v of %v block nodes in %v",
+				currentNode.Height,
+				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight,
+				time.Since(flushBlockNodeStartTime),
+			)
+		}
+		// TODO: should we adjust this value for batch sizes?
 		if len(blockNodeBatch) < 10000 {
 			continue
 		}
