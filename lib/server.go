@@ -1826,6 +1826,13 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// being too large and possibly causing an error in badger.
 	glog.V(0).Infof("Server._handleSnapshot: Updating snapshot block nodes in the database")
 	var blockNodeBatch []*BlockNode
+	flushBlockNodeStartTime := time.Now()
+	// Disable deadlock detection, as the process of flushing entries to file can take a long time and
+	// if it takes longer than the deadlock detection timeout interval, it will cause an error to be thrown.
+	deadlock.Opts.Disable = true
+	defer func() {
+		deadlock.Opts.Disable = false
+	}()
 	// acquire the chain lock while we update the best chain and best chain map.
 	srv.blockchain.ChainLock.Lock()
 	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
@@ -1861,6 +1868,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
 		}
 	}
+	glog.V(0).Infof("Time to store %v block nodes in the database: %v",
+		srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, time.Since(flushBlockNodeStartTime))
 
 	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 	if err != nil {
