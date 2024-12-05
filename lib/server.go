@@ -1835,16 +1835,19 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}()
 	// acquire the chain lock while we update the best chain and best chain map.
 	srv.blockchain.ChainLock.Lock()
-	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-		currentNode, currentNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(ii, true)
-		if err != nil {
-			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error: (%v)", err)
-			break
-		}
-		if !currentNodeExists {
-			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist")
-			break
-		}
+	// TODO: we should iterate in reverse so we can use GetBlockFromBestChainByHashAndOptionalHeight
+	// by doing currentNode.Height - 1 and currentNode.Header.PrevBlockHash.
+	currentNode, currentNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, true)
+	if err != nil {
+		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error: (%v)", err)
+		// TODO: should we return here?
+	}
+	if !currentNodeExists {
+		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist")
+		// TODO: should we return here?
+	}
+	for currentNode.Height > 0 {
+		//for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
 		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
 		currentNode.Status |= StatusBlockProcessed
 		currentNode.Status |= StatusBlockValidated
@@ -1852,12 +1855,23 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
 		srv.blockchain.blockIndex.setTip(currentNode)
 		blockNodeBatch = append(blockNodeBatch, currentNode)
-		if currentNode.Height%100000 == 0 {
+		if (srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight-uint64(currentNode.Height))%100000 == 0 {
 			glog.V(0).Infof("Time to process %v of %v block nodes in %v",
-				currentNode.Height,
+				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight-uint64(currentNode.Height),
 				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight,
 				time.Since(flushBlockNodeStartTime),
 			)
+		}
+
+		prevNodeHeight := uint64(currentNode.Height) - 1
+		currentNode, currentNodeExists, err = srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(currentNode.Header.PrevBlockHash, &prevNodeHeight, true)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error: (%v)", err)
+			break
+		}
+		if !currentNodeExists {
+			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist")
+			break
 		}
 		// TODO: should we adjust this value for batch sizes?
 		if len(blockNodeBatch) < 10000 {
