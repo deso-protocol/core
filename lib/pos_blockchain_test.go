@@ -2486,7 +2486,7 @@ func _generateRealBlockWithFailingTxn(testMeta *TestMeta, blockHeight uint64, vi
 	prevBlock, exists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(prevBlockHash, blockHeight-1)
 	require.True(testMeta.t, exists)
 	// Always update the testMeta latestBlockView
-	latestBlockViewAndUtxoOps, err := testMeta.chain.getUtxoViewAndUtxoOpsAtBlockHash(*prevBlockHash, blockHeight-1)
+	latestBlockViewAndUtxoOps, err := testMeta.chain.GetUtxoViewAndUtxoOpsAtBlockHash(*prevBlockHash, blockHeight-1)
 	require.NoError(testMeta.t, err)
 	latestBlockView := latestBlockViewAndUtxoOps.UtxoView
 	latestBlockNode, latestBlockNodeExists := testMeta.chain.blockIndex.GetBlockNodeByHashAndHeight(prevBlockHash, blockHeight-1)

@@ -320,7 +320,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 
 	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
 	// been validated.
-	parentUtxoViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash, block.Header.Height-1)
+	parentUtxoViewAndUtxoOps, err := bc.GetUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash, block.Header.Height-1)
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
@@ -824,7 +824,7 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(
 		return nil, errors.Wrapf(err, "validatePreviouslyIndexedBlockPoS: Problem fetching block from DB")
 	}
 	// Build utxoView for the block's parent.
-	parentUtxoViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash, block.Header.Height-1)
+	parentUtxoViewAndUtxoOps, err := bc.GetUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash, block.Header.Height-1)
 	if err != nil {
 		// This should never happen. If the parent is validated and extends from the tip, then we should
 		// be able to build a UtxoView for it. This failure can only happen due to transient or badger issues.
@@ -1755,7 +1755,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, blockHeight uint64, v
 		return errors.Errorf("commitBlockPoS: Block %v is already committed", blockHash.String())
 	}
 	// Connect a view up to block we are committing.
-	utxoViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*blockHash, uint64(blockNode.Height))
+	utxoViewAndUtxoOps, err := bc.GetUtxoViewAndUtxoOpsAtBlockHash(*blockHash, uint64(blockNode.Height))
 	if err != nil {
 		return errors.Wrapf(err, "commitBlockPoS: Problem initializing UtxoView: ")
 	}
@@ -1931,7 +1931,7 @@ func (viewAndUtxoOps *BlockViewAndUtxoOps) Copy() *BlockViewAndUtxoOps {
 func (bc *Blockchain) GetUncommittedTipView() (*UtxoView, error) {
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	blockTip := bc.BlockTip()
-	blockViewAndUtxoOps, err := bc.getUtxoViewAndUtxoOpsAtBlockHash(*blockTip.Hash, uint64(blockTip.Height))
+	blockViewAndUtxoOps, err := bc.GetUtxoViewAndUtxoOpsAtBlockHash(*blockTip.Hash, uint64(blockTip.Height))
 	if err != nil {
 		return nil, errors.Wrapf(err, "GetUncommittedTipView: Problem getting UtxoView at block hash")
 	}
@@ -1949,7 +1949,7 @@ func (bc *Blockchain) getCachedBlockViewAndUtxoOps(blockHash BlockHash) (*BlockV
 // all uncommitted ancestors of this block. Then it checks the block view cache to see if we have already
 // computed this view. If not, connecting the uncommitted ancestor blocks and saving to the cache. The
 // returned UtxoOps and FullBlock should NOT be modified.
-func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, blockHeight uint64) (
+func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, blockHeight uint64) (
 	*BlockViewAndUtxoOps, error) {
 	// Always fetch the lineage from the committed tip to the block provided first to
 	// ensure that a valid UtxoView is returned.
@@ -1962,7 +1962,7 @@ func (bc *Blockchain) getUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	highestCommittedBlock, exists := bc.GetCommittedTip()
 	glog.Infof("Highest committed block: %v", highestCommittedBlock)
 	if !exists || highestCommittedBlock == nil {
-		return nil, errors.Errorf("getUtxoViewAndUtxoOpsAtBlockHash: No committed blocks found")
+		return nil, errors.Errorf("GetUtxoViewAndUtxoOpsAtBlockHash: No committed blocks found")
 	}
 	// If the provided block is committed, we need to make sure it's the committed tip.
 	// Otherwise, we return an error.

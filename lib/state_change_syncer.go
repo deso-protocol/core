@@ -847,7 +847,7 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	// TODO: Have Z look at if we need to do some caching in the uncommitted blocks logic.
 	// First connect the uncommitted blocks to the mempool view.
 	for _, uncommittedBlock := range uncommittedBlocks {
-		utxoViewAndOpsAtBlockHash, err := server.blockchain.getUtxoViewAndUtxoOpsAtBlockHash(*uncommittedBlock.Hash, uint64(uncommittedBlock.Height))
+		utxoViewAndOpsAtBlockHash, err := server.blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(*uncommittedBlock.Hash, uint64(uncommittedBlock.Height))
 		if err != nil {
 			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
 				FlushId:        originalCommittedFlushId,

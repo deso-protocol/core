@@ -399,7 +399,7 @@ func (txi *TXIndex) Update() error {
 		utxoView := NewUtxoView(txi.TXIndexChain.DB(), txi.Params, nil, nil, txi.CoreChain.eventManager)
 		if blockToAttach.Header.PrevBlockHash != nil && !utxoView.TipHash.IsEqual(blockToAttach.Header.PrevBlockHash) {
 			var utxoViewAndUtxoOps *BlockViewAndUtxoOps
-			utxoViewAndUtxoOps, err = txi.TXIndexChain.getUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash, blockToAttach.Header.Height-1)
+			utxoViewAndUtxoOps, err = txi.TXIndexChain.GetUtxoViewAndUtxoOpsAtBlockHash(*blockToAttach.Header.PrevBlockHash, blockToAttach.Header.Height-1)
 			if err != nil {
 				return fmt.Errorf("Update: Problem getting UtxoView at block hash %v: %v",
 					blockToAttach.Header.PrevBlockHash, err)
