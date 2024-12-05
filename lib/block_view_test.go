@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/dgraph-io/badger/v3"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"math"
 	_ "net/http/pprof"
@@ -15,6 +13,8 @@ import (
 
 	"github.com/deso-protocol/core/bls"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/dgraph-io/badger/v3"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/golang/glog"
 	"github.com/stretchr/testify/assert"
