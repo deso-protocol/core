@@ -1482,7 +1482,9 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 
 	// If the tip of the best block chain is in the main header chain, make that
 	// the start point for our fetch.
-	headerNodeStart, blockTipExistsInBestHeaderChain, err := bc.GetBlockFromBestChainByHeight(uint64(bestBlockTip.Height), true)
+	bestBlockTipHeight := uint64(bestBlockTip.Height)
+	headerNodeStart, blockTipExistsInBestHeaderChain, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(
+		bestBlockTip.Hash, &bestBlockTipHeight, true)
 	if err != nil {
 		glog.Errorf("GetBlockToFetch: Problem getting block by height: %v", err)
 		return nil
