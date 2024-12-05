@@ -1108,6 +1108,14 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	if checkpointBlockInfo == nil {
 		return true, false
 	}
+	// TODO: @diamondhands - why can't we move this up in this function? It seems like we can avoid
+	// checking if we have the checkpoint block node if the header we're processing is below the height.
+	// This will save us 17-18% of the time it takes to process headers.
+	// If the current header has a height below the checkpoint block height, we should skip signature verification
+	// even if we've seen the checkpoint block hash.
+	if header.Height < checkpointBlockInfo.Height {
+		return false, false
+	}
 	srv.blockchain.ChainLock.RLock()
 	defer srv.blockchain.ChainLock.RUnlock()
 	checkpointBlockNode, hasSeenCheckpointBlockHash, err := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(
@@ -1122,14 +1130,6 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 		if header.Height > checkpointBlockInfo.Height {
 			return true, true
 		}
-		return false, false
-	}
-	// TODO: @diamondhands - why can't we move this up in this function? It seems like we can avoid
-	// checking if we have the checkpoint block node if the header we're processing is below the height.
-	// This will save us 17-18% of the time it takes to process headers.
-	// If the current header has a height below the checkpoint block height, we should skip signature verification
-	// even if we've seen the checkpoint block hash.
-	if header.Height < checkpointBlockInfo.Height {
 		return false, false
 	}
 	// Make sure that the header in the best chain map has the correct height, otherwise we need to disconnect this peer.
