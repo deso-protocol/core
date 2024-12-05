@@ -39,10 +39,10 @@ import (
 //  5. Exit early if the's view is less than the current header chain's tip.
 //  6. Reorg the best header chain if the header's view is higher than the current tip.
 func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash, verifySignatures bool) (
-	_isMainChain bool, _isOrphan bool, _err error,
+	_blockNode *BlockNode, _isMainChain bool, _isOrphan bool, _err error,
 ) {
 	if !bc.params.IsPoSBlockHeight(header.Height) {
-		return false, false, errors.Errorf(
+		return nil, false, false, errors.Errorf(
 			"processHeaderPoS: Header height %d is less than the ProofOfStake2ConsensusCutoverBlockHeight %d",
 			header.Height, bc.params.GetFirstPoSBlockHeight(),
 		)
@@ -53,26 +53,26 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 	// Here we explicitly check the bestHeaderChain.ChainMap to make sure the in-memory struct is properly
 	// updated. This is necessary because the block index may have been updated with the header but the
 	// bestHeaderChain.ChainMap may not have been updated yet.
-	// TODO: make sure this is ok or do we need to explicitly check the block index's cache?
-	_, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHash(headerHash, true)
+	blockNode, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHash(headerHash, true)
 	if err != nil {
-		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem getting block from best chain by hash: ")
+		return nil, false, false,
+			errors.Wrapf(err, "processHeaderPoS: Problem getting block from best chain by hash: ")
 	}
 	if isInBestHeaderChain {
-		return true, false, nil
+		return blockNode, true, false, nil
 	}
 
 	// If the incoming header is part of a reorg that uncommits the committed tip from the best chain,
 	// then we exit early. Such headers are invalid and should not be synced.
 	committedBlockchainTip, _ := bc.GetCommittedTip()
 	if committedBlockchainTip != nil && committedBlockchainTip.Header.Height >= header.Height {
-		return false, false, errors.New("processHeaderPoS: Header conflicts with committed tip")
+		return nil, false, false, errors.New("processHeaderPoS: Header conflicts with committed tip")
 	}
 
 	// Validate the header and index it in the block index.
 	blockNode, isOrphan, err := bc.validateAndIndexHeaderPoS(header, headerHash, verifySignatures)
 	if err != nil {
-		return false, false, errors.Wrapf(err, "processHeaderPoS: Problem validating and indexing header: ")
+		return blockNode, false, false, errors.Wrapf(err, "processHeaderPoS: Problem validating and indexing header: ")
 	}
 
 	// Don't worry about healing orphan children when we're syncing.
@@ -84,14 +84,14 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 
 	// Exit early if the header is an orphan.
 	if isOrphan {
-		return false, true, nil
+		return blockNode, false, true, nil
 	}
 
 	// Exit early if the header's view is less than the current header chain's tip. The header is not
 	// the new tip for the best header chain.
 	currentTip := bc.headerTip()
 	if header.ProposedInView <= currentTip.Header.ProposedInView {
-		return false, false, nil
+		return blockNode, false, false, nil
 	}
 
 	bc.blockIndex.setHeaderTip(blockNode)
@@ -107,7 +107,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 	//)
 
 	// Success. The header is at the tip of the best header chain.
-	return true, false, nil
+	return blockNode, true, false, nil
 }
 
 // healPointersForOrphanChildren fixes an inconsistency in the block index that may have
@@ -364,7 +364,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	// header and applying it to the header chain will result in the two chains being out of
 	// sync. The header chain is less critical and mutations to it are reversible. So we attempt
 	// to mutate it first before attempting to mutate the block chain.
-	if _, _, err = bc.processHeaderPoS(block.Header, blockHash, verifySignatures); err != nil {
+	if _, _, _, err = bc.processHeaderPoS(block.Header, blockHash, verifySignatures); err != nil {
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem processing header")
 	}
 

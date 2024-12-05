@@ -624,6 +624,8 @@ func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 		blocksAtHeight = []*BlockNode{}
 	} else {
 		// Make sure we don't add the same block node twice.
+		// TODO: we *could* make this more efficient by using a map,
+		// but generally we won't have many blocks at the same height.
 		for ii, blockAtHeight := range blocksAtHeight {
 			if blockAtHeight.Hash.IsEqual(blockNode.Hash) {
 				blocksAtHeight[ii] = blockNode
@@ -1191,6 +1193,7 @@ func fastLog2Floor(n uint32) uint8 {
 	return rv
 }
 
+// TODO: deprecate
 // locateInventory returns the node of the block after the first known block in
 // the locator along with the number of subsequent nodes needed to either reach
 // the provided stop hash or the provided max number of entries.
@@ -1279,6 +1282,7 @@ func (bc *Blockchain) locateInventory(locator []*BlockHash, stopHash *BlockHash,
 	return startNode, total
 }
 
+// TODO: deprecate
 // locateHeaders returns the headers of the blocks after the first known block
 // in the locator until the provided stop hash is reached, or up to the provided
 // max number of block headers.
@@ -1319,6 +1323,7 @@ func (bc *Blockchain) locateHeaders(locator []*BlockHash, stopHash *BlockHash, m
 	return headers
 }
 
+// TODO: deprecate
 // LocateBestBlockChainHeaders returns the headers of the blocks after the first known block
 // in the locator until the provided stop hash is reached, or up to a max of
 // wire.MaxBlockHeadersPerMsg headers. Note that it returns the best headers
@@ -1587,16 +1592,6 @@ func (bc *Blockchain) GetBlock(blockHash *BlockHash) *MsgDeSoBlock {
 	}
 
 	return blk
-}
-
-func (bc *Blockchain) GetBlockAtHeight(height uint32, isHeaderChain bool) (*MsgDeSoBlock, error) {
-	bn, bnExists, err := bc.GetBlockFromBestChainByHeight(uint64(height), isHeaderChain)
-	if !bnExists || err != nil {
-		glog.Errorf("Blockchain.GetBlockAtHeight: Problem getting block by height: %v", err)
-		return nil, err
-	}
-
-	return bc.GetBlock(bn.Hash), nil
 }
 
 // GetBlockNodeWithHash looks for a block node in the bestChain list that matches the hash.
@@ -1936,6 +1931,7 @@ func (bc *Blockchain) GetBlockFromBestChainByHash(blockHash *BlockHash, useHeade
 }
 
 func (bc *Blockchain) GetBlockFromBestChainByHeight(height uint64, useHeaderChain bool) (*BlockNode, bool, error) {
+	// TODO: figure out an optimization for header chain handling uncommitted state.
 	if !useHeaderChain {
 		committedTip, exists := bc.GetCommittedTip()
 		if !exists {
@@ -1944,9 +1940,6 @@ func (bc *Blockchain) GetBlockFromBestChainByHeight(height uint64, useHeaderChai
 		if height >= uint64(committedTip.Height) {
 			// For this, we can just loop back from the tip block.
 			currentNode := bc.blockIndex.GetTip()
-			if useHeaderChain {
-				currentNode = bc.blockIndex.GetHeaderTip()
-			}
 			for currentNode != nil {
 				if uint64(currentNode.Height) == height {
 					return currentNode, true, nil
@@ -1964,10 +1957,15 @@ func (bc *Blockchain) GetBlockFromBestChainByHeight(height uint64, useHeaderChai
 		return nil, false, nil
 	}
 	for _, blockNode := range blockNodes {
-		if !useHeaderChain && blockNode.IsCommitted() {
+		// If block node is committed, then we know it is
+		// in the best chain, whether we're looking at the header chain or not.
+		if blockNode.IsCommitted() {
 			return blockNode, true, nil
 		}
-		// TODO: this is crude and incorrect.
+		// TODO: this is crude and incorrect. We can have multiple headers
+		// at a specific height. It's possible that none of the blocks at
+		// this height are committed yet, but one of them is in the best chain.
+		// How can we figure it out?
 		if useHeaderChain && blockNode.IsHeaderValidated() {
 			return blockNode, true, nil
 		}
@@ -2340,10 +2338,13 @@ func updateBestChainInMemory(mainChainList []*BlockNode, mainChainMap *lru.Cache
 }
 
 // Caller must acquire the ChainLock for writing prior to calling this.
-func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *BlockHash) (_isMainChain bool, _isOrphan bool, _err error) {
+func (bc *Blockchain) processHeaderPoW(
+	blockHeader *MsgDeSoHeader,
+	headerHash *BlockHash,
+) (_blockNode *BlockNode, _isMainChain bool, _isOrphan bool, _err error) {
 	// Only accept the header if its height is below the PoS cutover height.
 	if !bc.params.IsPoWBlockHeight(blockHeader.Height) {
-		return false, false, HeaderErrorBlockHeightAfterProofOfStakeCutover
+		return nil, false, false, HeaderErrorBlockHeightAfterProofOfStakeCutover
 	}
 
 	// Only accept headers if the best chain is still in PoW. Once the best chain reaches the final
@@ -2351,16 +2352,16 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// headers past this point because they will un-commit blocks that are already committed to the PoS
 	// chain.
 	if bc.BlockTip().Header.Height >= bc.params.GetFinalPoWBlockHeight() {
-		return false, false, HeaderErrorBestChainIsAtProofOfStakeCutover
+		return nil, false, false, HeaderErrorBestChainIsAtProofOfStakeCutover
 	}
 
 	// Start by checking if the header already exists in our node
 	// index. If it does, then return an error. We should generally
 	// expect that processHeaderPoW will only be called on headers we
 	// haven't seen before.
-	_, nodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(headerHash, blockHeader.Height)
+	blockNode, nodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(headerHash, blockHeader.Height)
 	if nodeExists {
-		return false, false, HeaderErrorDuplicateHeader
+		return blockNode, false, false, HeaderErrorDuplicateHeader
 	}
 
 	// If we're here then it means we're processing a header we haven't
@@ -2373,7 +2374,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 			"MaxTstampOffsetSeconds %d. blockHeader.TstampSecs=%d; adjustedTime=%d",
 			tstampDiff, bc.params.MaxTstampOffsetSeconds, blockHeader.GetTstampSecs(),
 			bc.timeSource.AdjustedTime().Unix())
-		return false, false, HeaderErrorBlockTooFarInTheFuture
+		return nil, false, false, HeaderErrorBlockTooFarInTheFuture
 	}
 
 	// Try to find this header's parent in our block index.
@@ -2381,13 +2382,13 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// can return early because we don't process unconnectedTxns.
 	// TODO: Should we just return an error if the header is an orphan?
 	if blockHeader.PrevBlockHash == nil {
-		return false, false, HeaderErrorNilPrevHash
+		return nil, false, false, HeaderErrorNilPrevHash
 	}
 	parentNode, parentNodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(blockHeader.PrevBlockHash, blockHeader.Height-1)
 	if !parentNodeExists {
 		// This block is an orphan if its parent doesn't exist and we don't
 		// process unconnectedTxns.
-		return false, true, nil
+		return nil, false, true, nil
 	}
 
 	// If the parent node is invalid then this header is invalid as well. Note that
@@ -2395,7 +2396,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	// ValidateFailed.
 	parentHeader := parentNode.Header
 	if parentHeader == nil || (parentNode.Status&(StatusHeaderValidateFailed|StatusBlockValidateFailed)) != 0 {
-		return false, false, errors.Wrapf(
+		return nil, false, false, errors.Wrapf(
 			HeaderErrorInvalidParent, "Parent header: %v, Status check: %v, Parent node status: %v, Parent node header: %v",
 			parentHeader, (parentNode.Status&(StatusHeaderValidateFailed|StatusBlockValidateFailed)) != 0,
 			parentNode.Status,
@@ -2407,7 +2408,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	if blockHeader.Height != prevHeight+1 {
 		glog.Errorf("processHeaderPoW: Height of block (=%d) is not equal to one greater "+
 			"than the parent height (=%d)", blockHeader.Height, prevHeight)
-		return false, false, HeaderErrorHeightInvalid
+		return nil, false, false, HeaderErrorHeightInvalid
 	}
 
 	// Make sure the block timestamp is greater than the previous block's timestamp.
@@ -2438,7 +2439,7 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 			"before timestamp of previous block %v",
 			time.Unix(int64(blockHeader.GetTstampSecs()), 0),
 			time.Unix(int64(parentHeader.GetTstampSecs()), 0))
-		return false, false, HeaderErrorTimestampTooEarly
+		return nil, false, false, HeaderErrorTimestampTooEarly
 	}
 
 	// Check that the proof of work beats the difficulty as calculated from
@@ -2448,14 +2449,14 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 	diffTarget, err := bc.CalcNextDifficultyTarget(
 		parentNode, blockHeader.Version)
 	if err != nil {
-		return false, false, errors.Wrapf(err,
+		return nil, false, false, errors.Wrapf(err,
 			"ProcessBlock: Problem computing difficulty "+
 				"target from parent block %s", hex.EncodeToString(parentNode.Hash[:]))
 	}
 	diffTargetBigint := HashToBigint(diffTarget)
 	blockHashBigint := HashToBigint(headerHash)
 	if diffTargetBigint.Cmp(blockHashBigint) < 0 {
-		return false, false,
+		return nil, false, false,
 			errors.Wrapf(HeaderErrorBlockDifficultyAboveTarget, "Target: %v, Actual: %v", diffTarget, headerHash)
 	}
 
@@ -2515,17 +2516,21 @@ func (bc *Blockchain) processHeaderPoW(blockHeader *MsgDeSoHeader, headerHash *B
 		bc.blockIndex.setHeaderTip(newNode)
 	}
 
-	return isMainChain, false, nil
+	return blockNode, isMainChain, false, nil
 }
 
 // ProcessHeader is a wrapper around processHeaderPoW and processHeaderPoS, which do the leg-work.
-func (bc *Blockchain) ProcessHeader(blockHeader *MsgDeSoHeader, headerHash *BlockHash, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _err error) {
+func (bc *Blockchain) ProcessHeader(
+	blockHeader *MsgDeSoHeader,
+	headerHash *BlockHash,
+	verifySignatures bool,
+) (_blockNode *BlockNode, _isMainChain bool, _isOrphan bool, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
 	if blockHeader == nil {
 		// If the header is nil then we return an error. Nothing we can do here.
-		return false, false, fmt.Errorf("ProcessHeader: Header is nil")
+		return nil, false, false, fmt.Errorf("ProcessHeader: Header is nil")
 	}
 
 	// If the header's height is after the PoS cut-over fork height, then we use the PoS header processing logic.
@@ -2644,7 +2649,10 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	// first before we do anything. This should create a node and set
 	// the header validation status for it.
 	if !nodeExists {
-		_, isOrphan, err := bc.processHeaderPoW(blockHeader, blockHash)
+		// Note: it's okay that we don't write the block node for the header
+		// to the db here as it happens below when we call
+		// PutHeightHashToNodeInfo
+		_, _, isOrphan, err := bc.processHeaderPoW(blockHeader, blockHash)
 		if err != nil {
 			// If an error occurred processing the header, then the header
 			// should be marked as invalid, which should be sufficient.

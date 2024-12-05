@@ -364,19 +364,20 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 
 func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
 	blockIndexMigrationFileName := filepath.Join(db.Opts().Dir, BlockIndexMigrationFileName)
-	glog.V(0).Info("FileName: ", blockIndexMigrationFileName)
+	glog.V(2).Info("FileName: ", blockIndexMigrationFileName)
 	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
 	if err == nil && hasRunMigration {
-		glog.V(0).Info("Block index migration has already been run")
+		glog.V(2).Info("Block index migration has already been run")
 		return nil
 	}
-	glog.V(0).Info("Running block index migration")
+	glog.V(2).Info("Running block index migration")
 	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
 		return errors.Wrapf(err, "Problem running block index migration")
 	}
 	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
 		return errors.Wrapf(err, "Problem saving block index migration file")
 	}
+	glog.V(2).Info("Block index migration complete")
 	return nil
 }
 
@@ -771,7 +772,21 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 {
 		maxHeadersPerMsg = MaxHeadersPerMsgPos
 	}
-	headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
+	// FIXME: We can eliminate the call to LocateBestBlockChainHeaders and do a much
+	// simpler "shortcut" version that doesn't require complicated tree-traversal bs.
+	// The shortcut would be to just return all headers starting from msg.BlockLocator[0]
+	// up to msg.StopHash or maxHeadersPerMsg, whichever comes first. This would allow
+	// other nodes to sync from us and *keep* in sync with us, while allowing us to delete
+	// ALL of the complicated logic around locators and the best header chain. This all works
+	// because msg.BlockLocator[0] is the requesting-node's tip hash. The rest of the
+	// hashes, and all of the locator bs, are only needed to resolve forks, which can't
+	// happen with PoS anymore.
+	//headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
+
+	headers, err := srv.GetHeadersForLocatorAndStopHash(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
+	if err != nil {
+		glog.Errorf("Server._handleGetHeadersMessage: Error getting headers: %v", err)
+	}
 
 	// Send found headers to the requesting peer.
 	blockTip := srv.blockchain.blockTip()
@@ -783,6 +798,51 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	glog.V(2).Infof("Server._handleGetHeadersMessage: Replied to GetHeaders request "+
 		"with response headers: (%v), tip hash (%v), tip height (%d) from Peer %v",
 		headers, blockTip.Hash, blockTip.Height, pp)
+}
+
+func (srv *Server) GetHeadersForLocatorAndStopHash(
+	locator []*BlockHash,
+	stopHash *BlockHash,
+	maxHeadersPerMsg uint32,
+) ([]*MsgDeSoHeader, error) {
+	var headers []*MsgDeSoHeader
+
+	stopNode, stopNodeExists, stopNodeError := srv.blockchain.GetBlockFromBestChainByHash(stopHash, true)
+	// Special case when there is no block locator provided but only a stop hash.
+	if len(locator) == 0 {
+		if stopNodeError != nil || !stopNodeExists || stopNode == nil {
+			return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Stop hash provided but no stop node found")
+		}
+		return []*MsgDeSoHeader{stopNode.Header}, nil
+	}
+	startNode, startNodeExists, startNodeError := srv.blockchain.GetBlockFromBestChainByHash(locator[0], true)
+	if startNodeError != nil || !startNodeExists || startNode == nil {
+		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Start hash provided but no start node found")
+	}
+	nextNodeHeight := startNode.Header.Height + 1
+	nextNode, nextNodeExists, nextNodeError := srv.blockchain.GetBlockFromBestChainByHeight(nextNodeHeight, true)
+	if nextNodeError != nil {
+		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Error getting start node by height: %v", startNodeError)
+	}
+	if !nextNodeExists || nextNode == nil {
+		return nil, nil
+	}
+	for ii := uint32(0); ii < maxHeadersPerMsg; ii++ {
+		headers = append(headers, nextNode.Header)
+		if stopNode != nil && nextNode.Hash.IsEqual(stopNode.Hash) {
+			break
+		}
+		nextNode, nextNodeExists, nextNodeError = srv.blockchain.GetBlockFromBestChainByHeight(
+			nextNode.Header.Height+1, true)
+		if nextNodeError != nil {
+			glog.Errorf("Server._handleGetHeadersMessage: Error getting next node by height: %v", nextNodeError)
+			break
+		}
+		if !nextNodeExists || nextNode == nil {
+			break
+		}
+	}
+	return headers, nil
 }
 
 // GetSnapshot is used for sending MsgDeSoGetSnapshot messages to peers. We will
@@ -1118,6 +1178,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// Start by processing all the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
+	var blockNodeBatch []*BlockNode
 	for ii, headerReceived := range msg.Headers {
 		// If we've set a maximum height for node sync and we've reached it,
 		// then we will not process any more headers.
@@ -1169,7 +1230,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 		// Process the header, as we haven't seen it before, set verifySignatures to false
 		// if we're in the process of syncing.
-		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, verifySignatures)
+		blockNode, _, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, verifySignatures)
 
 		numLogHeaders := 2000
 		if ii%numLogHeaders == 0 {
@@ -1189,9 +1250,29 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				pp, srv.blockchain.chainState(), err, isOrphan)
 
 			pp.Disconnect("Error processing header")
+			// Just to be safe, we flush all the headers we just got even tho we have a header.
+			currTime := time.Now()
+			if err := PutHeightHashToNodeInfoBatch(
+				srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager); err != nil {
+				glog.Errorf("Server._handleHeaderBundle: Problem writing block nodes to db, error: (%v)", err)
+				return
+			}
+			glog.V(0).Info("Server._handleHeaderBundle: PutHeightHashToNodeInfoBatch took: ", time.Since(currTime))
 			return
 		}
+
+		// Append the block node to the block node batch.
+		if blockNode != nil {
+			blockNodeBatch = append(blockNodeBatch, blockNode)
+		}
 	}
+	currTime := time.Now()
+	if err := PutHeightHashToNodeInfoBatch(
+		srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager); err != nil {
+		glog.Errorf("Server._handleHeaderBundle: Problem writing block nodes to db, error: (%v)", err)
+		return
+	}
+	glog.V(0).Info("Server._handleHeaderBundle: PutHeightHashToNodeInfoBatch took: ", time.Since(currTime))
 
 	// After processing all the headers this will check to see if we are fully current
 	// and send a request to our Peer to start a Mempool sync if so.
