@@ -14,6 +14,7 @@ import (
 )
 
 func TestParsePostgresURI(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// No password.
@@ -34,6 +35,7 @@ func TestParsePostgresURI(t *testing.T) {
 }
 
 func TestEmbedPg(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	return
 

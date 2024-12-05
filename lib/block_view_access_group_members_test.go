@@ -49,6 +49,7 @@ func (data *accessGroupMembersTestData) GetInputType() transactionTestInputType 
 }
 
 func TestBalanceModelAccessGroupMembers(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	t.Run("TestAccessGroupMembersAdd", TestAccessGroupMembersAdd)
@@ -58,6 +59,7 @@ func TestBalanceModelAccessGroupMembers(t *testing.T) {
 }
 
 func TestAccessGroupMembersAdd(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_ = require
 
@@ -399,6 +401,7 @@ func TestAccessGroupMembersAdd(t *testing.T) {
 }
 
 func TestAccessGroupMembersRemove(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_ = require
 
@@ -871,6 +874,7 @@ func TestAccessGroupMembersRemove(t *testing.T) {
 }
 
 func TestAccessGroupMembersUpdate(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_ = require
 
@@ -1536,6 +1540,7 @@ func _setAccessGroupParams(tm *transactionTestMeta) {
 }
 
 func TestAccessGroupMemberTxnSpendingLimitToMetamaskString(t *testing.T) {
+	t.Parallel()
 	toMetamaskString := func(
 		scopeType AccessGroupScopeType,
 		groupKeyName GroupKeyName,
@@ -1601,6 +1606,7 @@ func TestAccessGroupMemberTxnSpendingLimitToMetamaskString(t *testing.T) {
 }
 
 func TestAccessGroupMembersTxnWithDerivedKey(t *testing.T) {
+	t.Parallel()
 	// Initialize test chain and miner.
 	var err error
 	chain, params, db := NewLowDifficultyBlockchain(t)

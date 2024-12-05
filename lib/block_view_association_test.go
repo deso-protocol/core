@@ -12,12 +12,14 @@ import (
 )
 
 func TestBalanceModelAssociations(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	TestAssociations(t)
 }
 
 func TestAssociations(t *testing.T) {
+	t.Parallel()
 	// Run all tests twice: once flushing all txns to the
 	// db, and once just keeping all txns in the mempool.
 	t.Run("flushToDB=true", func(t *testing.T) {
@@ -2205,6 +2207,7 @@ func _submitAssociationTxn(
 }
 
 func _testAssociationsWithDerivedKey(t *testing.T) {
+	t.Parallel()
 	var err error
 
 	// Initialize test chain and miner.

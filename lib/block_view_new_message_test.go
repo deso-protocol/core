@@ -50,12 +50,14 @@ func (data *NewMessageTestData) GetInputType() transactionTestInputType {
 }
 
 func TestBalanceModelNewMessages(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	TestNewMessage(t)
 }
 
 func TestNewMessage(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_ = require
 

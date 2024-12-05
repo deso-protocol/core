@@ -291,6 +291,7 @@ func _doSubmitPostTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func TestBalanceModelSubmitPost(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	t.Run("TestSubmitPost", TestSubmitPost)
@@ -300,6 +301,7 @@ func TestBalanceModelSubmitPost(t *testing.T) {
 }
 
 func TestSubmitPost(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1667,6 +1669,7 @@ func findPostByPostHash(posts []*PostEntry, targetPostHash *BlockHash) (_targetP
 }
 
 func TestDeSoDiamonds(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert

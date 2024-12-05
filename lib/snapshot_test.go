@@ -118,6 +118,7 @@ func (msg *enhancedHeader) ToBytes(preSignature bool) ([]byte, error) {
 }
 
 func TestStateChecksumBasicAddRemove(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_ = require
 

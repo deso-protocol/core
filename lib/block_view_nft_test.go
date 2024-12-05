@@ -823,6 +823,7 @@ func _burnNFTWithTestMeta(
 }
 
 func TestBalanceModelNFTs(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	t.Run("TestNFTBasic", TestNFTBasic)

@@ -7,6 +7,7 @@ import (
 )
 
 func TestBuildProofOfStakeCutoverValidatorBLSPrivateKey(t *testing.T) {
+	t.Parallel()
 	privateKey, err := BuildProofOfStakeCutoverValidatorBLSPrivateKey()
 	require.NoError(t, err)
 
@@ -15,6 +16,7 @@ func TestBuildProofOfStakeCutoverValidatorBLSPrivateKey(t *testing.T) {
 }
 
 func TestBuildProofOfStakeCutoverValidator(t *testing.T) {
+	t.Parallel()
 	validator, err := BuildProofOfStakeCutoverValidator()
 	require.NoError(t, err)
 

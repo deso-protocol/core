@@ -14,6 +14,7 @@ import (
 )
 
 func TestSanityCheckTransactionRegister(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// Empty TransactionRegister
@@ -74,6 +75,7 @@ func TestSanityCheckTransactionRegister(t *testing.T) {
 }
 
 func TestSanityCheckFeeTimeBucket(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// Empty FeeTimeBucket
@@ -132,6 +134,7 @@ func TestSanityCheckFeeTimeBucket(t *testing.T) {
 }
 
 func TestTransactionRegisterPrune(t *testing.T) {
+	t.Parallel()
 	seed := int64(111)
 	testCases := 1000
 	feeRange := uint64(10000)
@@ -255,6 +258,7 @@ func TestTransactionRegisterPrune(t *testing.T) {
 }
 
 func TestTransactionRegisterWithRemoves(t *testing.T) {
+	t.Parallel()
 	seed := int64(88)
 	testCases := 1000
 	feeRange := uint64(10000)
@@ -284,6 +288,7 @@ func TestTransactionRegisterWithRemoves(t *testing.T) {
 }
 
 func TestTransactionRegisterBasic(t *testing.T) {
+	t.Parallel()
 	seed := int64(77)
 	testCases := 1000
 	feeRange := uint64(10000)
@@ -307,6 +312,7 @@ func TestTransactionRegisterBasic(t *testing.T) {
 }
 
 func TestFeeTimeBucketRemove(t *testing.T) {
+	t.Parallel()
 	seed := int64(44)
 	testCases := 1000
 	exponentRange := 100
@@ -340,6 +346,7 @@ func TestFeeTimeBucketRemove(t *testing.T) {
 }
 
 func TestFeeTimeBucketBasic(t *testing.T) {
+	t.Parallel()
 	seed := int64(33)
 	testCases := 1000
 	exponentRange := 100
@@ -526,6 +533,7 @@ func _testBucketStandardRemoveTest(t *testing.T, txns []*MempoolTx, globalParams
 
 // TestComputeFeeBucketRanges checks that the fee bucket ranges are computed correctly and deterministically.
 func TestComputeFeeBucketRanges(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_ = require
 
@@ -552,6 +560,7 @@ func TestComputeFeeBucketRanges(t *testing.T) {
 
 // TestComputeFeeBucketWithFee checks that the fee bucket exponent is computed correctly from a fee.
 func TestComputeFeeBucketWithFee(t *testing.T) {
+	t.Parallel()
 	globalParams := _testGetDefaultGlobalParams()
 	baseRate, bucketMultiplier := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
 
@@ -569,6 +578,7 @@ func TestComputeFeeBucketWithFee(t *testing.T) {
 }
 
 func TestHasGlobalParamChange(t *testing.T) {
+	t.Parallel()
 	// Create the transaction register.
 	globalParams := _testGetDefaultGlobalParams()
 	tr := NewTransactionRegister()
@@ -590,6 +600,7 @@ func TestHasGlobalParamChange(t *testing.T) {
 }
 
 func TestCopyWithNewGlobalParams(t *testing.T) {
+	t.Parallel()
 	// Create the transaction register.
 	globalParams := _testGetDefaultGlobalParams()
 	tr := NewTransactionRegister()

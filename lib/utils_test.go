@@ -8,6 +8,7 @@ import (
 )
 
 func TestSafeMakeSliceWithLength(t *testing.T) {
+	t.Parallel()
 	badSlice, err := SafeMakeSliceWithLength[byte](math.MaxUint64)
 	require.NotNil(t, err)
 	require.Nil(t, badSlice)
@@ -18,6 +19,7 @@ func TestSafeMakeSliceWithLength(t *testing.T) {
 }
 
 func TestSafeMakeSliceWithLengthAndCapacity(t *testing.T) {
+	t.Parallel()
 	badSliceLength, err := SafeMakeSliceWithLengthAndCapacity[byte](math.MaxUint64-10, 0)
 	require.NotNil(t, err)
 	require.Nil(t, badSliceLength)
@@ -33,12 +35,14 @@ func TestSafeMakeSliceWithLengthAndCapacity(t *testing.T) {
 
 // Note: I can't find a capacity that breaks the make map function
 func TestSafeMakeMapWithCapacity(t *testing.T) {
+	t.Parallel()
 	goodMap, err := SafeMakeMapWithCapacity[string, []byte](1000)
 	require.Nil(t, err)
 	require.NotNil(t, goodMap)
 }
 
 func TestHashUint64ToUint64(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, uint64(0x48dda5bbe9171a66), hashUint64ToUint64(0))
 	require.Equal(t, uint64(0x6c70d57af53dbf4d), hashUint64ToUint64(1))
 	require.Equal(t, uint64(0xf90387edb7755d08), hashUint64ToUint64(2))

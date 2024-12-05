@@ -13,6 +13,7 @@ import (
 )
 
 func TestCreateBlockTemplate(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	seed := int64(887)
 	rand := rand.New(rand.NewSource(seed))
@@ -85,6 +86,7 @@ func TestCreateBlockTemplate(t *testing.T) {
 }
 
 func TestCreateBlockWithoutHeader(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	seed := int64(881)
 	rand := rand.New(rand.NewSource(seed))
@@ -174,6 +176,7 @@ func TestCreateBlockWithoutHeader(t *testing.T) {
 }
 
 func TestGetBlockTransactions(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	seed := int64(381)
 	rand := rand.New(rand.NewSource(seed))

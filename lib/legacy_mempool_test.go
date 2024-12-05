@@ -41,6 +41,7 @@ func _setupFiveBlocks(t *testing.T) (*Blockchain, *DeSoParams, []byte, []byte) {
 // Create a chain of transactions that is too long for our mempool to
 // handle and ensure it gets rejected.
 func TestMempoolLongChainOfDependencies(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	chain, _, senderPkBytes, recipientPkBytes := _setupFiveBlocks(t)
@@ -106,6 +107,7 @@ func TestMempoolLongChainOfDependencies(t *testing.T) {
 // through the mempool at once and verify that they are rejected when
 // a ratelimit is set.
 func TestMempoolRateLimit(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// Set the LowFeeTxLimitBytesPerMinute very low so that we can trigger
@@ -217,6 +219,7 @@ func TestMempoolRateLimit(t *testing.T) {
 // A chain of transactions one after the other each spending the change
 // output of the previous transaction with the same key.
 func TestMempoolAugmentedUtxoViewTransactionChain(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	chain, params, senderPkBytes, recipientPkBytes := _setupFiveBlocks(t)

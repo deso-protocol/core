@@ -40,6 +40,7 @@ const (
 )
 
 func TestProcessBlock(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -450,6 +451,7 @@ func _getBalanceWithView(t *testing.T, chain *Blockchain, utxoView *UtxoView, pk
 }
 
 func TestBalanceModelBlockTests(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 	// This test assumes we're using PoW blocks, and thus we need to set the PoS cut-over
 	// fork height to some distant future height
@@ -465,6 +467,7 @@ func TestBalanceModelBlockTests(t *testing.T) {
 }
 
 func TestBalanceModelBlockTests2(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	t.Run("TestCalcNextDifficultyTargetHalvingDoublingHitLimit", TestCalcNextDifficultyTargetHalvingDoublingHitLimit)
@@ -474,6 +477,7 @@ func TestBalanceModelBlockTests2(t *testing.T) {
 }
 
 func TestBalanceModelBlockTests3(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	t.Run("TestCalcNextDifficultyTargetSlightlyOff", TestCalcNextDifficultyTargetSlightlyOff)
@@ -483,6 +487,7 @@ func TestBalanceModelBlockTests3(t *testing.T) {
 }
 
 func TestBasicTransferReorg(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -635,6 +640,7 @@ func TestBasicTransferReorg(t *testing.T) {
 }
 
 func TestProcessBlockConnectBlocks(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -672,6 +678,7 @@ func _shouldConnectBlock(blk *MsgDeSoBlock, t *testing.T, chain *Blockchain) {
 }
 
 func TestSeedBalancesTest(t *testing.T) {
+	t.Parallel()
 	assert, require := assert.New(t), require.New(t)
 	_, _ = assert, require
 
@@ -692,6 +699,7 @@ func init() {
 }
 
 func TestProcessHeaderskReorgBlocks(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -786,6 +794,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 }
 
 func TestProcessBlockReorgBlocks(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -988,6 +997,7 @@ func _assembleBasicTransferTxnFullySigned(t *testing.T, chain *Blockchain,
 }
 
 func TestAddInputsAndChangeToTransaction(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1103,6 +1113,7 @@ func TestAddInputsAndChangeToTransaction(t *testing.T) {
 }
 
 func TestValidateBasicTransfer(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1190,6 +1201,7 @@ func TestValidateBasicTransfer(t *testing.T) {
 }
 
 func TestComputeMerkle(t *testing.T) {
+	t.Parallel()
 	//assert := assert.New(t)
 	//require := require.New(t)
 	//_ = assert
@@ -1217,6 +1229,7 @@ func TestComputeMerkle(t *testing.T) {
 }
 
 func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1319,6 +1332,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 }
 
 func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1421,6 +1435,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 }
 
 func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1480,6 +1495,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 }
 
 func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1538,6 +1554,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 }
 
 func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -1656,6 +1673,7 @@ func _testMerkleRoot(t *testing.T, shouldFail bool, blk *MsgDeSoBlock) {
 }
 
 func TestBadMerkleRoot(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -1669,6 +1687,7 @@ func TestBadMerkleRoot(t *testing.T) {
 }
 
 func TestBadBlockSignature(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -1724,6 +1743,7 @@ func TestBadBlockSignature(t *testing.T) {
 }
 
 func TestForbiddenBlockSignaturePubKey(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_, _ = assert, require
@@ -1782,6 +1802,7 @@ func TestForbiddenBlockSignaturePubKey(t *testing.T) {
 }
 
 func TestPGGenesisBlock(t *testing.T) {
+	t.Parallel()
 	// We skip this test in buildkite CI, but include it in GH actions postgres testing.
 	// Comment out this conditional to test locally.
 	if len(os.Getenv("POSTGRES_URI")) == 0 {

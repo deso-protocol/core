@@ -9,6 +9,7 @@ import (
 )
 
 func TestCurrentRandomSeedHash(t *testing.T) {
+	t.Parallel()
 	chain, params, db := NewLowDifficultyBlockchain(t)
 	utxoView := NewUtxoView(db, params, chain.postgres, chain.snapshot, chain.eventManager)
 	blockHeight := uint64(0)

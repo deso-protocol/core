@@ -12,6 +12,7 @@ import (
 )
 
 func TestStaking(t *testing.T) {
+	t.Parallel()
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
 
@@ -749,6 +750,7 @@ func _submitUnlockStakeTxn(
 }
 
 func TestStakingWithDerivedKey(t *testing.T) {
+	t.Parallel()
 	var derivedKeyPriv string
 	var err error
 
@@ -1533,6 +1535,7 @@ func TestStakingWithDerivedKey(t *testing.T) {
 }
 
 func TestGetTopStakesByStakeAmount(t *testing.T) {
+	t.Parallel()
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
 
@@ -1700,6 +1703,7 @@ func _testGetTopStakesByStakeAmount(t *testing.T, flushToDB bool) {
 }
 
 func TestGetLockedStakeEntriesInRange(t *testing.T) {
+	t.Parallel()
 	// For this test, we manually place LockedStakeEntries in the database and
 	// UtxoView to test merging the two to GetLockedStakeEntriesInRange.
 
@@ -1814,6 +1818,7 @@ func TestGetLockedStakeEntriesInRange(t *testing.T) {
 }
 
 func TestStakeLockupEpochDuration(t *testing.T) {
+	t.Parallel()
 	var err error
 
 	// Initialize balance model fork heights.
@@ -1973,6 +1978,7 @@ func TestStakeLockupEpochDuration(t *testing.T) {
 }
 
 func TestStakingToJailedValidator(t *testing.T) {
+	t.Parallel()
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
 

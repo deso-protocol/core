@@ -11,6 +11,7 @@ import (
 )
 
 func TestStateChangeEntryEncoder(t *testing.T) {
+	t.Parallel()
 	postBytesHex := "13a546bba07e9cd96e29cea659b3bb6de1b5144a50bf2a0c94d05701861d8254"
 	byteArray, err := hex.DecodeString(postBytesHex)
 	if err != nil {

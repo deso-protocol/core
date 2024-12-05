@@ -11,6 +11,7 @@ import (
 )
 
 func TestVerifyingBLSSignatures(t *testing.T) {
+	t.Parallel()
 	// Generate two BLS public/private key pairs.
 	blsPrivateKey1 := _generateRandomBLSPrivateKey(t)
 	blsPublicKey1 := blsPrivateKey1.PublicKey()
@@ -331,6 +332,7 @@ func TestVerifyingBLSSignatures(t *testing.T) {
 }
 
 func TestJsonMarshalingBLSKeys(t *testing.T) {
+	t.Parallel()
 	// Generate random BLS PrivateKey, PublicKey, and Signature.
 	privateKey := _generateRandomBLSPrivateKey(t)
 	publicKey := privateKey.PublicKey()

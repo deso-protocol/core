@@ -70,6 +70,7 @@ func _doFollowTxn(t *testing.T, chain *Blockchain, db *badger.DB,
 }
 
 func TestBalanceModelFollows(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	TestFollowTxns(t)

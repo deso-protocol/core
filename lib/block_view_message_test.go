@@ -17,6 +17,7 @@ import (
 )
 
 func TestBasePointSignature(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	// Retrieve the base point bytes and parse them to a public key.
 	basePointBytes := GetS256BasePointCompressed()
@@ -114,6 +115,7 @@ func _privateMessageWithExtraData(t *testing.T, chain *Blockchain, db *badger.DB
 }
 
 func TestBalanceModelPrivateMessages(t *testing.T) {
+	t.Parallel()
 	setBalanceModelBlockHeights(t)
 
 	t.Run("TestPrivateMessages", TestPrivateMessages)
@@ -122,6 +124,7 @@ func TestBalanceModelPrivateMessages(t *testing.T) {
 }
 
 func TestPrivateMessage(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -761,6 +764,7 @@ func _initMessagingKey(senderPub []byte, messagingPublicKey []byte, messagingKey
 }
 
 func TestMessagingKeys(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	_ = require
@@ -1800,6 +1804,7 @@ func _verifyMessages(testMeta *TestMeta, expectedMessageEntries map[PublicKey][]
 // In these tests we basically want to verify that messages are correctly added to UtxoView and DB
 // after we send V3 group messages.
 func TestGroupMessages(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	_ = require

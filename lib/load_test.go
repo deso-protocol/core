@@ -15,6 +15,7 @@ import (
 
 // Increase numProfiles and numPostsPerProfile to load test
 func TestComputeMaxTPS(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -206,6 +207,7 @@ func TestComputeMaxTPS(t *testing.T) {
 
 // Increase numBlocksToMine to load test
 func TestConnectBlocksLoadTest(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert

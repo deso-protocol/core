@@ -39,6 +39,7 @@ var expectedBlockHeaderVersion1 = &MsgDeSoHeader{
 
 // Check that all state db prefixes have been correctly mapped to DeSoEncoder types via StatePrefixToDeSoEncoder
 func TestStatePrefixToDeSoEncoder(t *testing.T) {
+	t.Parallel()
 	for prefixByte, isState := range StatePrefixes.StatePrefixesMap {
 		prefix := []byte{prefixByte}
 		isEncoder, encoder := StatePrefixToDeSoEncoder(prefix)
@@ -115,6 +116,7 @@ func GetTestBadgerDb() (_db *badger.DB, _dir string) {
 }
 
 func TestBlockNodeSerialize(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert
@@ -131,6 +133,7 @@ func TestBlockNodeSerialize(t *testing.T) {
 }
 
 func TestBlockNodePutGet(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	_ = assert

@@ -7,6 +7,7 @@ import (
 )
 
 func TestCurrentEpoch(t *testing.T) {
+	t.Parallel()
 	var epochEntry *EpochEntry
 	var err error
 

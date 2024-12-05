@@ -7,6 +7,7 @@ import (
 )
 
 func TestNewBLSKeystore(t *testing.T) {
+	t.Parallel()
 	// Test empty string
 	{
 		_, err := NewBLSKeystore("")
@@ -41,6 +42,7 @@ func TestNewBLSKeystore(t *testing.T) {
 }
 
 func TestUniqueBLSSignatureOpCodes(t *testing.T) {
+	t.Parallel()
 	opCodes := GetAllBLSSignatureOpCodes()
 	require.Len(t, opCodes, 3)
 	require.Contains(t, opCodes, BLSSignatureOpCodeValidatorVote)

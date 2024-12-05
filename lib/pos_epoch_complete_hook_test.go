@@ -12,6 +12,7 @@ import (
 )
 
 func TestIsLastBlockInCurrentEpoch(t *testing.T) {
+	t.Parallel()
 	var isLastBlockInCurrentEpoch bool
 
 	// Initialize balance model fork heights.
@@ -54,6 +55,7 @@ func TestIsLastBlockInCurrentEpoch(t *testing.T) {
 }
 
 func TestRunEpochCompleteHook(t *testing.T) {
+	t.Parallel()
 	// Initialize balance model fork heights.
 	setBalanceModelBlockHeights(t)
 	// Initialize PoS fork heights.
@@ -540,6 +542,7 @@ func TestRunEpochCompleteHook(t *testing.T) {
 }
 
 func TestStakingRewardDistribution(t *testing.T) {
+	t.Parallel()
 	DeSoTestnetParams.DefaultEpochDurationNumBlocks = uint64(1)
 	GlobalDeSoParams.DefaultEpochDurationNumBlocks = uint64(1)
 	resetDefaultEpochDurationNumBlocks := func() {
