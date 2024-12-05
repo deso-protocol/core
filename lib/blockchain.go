@@ -454,9 +454,9 @@ func (nn *BlockNode) Ancestor(height uint32, blockIndex *BlockIndex) *BlockNode 
 // height minus provided distance.
 //
 // This function is safe for concurrent access.
-func (nn *BlockNode) RelativeAncestor(distance uint32, blockIndex *BlockIndex) *BlockNode {
-	return nn.Ancestor(nn.Height-distance, blockIndex)
-}
+//func (nn *BlockNode) RelativeAncestor(distance uint32, blockIndex *BlockIndex) *BlockNode {
+//	return nn.Ancestor(nn.Height-distance, blockIndex)
+//}
 
 // CalcNextDifficultyTarget computes the difficulty target expected of the
 // next block.
@@ -1215,7 +1215,7 @@ func (bc *Blockchain) locateInventory(locator []*BlockHash, stopHash *BlockHash,
 
 	// There are no block locators so a specific block is being requested
 	// as identified by the stop hash.
-	stopNode, stopNodeExists, stopNodeError := bc.GetBlockFromBestChainByHash(stopHash, true)
+	stopNode, stopNodeExists, stopNodeError := bc.GetBlockFromBestChainByHashAndOptionalHeight(stopHash, nil, true)
 	if len(locator) == 0 {
 		if stopNodeError != nil || !stopNodeExists || stopNode == nil {
 			// TODO: what should we really do here?
@@ -1884,8 +1884,19 @@ func (bc *Blockchain) BestChain() []*BlockNode {
 	panic("BestChain not supported.")
 }
 
-func (bc *Blockchain) GetBlockFromBestChainByHash(blockHash *BlockHash, useHeaderChain bool) (*BlockNode, bool, error) {
-	bn, exists, err := bc.blockIndex.GetBlockNodeByHashOnly(blockHash)
+func (bc *Blockchain) GetBlockFromBestChainByHashAndOptionalHeight(
+	blockHash *BlockHash,
+	optionalHeight *uint64,
+	useHeaderChain bool,
+) (*BlockNode, bool, error) {
+	var bn *BlockNode
+	var exists bool
+	var err error
+	if optionalHeight != nil {
+		bn, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(blockHash, *optionalHeight)
+	} else {
+		bn, exists, err = bc.blockIndex.GetBlockNodeByHashOnly(blockHash)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -1906,11 +1917,11 @@ func (bc *Blockchain) GetBlockFromBestChainByHash(blockHash *BlockHash, useHeade
 		blockTip = bc.HeaderTip()
 	}
 	if blockTip == nil {
-		return nil, false, fmt.Errorf("GetBlockFromBestChainByHash: Block tip not found: use header chain: %v", useHeaderChain)
+		return nil, false, fmt.Errorf("GetBlockFromBestChainByHashAndOptionalHeight: Block tip not found: use header chain: %v", useHeaderChain)
 	}
 	committedTip, exists := bc.GetCommittedTip()
 	if !exists {
-		return nil, false, errors.New("GetBlockFromBestChainByHash: Committed tip not found")
+		return nil, false, errors.New("GetBlockFromBestChainByHashAndOptionalHeight: Committed tip not found")
 	}
 	if uint64(bn.Height) > uint64(blockTip.Height) || uint64(bn.Height) < uint64(committedTip.Height) {
 		return nil, false, nil

@@ -807,7 +807,7 @@ func (srv *Server) GetHeadersForLocatorAndStopHash(
 ) ([]*MsgDeSoHeader, error) {
 	var headers []*MsgDeSoHeader
 
-	stopNode, stopNodeExists, stopNodeError := srv.blockchain.GetBlockFromBestChainByHash(stopHash, true)
+	stopNode, stopNodeExists, stopNodeError := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(stopHash, nil, true)
 	// Special case when there is no block locator provided but only a stop hash.
 	if len(locator) == 0 {
 		if stopNodeError != nil || !stopNodeExists || stopNode == nil {
@@ -815,7 +815,7 @@ func (srv *Server) GetHeadersForLocatorAndStopHash(
 		}
 		return []*MsgDeSoHeader{stopNode.Header}, nil
 	}
-	startNode, startNodeExists, startNodeError := srv.blockchain.GetBlockFromBestChainByHash(locator[0], true)
+	startNode, startNodeExists, startNodeError := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(locator[0], nil, true)
 	if startNodeError != nil || !startNodeExists || startNode == nil {
 		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Start hash provided but no start node found")
 	}
@@ -1108,18 +1108,10 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	if checkpointBlockInfo == nil {
 		return true, false
 	}
-	var hasSeenCheckpointBlockHash bool
-	var checkpointBlockNode *BlockNode
-	var err error
 	srv.blockchain.ChainLock.RLock()
 	defer srv.blockchain.ChainLock.RUnlock()
-	if isHeaderChain {
-		checkpointBlockNode, hasSeenCheckpointBlockHash, err = srv.blockchain.GetBlockFromBestChainByHash(
-			checkpointBlockInfo.Hash, true)
-	} else {
-		checkpointBlockNode, hasSeenCheckpointBlockHash, err = srv.blockchain.GetBlockFromBestChainByHash(
-			checkpointBlockInfo.Hash, false)
-	}
+	checkpointBlockNode, hasSeenCheckpointBlockHash, err := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(
+		checkpointBlockInfo.Hash, &checkpointBlockInfo.Height, isHeaderChain)
 	if err != nil {
 		glog.Fatalf("shouldVerifySignatures: Problem getting checkpoint block node from best chain: %v", err)
 	}
@@ -1149,8 +1141,8 @@ func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
 	if checkpointBlockInfo == nil {
 		return "<No checkpoint block info>"
 	}
-	_, hasSeenCheckPointBlockHash, err := srv.blockchain.GetBlockFromBestChainByHash(
-		checkpointBlockInfo.Hash, isHeaders)
+	_, hasSeenCheckPointBlockHash, err := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(
+		checkpointBlockInfo.Hash, &checkpointBlockInfo.Height, isHeaders)
 
 	if err != nil {
 		glog.Fatalf("getCheckpointSyncingStatus: Problem getting checkpoint block node from best chain: %v", err)

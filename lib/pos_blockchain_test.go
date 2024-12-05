@@ -1338,7 +1338,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	ancestors, _, err := bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)
 	checkBestChainForHash := func(hash *BlockHash) bool {
-		_, exists, err := bc.GetBlockFromBestChainByHash(hash, false)
+		_, exists, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(hash, nil, false)
 		require.NoError(t, err)
 		return exists
 	}
@@ -1353,7 +1353,7 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, appliedNewTip)
 	// hash 3 should no longer be in the best chain or best chain map
-	_, hash3ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash3, false)
+	_, hash3ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(hash3, nil, false)
 	require.NoError(t, err)
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
@@ -1361,14 +1361,14 @@ func TestTryApplyNewTip(t *testing.T) {
 	require.Len(t, disconnectedBlockHashes, 1)
 
 	// newBlock should be in the best chain and the best chain map and should be the tip.
-	_, newBlockExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(newBlockHash, false)
+	_, newBlockExistsInBestChainMap, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(newBlockHash, nil, false)
 	require.NoError(t, err)
 	require.True(t, newBlockExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(newBlockHash))
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 
 	// Make sure block 2 and block 1 are still in the best chain.
-	_, hash2ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash2, false)
+	_, hash2ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(hash2, nil, false)
 	require.NoError(t, err)
 	require.True(t, hash2ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash2))
@@ -1428,22 +1428,22 @@ func TestTryApplyNewTip(t *testing.T) {
 	// newBlockHash should be tip.
 	require.True(t, bc.BlockTip().Hash.IsEqual(newBlockHash))
 	// hash 3 should no longer be in the best chain or best chain map
-	_, hash3ExistsInBestChainMap, err = bc.GetBlockFromBestChainByHash(hash3, false)
+	_, hash3ExistsInBestChainMap, err = bc.GetBlockFromBestChainByHashAndOptionalHeight(hash3, nil, false)
 	require.NoError(t, err)
 	require.False(t, hash3ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash3))
 	// hash 2 should no longer be in the best chain or best chain map
-	_, hash2ExistsInBestChainMap, err = bc.GetBlockFromBestChainByHash(hash2, false)
+	_, hash2ExistsInBestChainMap, err = bc.GetBlockFromBestChainByHashAndOptionalHeight(hash2, nil, false)
 	require.NoError(t, err)
 	require.False(t, hash2ExistsInBestChainMap)
 	require.False(t, checkBestChainForHash(hash2))
 	// hash 4 should be in the best chain and the best chain map
-	_, hash4ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash4, false)
+	_, hash4ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(hash4, nil, false)
 	require.NoError(t, err)
 	require.True(t, hash4ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash4))
 	// hash 5 should be in the best chain and the best chain map
-	_, hash5ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHash(hash5, false)
+	_, hash5ExistsInBestChainMap, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(hash5, nil, false)
 	require.NoError(t, err)
 	require.True(t, hash5ExistsInBestChainMap)
 	require.True(t, checkBestChainForHash(hash5))
@@ -1670,7 +1670,7 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 	for _, committedHash := range committedBlocks {
 		// Okay so let's make sure the block is committed.
-		blockNode, exists, err := testMeta.chain.GetBlockFromBestChainByHash(committedHash, false)
+		blockNode, exists, err := testMeta.chain.GetBlockFromBestChainByHashAndOptionalHeight(committedHash, nil, false)
 		require.NoError(testMeta.t, err)
 		require.True(testMeta.t, exists)
 		require.True(testMeta.t, blockNode.IsCommitted())
@@ -1696,7 +1696,7 @@ func _verifyCommitRuleHelper(testMeta *TestMeta, committedBlocks []*BlockHash, u
 	}
 	for _, uncommittedBlockHash := range uncommittedBlocks {
 		// Okay so let's make sure the block is uncommitted.
-		blockNode, exists, err := testMeta.chain.GetBlockFromBestChainByHash(uncommittedBlockHash, false)
+		blockNode, exists, err := testMeta.chain.GetBlockFromBestChainByHashAndOptionalHeight(uncommittedBlockHash, nil, false)
 		require.NoError(testMeta.t, err)
 		require.True(testMeta.t, exists)
 		require.False(testMeta.t, blockNode.IsCommitted())
@@ -1889,7 +1889,7 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		// Timeout block will no longer be in best chain, and will still be in an uncommitted state in the block index
 		_verifyCommitRuleHelper(testMeta, []*BlockHash{blockHash1, blockHash2}, []*BlockHash{blockHash3, reorgBlockHash}, blockHash2)
 		_verifyRandomSeedHashHelper(testMeta, reorgBlock)
-		_, exists, err := testMeta.chain.GetBlockFromBestChainByHash(timeoutBlockHash, false)
+		_, exists, err := testMeta.chain.GetBlockFromBestChainByHashAndOptionalHeight(timeoutBlockHash, nil, false)
 		require.NoError(t, err)
 		require.False(t, exists)
 

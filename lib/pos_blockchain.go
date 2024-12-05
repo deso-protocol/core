@@ -53,7 +53,7 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 	// Here we explicitly check the bestHeaderChain.ChainMap to make sure the in-memory struct is properly
 	// updated. This is necessary because the block index may have been updated with the header but the
 	// bestHeaderChain.ChainMap may not have been updated yet.
-	blockNode, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHash(headerHash, true)
+	blockNode, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(headerHash, &header.Height, true)
 	if err != nil {
 		return nil, false, false,
 			errors.Wrapf(err, "processHeaderPoS: Problem getting block from best chain by hash: ")
