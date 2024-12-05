@@ -941,7 +941,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 
 	// Go through the block nodes in the blockchain and download the blocks if they're not stored.
 	for ii := uint32(srv.blockchain.lowestBlockNotStored); ii <= srv.blockchain.blockTip().Height; ii++ {
-		blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(ii), false)
+		blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(ii), true)
 		if err != nil {
 			glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
 			return
@@ -1248,7 +1248,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			pp.Disconnect("Error processing header")
 			// Just to be safe, we flush all the headers we just got even tho we have a header.
 			currTime := time.Now()
-			if err := PutHeightHashToNodeInfoBatch(
+			if err = PutHeightHashToNodeInfoBatch(
 				srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager); err != nil {
 				glog.Errorf("Server._handleHeaderBundle: Problem writing block nodes to db, error: (%v)", err)
 				return
