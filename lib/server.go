@@ -972,7 +972,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 				}
 				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
 				// the array index.
-				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(currentHeight, false)
+				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(currentHeight, true)
 				if err != nil {
 					glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
 					return
@@ -1846,6 +1846,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist")
 		// TODO: should we return here?
 	}
+	// Set the block tip to the snapshot height block node.
+	srv.blockchain.blockIndex.setTip(currentNode)
 	for currentNode.Height > 0 {
 		//for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
 		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
@@ -1853,7 +1855,6 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 		currentNode.Status |= StatusBlockValidated
 		currentNode.Status |= StatusBlockCommitted
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-		srv.blockchain.blockIndex.setTip(currentNode)
 		blockNodeBatch = append(blockNodeBatch, currentNode)
 		if (srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight-uint64(currentNode.Height))%100000 == 0 {
 			glog.V(0).Infof("Time to process %v of %v block nodes in %v",
