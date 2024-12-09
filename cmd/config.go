@@ -266,7 +266,6 @@ func (config *Config) Print() {
 		glog.Infof("MaxSyncBlockHeight: %v", config.MaxSyncBlockHeight)
 	}
 
-	glog.Infof("Connect IPs: %s", config.ConnectIPs)
 	if len(config.ConnectIPs) > 0 {
 		glog.Infof("Connect IPs: %s", config.ConnectIPs)
 	}

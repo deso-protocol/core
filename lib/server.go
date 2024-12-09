@@ -941,6 +941,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 
 	// Go through the block nodes in the blockchain and download the blocks if they're not stored.
 	for ii := uint32(srv.blockchain.lowestBlockNotStored); ii <= srv.blockchain.blockTip().Height; ii++ {
+		// TODO: this may be really slow.
 		blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(ii), true)
 		if err != nil {
 			glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
@@ -972,6 +973,7 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 				}
 				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
 				// the array index.
+				// TODO: this may be really slow.
 				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(currentHeight, true)
 				if err != nil {
 					glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
