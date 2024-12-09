@@ -205,7 +205,7 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	}
 
 	// Verify that the header is properly formed.
-	if err := bc.isValidBlockHeaderPoS(header); err != nil {
+	if err = bc.isValidBlockHeaderPoS(header); err != nil {
 		return nil, false, bc.storeValidateFailedHeaderInBlockIndexWithWrapperError(
 			header, headerHash, errors.New("validateAndIndexHeaderPoS: Header failed validations"),
 		)
@@ -249,8 +249,11 @@ func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	if block == nil {
 		return false, false, nil, fmt.Errorf("ProcessBlockPoS: Block is nil")
 	}
-
-	return bc.processBlockPoS(block, currentView, verifySignatures)
+	blockHash, err := block.Hash()
+	if err != nil {
+		return false, false, nil, errors.Wrap(err, "ProcessBlockPoS: Problem hashing block")
+	}
+	return bc.processBlockPoS(block, blockHash, currentView, verifySignatures)
 }
 
 // processBlockPoS runs the Fast-HotStuff block connect and commit rule as follows:
@@ -262,7 +265,12 @@ func (bc *Blockchain) ProcessBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 //  5. Try to apply the incoming block as the tip (performing reorgs as necessary). If it can't be applied, exit here.
 //  6. Run the commit rule - If applicable, flushes the incoming block's grandparent to the DB
 //  7. Notify listeners via the EventManager of which blocks have been removed and added.
-func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, verifySignatures bool) (
+func (bc *Blockchain) processBlockPoS(
+	block *MsgDeSoBlock,
+	blockHash *BlockHash,
+	currentView uint64,
+	verifySignatures bool,
+) (
 	_success bool,
 	_isOrphan bool,
 	_missingBlockHashes []*BlockHash,
@@ -277,9 +285,12 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 	}
 
 	// If we can't hash the block, we can never store in the block index and we should throw it out immediately.
-	blockHash, err := block.Hash()
-	if err != nil {
-		return false, false, nil, errors.Wrapf(err, "processBlockPoS: Problem hashing block")
+	if blockHash == nil {
+		var err error
+		blockHash, err = block.Hash()
+		if err != nil {
+			return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem hashing block")
+		}
 	}
 
 	// In hypersync archival mode, we may receive blocks that have already been processed and committed during state
@@ -310,7 +321,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		// on our best chain. Try to process the orphan by running basic validations.
 		// If it passes basic integrity checks, we'll store it with the hope that we
 		// will eventually get a parent that connects to our best chain.
-		return false, true, missingBlockHashes, bc.processOrphanBlockPoS(block)
+		return false, true, missingBlockHashes, bc.processOrphanBlockPoS(block, blockHash)
 	}
 
 	if err != nil {
@@ -425,7 +436,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			}
 			var appliedNewTipOrphan bool
 			if appliedNewTipOrphan, _, _, err = bc.processBlockPoS(
-				orphanBlock, currentView, verifySignatures); err != nil {
+				orphanBlock, blockNodeAtNextHeight.Hash, currentView, verifySignatures); err != nil {
 				glog.Errorf("processBlockPoS: Problem validating orphan block %v", blockNodeAtNextHeight.Hash)
 				continue
 			}
@@ -444,7 +455,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 // As a spam-prevention measure, we will not store a block if it fails the QC or leader check
 // and simply throw it away. If it fails the other integrity checks, we'll store it
 // as validate failed.
-func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
+func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock, blockHash *BlockHash) error {
 	// Construct a UtxoView, so we can perform the QC and leader checks.
 	utxoView := bc.GetCommittedTipView()
 
@@ -555,9 +566,11 @@ func (bc *Blockchain) processOrphanBlockPoS(block *MsgDeSoBlock) error {
 		return nil
 	}
 
-	blockHash, err := block.Header.Hash()
-	if err != nil {
-		return errors.Wrap(err, "processOrphanBlockPoS: Problem hashing block")
+	if blockHash == nil {
+		blockHash, err = block.Header.Hash()
+		if err != nil {
+			return errors.Wrap(err, "processOrphanBlockPoS: Problem hashing block")
+		}
 	}
 
 	// All blocks should pass the basic integrity validations, which ensure the block
@@ -1542,7 +1555,8 @@ func (bc *Blockchain) upsertBlockAndBlockNodeToDB(block *MsgDeSoBlock, blockNode
 	// Store the block in badger
 	err := bc.db.Update(func(txn *badger.Txn) error {
 		if storeFullBlock {
-			if innerErr := PutBlockHashToBlockWithTxn(txn, bc.snapshot, block, bc.eventManager); innerErr != nil {
+			if innerErr := PutBlockHashToBlockWithTxn(
+				txn, bc.snapshot, blockNode.Hash, block, bc.eventManager); innerErr != nil {
 				return errors.Wrapf(innerErr, "upsertBlockAndBlockNodeToDB: Problem calling PutBlockHashToBlockWithTxn")
 			}
 		}

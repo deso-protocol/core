@@ -2084,7 +2084,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Give the block a random parent, so it is truly an orphan.
 		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
-		err := testMeta.chain.processOrphanBlockPoS(realBlock)
+		err := testMeta.chain.processOrphanBlockPoS(realBlock, nil)
 		require.NoError(t, err)
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
@@ -2105,7 +2105,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		realBlock.Header.Version = 1
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err := testMeta.chain.processOrphanBlockPoS(realBlock)
+		err := testMeta.chain.processOrphanBlockPoS(realBlock, nil)
 		require.NoError(t, err)
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
@@ -2132,7 +2132,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		realBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err = testMeta.chain.processOrphanBlockPoS(realBlock)
+		err = testMeta.chain.processOrphanBlockPoS(realBlock, nil)
 		require.NoError(t, err)
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
@@ -2184,7 +2184,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		}
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err = testMeta.chain.processOrphanBlockPoS(realBlock)
+		err = testMeta.chain.processOrphanBlockPoS(realBlock, nil)
 		require.NoError(t, err)
 		// Get the block node from the block index.
 		blockHash, err := realBlock.Hash()
@@ -2202,7 +2202,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		// Give the block a random parent, so it is truly an orphan.
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, nil)
 		require.NoError(t, err)
 		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
@@ -2227,7 +2227,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock.Header.ProposerVotingPublicKey = _generateRandomBLSPrivateKey(t).PublicKey()
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		// There should be no error, but the block should be marked as ValidateFailed.
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, nil)
 		require.NoError(t, err)
 		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
@@ -2246,7 +2246,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		// Update the QC to not have a supermajority.
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, nil)
 		require.NoError(t, err)
 		// Update the QC to not have a supermajority.
 		// Get all the bls keys for the validators that aren't the leader.
@@ -2278,7 +2278,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 			Signature:   aggregatedSignature,
 		}
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
-		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
+		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock, nil)
 		require.NoError(t, err)
 		// Get the block node from the block index.
 		blockHash, err := nextEpochBlock.Hash()
@@ -2307,7 +2307,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		twoEpochsInFutureBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
 		updateProposerVotePartialSignatureForBlock(testMeta, twoEpochsInFutureBlock)
 		// We should get an error that this block is too far in the future.
-		err = testMeta.chain.processOrphanBlockPoS(twoEpochsInFutureBlock)
+		err = testMeta.chain.processOrphanBlockPoS(twoEpochsInFutureBlock, nil)
 		require.Error(t, err)
 		// The block shouldn't be in the block index.
 		blockHash, err := twoEpochsInFutureBlock.Hash()
@@ -2324,7 +2324,7 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		require.NoError(t, err)
 		var prevEpochBlock *MsgDeSoBlock
 		prevEpochBlock = _generateRealBlock(testMeta, prevEpochEntry.FinalBlockHeight, prevEpochEntry.FinalBlockHeight, 17283, testMeta.chain.BlockTip().Hash, false)
-		err = testMeta.chain.processOrphanBlockPoS(prevEpochBlock)
+		err = testMeta.chain.processOrphanBlockPoS(prevEpochBlock, nil)
 		require.NoError(t, err)
 		// The block should be in the block index.
 		blockHash, err := prevEpochBlock.Hash()

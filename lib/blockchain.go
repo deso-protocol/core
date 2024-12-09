@@ -2275,7 +2275,11 @@ func (bc *Blockchain) ProcessHeader(
 	return bc.processHeaderPoW(blockHeader, headerHash)
 }
 
-func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
+func (bc *Blockchain) ProcessBlock(
+	desoBlock *MsgDeSoBlock,
+	hash *BlockHash, // hash is not required and will be computed if not provided, but speeds things up if provided.
+	verifySignatures bool,
+) (_isMainChain bool, _isOrphan bool, _missingBlockHashes []*BlockHash, _err error) {
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
 
@@ -2284,17 +2288,29 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 		return false, false, nil, fmt.Errorf("ProcessBlock: Block is nil")
 	}
 
+	if hash == nil {
+		var err error
+		hash, err = desoBlock.Hash()
+		if err != nil {
+			return false, false, nil, errors.Wrapf(err, "ProcessBlock: Problem computing block hash")
+		}
+	}
+
 	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic.
 	// Otherwise, fall back to the PoW logic.
 	if bc.params.IsPoSBlockHeight(desoBlock.Header.Height) {
-		return bc.processBlockPoS(desoBlock, 1, verifySignatures)
+		return bc.processBlockPoS(desoBlock, hash, 1, verifySignatures)
 	}
 
-	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, verifySignatures)
+	isMainChain, isOrphan, err := bc.processBlockPoW(desoBlock, hash, verifySignatures)
 	return isMainChain, isOrphan, nil, err
 }
 
-func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures bool) (_isMainChain bool, _isOrphan bool, err error) {
+func (bc *Blockchain) processBlockPoW(
+	desoBlock *MsgDeSoBlock,
+	blockHash *BlockHash, // hash is not required and will be computed if not provided, but speeds things up if provided.
+	verifySignatures bool,
+) (_isMainChain bool, _isOrphan bool, err error) {
 	// Only accept the block if its height is below the PoS cutover height.
 	if !bc.params.IsPoWBlockHeight(desoBlock.Header.Height) {
 		return false, false, RuleErrorBlockHeightAfterProofOfStakeCutover
@@ -2308,9 +2324,11 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 	if blockHeader == nil {
 		return false, false, fmt.Errorf("ProcessBlock: Block header was nil")
 	}
-	blockHash, err := blockHeader.Hash()
-	if err != nil {
-		return false, false, errors.Wrapf(err, "ProcessBlock: Problem computing block hash")
+	if blockHash == nil {
+		blockHash, err = blockHeader.Hash()
+		if err != nil {
+			return false, false, errors.Wrapf(err, "ProcessBlock: Problem computing block hash")
+		}
 	}
 	// If a trusted block producer public key is set, then we only accept blocks
 	// if they have been signed by one of these public keys.
@@ -2545,7 +2563,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		// This is needed for disconnects, otherwise GetBlock() will fail (e.g. when we reorg).
 		if err == nil {
 			err = bc.db.Update(func(txn *badger.Txn) error {
-				if err := PutBlockWithTxn(txn, nil, desoBlock, bc.eventManager); err != nil {
+				if err := PutBlockWithTxn(txn, nil, desoBlock, blockHash, bc.eventManager); err != nil {
 					return errors.Wrapf(err, "ProcessBlock: Problem putting block with txns")
 				}
 				return nil
@@ -2564,7 +2582,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 			// 	set in PutBlockWithTxn. Block rewards are part of the state, and they should be identical to the ones
 			// 	we've fetched during Hypersync. Is there an edge-case where for some reason they're not identical? Or
 			// 	somehow ancestral records get corrupted?
-			if innerErr := PutBlockWithTxn(txn, bc.snapshot, desoBlock, bc.eventManager); innerErr != nil {
+			if innerErr := PutBlockWithTxn(txn, bc.snapshot, desoBlock, blockHash, bc.eventManager); innerErr != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem calling PutBlock")
 			}
 

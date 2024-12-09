@@ -5048,13 +5048,22 @@ func GetBlock(blockHash *BlockHash, handle *badger.DB, snap *Snapshot) (*MsgDeSo
 	return blockRet, nil
 }
 
-func PutBlockHashToBlockWithTxn(txn *badger.Txn, snap *Snapshot, block *MsgDeSoBlock, eventManager *EventManager) error {
+func PutBlockHashToBlockWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	blockHash *BlockHash,
+	block *MsgDeSoBlock,
+	eventManager *EventManager,
+) error {
 	if block.Header == nil {
 		return fmt.Errorf("PutBlockHashToBlockWithTxn: Header was nil in block %v", block)
 	}
-	blockHash, err := block.Header.Hash()
-	if err != nil {
-		return errors.Wrap(err, "PutBlockHashToBlockWithTxn: Problem hashing header: ")
+	if blockHash == nil {
+		var err error
+		blockHash, err = block.Header.Hash()
+		if err != nil {
+			return errors.Wrap(err, "PutBlockHashToBlockWithTxn: Problem hashing header: ")
+		}
 	}
 	blockKey := BlockHashToBlockKey(blockHash)
 	data, err := block.ToBytes(false)
@@ -5074,12 +5083,14 @@ func PutBlockHashToBlockWithTxn(txn *badger.Txn, snap *Snapshot, block *MsgDeSoB
 	return nil
 }
 
-func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
-	blockHash, err := desoBlock.Header.Hash()
-	if err != nil {
-		return errors.Wrapf(err, "PutBlockWithTxn: Problem hashing header: ")
-	}
-	if err = PutBlockHashToBlockWithTxn(txn, snap, desoBlock, eventManager); err != nil {
+func PutBlockWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	desoBlock *MsgDeSoBlock,
+	blockHash *BlockHash,
+	eventManager *EventManager,
+) error {
+	if err := PutBlockHashToBlockWithTxn(txn, snap, blockHash, desoBlock, eventManager); err != nil {
 		return errors.Wrap(err, "PutBlockWithTxn: Problem putting block hash to block")
 	}
 	blockRewardTxn := desoBlock.Txns[0]
@@ -5100,7 +5111,7 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, e
 		pkMapKey := pkMapKeyIter
 
 		blockRewardKey := PublicKeyBlockHashToBlockRewardKey(pkMapKey[:], blockHash)
-		if err = DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
+		if err := DBSetWithTxn(txn, snap, blockRewardKey, EncodeUint64(blockReward), eventManager); err != nil {
 			return err
 		}
 	}
@@ -5108,9 +5119,15 @@ func PutBlockWithTxn(txn *badger.Txn, snap *Snapshot, desoBlock *MsgDeSoBlock, e
 	return nil
 }
 
-func PutBlock(handle *badger.DB, snap *Snapshot, desoBlock *MsgDeSoBlock, eventManager *EventManager) error {
+func PutBlock(
+	handle *badger.DB,
+	snap *Snapshot,
+	desoBlock *MsgDeSoBlock,
+	blockHash *BlockHash,
+	eventManager *EventManager,
+) error {
 	err := handle.Update(func(txn *badger.Txn) error {
-		return PutBlockWithTxn(txn, snap, desoBlock, eventManager)
+		return PutBlockWithTxn(txn, snap, desoBlock, blockHash, eventManager)
 	})
 
 	return err
@@ -5376,7 +5393,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block hash into db for block chain")
 		}
 		// Add the genesis block to the (hash -> block) index.
-		if err := PutBlockWithTxn(txn, snap, genesisBlock, eventManager); err != nil {
+		if err := PutBlockWithTxn(txn, snap, genesisBlock, blockHash, eventManager); err != nil {
 			return errors.Wrapf(err, "InitDbWithGenesisBlock: Problem putting genesis block into db")
 		}
 		// Add the genesis block to the (height, hash -> node info) index in the db.
