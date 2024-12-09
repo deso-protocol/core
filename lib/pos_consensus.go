@@ -317,7 +317,7 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 	}
 
 	// Process the block locally
-	missingBlockHashes, err := fc.tryProcessBlockAsNewTip(blockProposal)
+	missingBlockHashes, err := fc.tryProcessBlockAsNewTip(blockProposal, blockHash)
 	if err != nil {
 		return errors.Errorf("Error processing block locally: %v", err)
 	}
@@ -583,7 +583,11 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 	return nil, nil
 }
 
-func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (missingBlockHashes []*BlockHash, _err error) {
+func (fc *FastHotStuffConsensus) HandleBlock(
+	pp *Peer,
+	msg *MsgDeSoBlock,
+	blockHash *BlockHash,
+) (missingBlockHashes []*BlockHash, _err error) {
 	glog.V(2).Infof("FastHotStuffConsensus.HandleBlock: Received block: \n%s", msg.String())
 	glog.V(2).Infof("FastHotStuffConsensus.HandleBlock: %s", fc.fastHotStuffEventLoop.ToString())
 
@@ -605,7 +609,7 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (missi
 	// Try to apply the block as the new tip of the blockchain. If the block is an orphan, then
 	// we will get back a list of missing ancestor block hashes. We can fetch the missing blocks
 	// from the network and retry.
-	missingBlockHashes, err := fc.tryProcessBlockAsNewTip(msg)
+	missingBlockHashes, err := fc.tryProcessBlockAsNewTip(msg, blockHash)
 	if err != nil {
 		// If we get an error here, it means something went wrong with the block processing algorithm.
 		// Nothing we can do to recover here.
@@ -635,10 +639,14 @@ func (fc *FastHotStuffConsensus) HandleBlock(pp *Peer, msg *MsgDeSoBlock) (missi
 //
 // Reference Implementation:
 // https://github.com/deso-protocol/hotstuff_pseudocode/blob/6409b51c3a9a953b383e90619076887e9cebf38d/fast_hotstuff_bls.go#L573
-func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([]*BlockHash, error) {
+func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(
+	block *MsgDeSoBlock,
+	blockHash *BlockHash,
+) ([]*BlockHash, error) {
 	// Try to apply the block locally as the new tip of the blockchain
 	successfullyAppliedNewTip, _, missingBlockHashes, err := fc.blockchain.processBlockPoS(
 		block, // Pass in the block itself
+		blockHash,
 		fc.fastHotStuffEventLoop.GetCurrentView(), // Pass in the current view to ensure we don't process a stale block
 		true, // Make sure we verify signatures in the block
 	)
