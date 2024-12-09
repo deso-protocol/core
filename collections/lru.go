@@ -26,7 +26,7 @@ func (lruCache *LruCache[K, V]) Get(key K) (V, bool) {
 	return lruCache.underlyingCache.Get(key)
 }
 
-func (lruCache *LruCache[K, V]) Contains(key K) bool {
+func (lruCache *LruCache[K, V]) Exists(key K) bool {
 	return lruCache.underlyingCache.Contains(key)
 }
 

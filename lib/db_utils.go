@@ -2814,7 +2814,7 @@ func DBGetAccessGroupExistenceByAccessGroupIdWithTxn(txn *badger.Txn, snap *Snap
 
 	// Lookup the snapshot cache and check if we've already stored a value there.
 	if isState {
-		if exists := snap.DatabaseCache.Contains(keyString); exists {
+		if exists := snap.DatabaseCache.Exists(keyString); exists {
 			return true, nil
 		}
 	}
