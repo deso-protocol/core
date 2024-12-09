@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"reflect"
 	"runtime"
@@ -18,7 +19,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/golang/glog"
 	"github.com/google/uuid"
-	"github.com/hashicorp/golang-lru/v2"
 	"github.com/oleiade/lane"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
@@ -313,7 +313,7 @@ type Snapshot struct {
 	// DatabaseCache is used to store most recent DB records that we've read/written.
 	// This is a low-level optimization for ancestral records that
 	// saves us read time when we're writing to the DB during UtxoView flush.
-	DatabaseCache *lru.Cache[string, []byte]
+	DatabaseCache *collections.LruCache[string, []byte]
 
 	// AncestralFlushCounter is used to offset ancestral records flush to occur only after x blocks.
 	AncestralFlushCounter uint64
@@ -483,7 +483,7 @@ func NewSnapshot(
 			"This may lead to unexpected behavior.")
 	}
 
-	databaseCache, _ := lru.New[string, []byte](int(DatabaseCacheSize))
+	databaseCache, _ := collections.NewLruCache[string, []byte](int(DatabaseCacheSize))
 
 	// Set the snapshot.
 	snap := &Snapshot{
@@ -1409,7 +1409,7 @@ type StateChecksum struct {
 	ctx context.Context
 
 	// hashToCurveCache is a cache of computed hashToCurve mappings
-	hashToCurveCache *lru.Cache[string, group.Element]
+	hashToCurveCache *collections.LruCache[string, group.Element]
 
 	// When we want to add a database record to the state checksum, we will first have to
 	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
@@ -1437,7 +1437,7 @@ func (sc *StateChecksum) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mut
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
 
 	// Set the hashToCurveCache
-	sc.hashToCurveCache, _ = lru.New[string, group.Element](int(HashToCurveCache))
+	sc.hashToCurveCache, _ = collections.NewLruCache[string, group.Element](int(HashToCurveCache))
 
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)
@@ -1508,7 +1508,7 @@ func (sc *StateChecksum) HashToCurve(bytes []byte) group.Element {
 		// Compute the hash_to_curve primitive, mapping  the bytes to an elliptic curve point.
 		hashElement = sc.curve.HashToElement(bytes, sc.dst)
 		// Also add to the hashToCurveCache
-		sc.hashToCurveCache.Add(bytesStr, hashElement)
+		sc.hashToCurveCache.Put(bytesStr, hashElement)
 	}
 
 	return hashElement

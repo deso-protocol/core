@@ -96,16 +96,6 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 
 	bc.blockIndex.setHeaderTip(blockNode)
 
-	// The header is not an orphan and has a higher view than the current tip. We reorg the header chain
-	// and apply the incoming header as the new tip.
-	//_, blocksToDetach, blocksToAttach := bc.GetReorgBlocks(currentTip, blockNode)
-	//bc.bestHeaderChain.Chain, bc.bestHeaderChain.ChainMap = updateBestChainInMemory(
-	//	bc.bestHeaderChain.Chain,
-	//	bc.bestHeaderChain.ChainMap,
-	//	blocksToDetach,
-	//	blocksToAttach,
-	//)
-
 	// Success. The header is at the tip of the best header chain.
 	return blockNode, true, false, nil
 }
@@ -2023,7 +2013,7 @@ func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	utxoView.TipHash = &blockHash
 	// Save a copy of the UtxoView to the cache.
 	copiedView := utxoView.CopyUtxoView()
-	bc.blockViewCache.Add(blockHash, &BlockViewAndUtxoOps{
+	bc.blockViewCache.Put(blockHash, &BlockViewAndUtxoOps{
 		UtxoView: copiedView,
 		UtxoOps:  utxoOps,
 		Block:    fullBlock,

@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/golang-lru/v2"
-
 	"github.com/deso-protocol/core/collections"
 
 	"github.com/deso-protocol/uint256"
@@ -572,15 +570,15 @@ type CheckpointBlockInfoAndError struct {
 type BlockIndex struct {
 	db                 *badger.DB
 	snapshot           *Snapshot
-	blockIndexByHash   *lru.Cache[BlockHash, *BlockNode]
-	blockIndexByHeight *lru.Cache[uint64, []*BlockNode]
+	blockIndexByHash   *collections.LruCache[BlockHash, *BlockNode]
+	blockIndexByHeight *collections.LruCache[uint64, []*BlockNode]
 	tip                *BlockNode
 	headerTip          *BlockNode
 }
 
 func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *BlockIndex {
-	blockIndexByHash, _ := lru.New[BlockHash, *BlockNode](MaxBlockIndexNodes)  // TODO: parameterize this?
-	blockIndexByHeight, _ := lru.New[uint64, []*BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
+	blockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)  // TODO: parameterize this?
+	blockIndexByHeight, _ := collections.NewLruCache[uint64, []*BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
 	return &BlockIndex{
 		db:                 db,
 		snapshot:           snapshot,
@@ -591,8 +589,8 @@ func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *Block
 }
 
 func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) {
-	newHashToBlockNodeMap, _ := lru.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
-	newHeightToBlockNodeMap, _ := lru.New[uint64, []*BlockNode](MaxBlockIndexNodes)
+	newHashToBlockNodeMap, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)  // TODO: parameterize this?
+	newHeightToBlockNodeMap, _ := collections.NewLruCache[uint64, []*BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
 	bi.blockIndexByHash = newHashToBlockNodeMap
 	bi.blockIndexByHeight = newHeightToBlockNodeMap
 	for _, val := range input {
@@ -620,7 +618,7 @@ func (bi *BlockIndex) setTip(tip *BlockNode) {
 }
 
 func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
-	bi.blockIndexByHash.Add(*blockNode.Hash, blockNode)
+	bi.blockIndexByHash.Put(*blockNode.Hash, blockNode)
 	blocksAtHeight, exists := bi.blockIndexByHeight.Get(uint64(blockNode.Height))
 	if !exists {
 		blocksAtHeight = []*BlockNode{}
@@ -635,7 +633,7 @@ func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 			}
 		}
 	}
-	bi.blockIndexByHeight.Add(uint64(blockNode.Height), append(blocksAtHeight, blockNode))
+	bi.blockIndexByHeight.Put(uint64(blockNode.Height), append(blocksAtHeight, blockNode))
 }
 
 func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, bool, error) {
@@ -747,7 +745,7 @@ type Blockchain struct {
 	blockView *UtxoView
 
 	// cache block view for each block
-	blockViewCache *lru.Cache[BlockHash, *BlockViewAndUtxoOps]
+	blockViewCache *collections.LruCache[BlockHash, *BlockViewAndUtxoOps]
 
 	// snapshot cache
 	snapshotCache *SnapshotCache
@@ -879,12 +877,12 @@ func (bc *Blockchain) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 }
 
 func (bc *Blockchain) CopyBlockIndexes() (
-	_blockIndexByHash *lru.Cache[BlockHash, *BlockNode],
+	_blockIndexByHash *collections.LruCache[BlockHash, *BlockNode],
 ) {
-	newBlockIndexByHash, _ := lru.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
+	newBlockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	for _, key := range bc.blockIndex.blockIndexByHash.Keys() {
 		val, _ := bc.blockIndex.blockIndexByHash.Get(key)
-		newBlockIndexByHash.Add(key, val)
+		newBlockIndexByHash.Put(key, val)
 	}
 	return newBlockIndexByHash
 }
@@ -1032,6 +1030,7 @@ func (bc *Blockchain) _initChain() error {
 			if !tipNodeExists {
 				return fmt.Errorf("_initChain: Best hash (%#v) not found in block index", bestBlockHash)
 			}
+			// @diamondhands - we could reduce this to just the last hour if we want.
 			// Walk back the last 24 hours of blocks.
 			currBlockCounter := 1
 			for currBlockCounter < 3600*24 && tipNode.Header.PrevBlockHash != nil {
@@ -1131,7 +1130,7 @@ func NewBlockchain(
 
 	timer := &Timer{}
 	timer.Initialize()
-	blockViewCache, _ := lru.New[BlockHash, *BlockViewAndUtxoOps](100) // TODO: parameterize
+	blockViewCache, _ := collections.NewLruCache[BlockHash, *BlockViewAndUtxoOps](100) // TODO: parameterize
 	bc := &Blockchain{
 		db:                              db,
 		postgres:                        postgres,
@@ -1719,7 +1718,7 @@ func (bc *Blockchain) SetBestChain(bestChain []*BlockNode) {
 }
 
 func (bc *Blockchain) setBestChainMap(
-	blockIndexByHash *lru.Cache[BlockHash, *BlockNode],
+	blockIndexByHash *collections.LruCache[BlockHash, *BlockNode],
 	tipNode *BlockNode,
 ) {
 	bc.blockIndex.blockIndexByHash = blockIndexByHash
@@ -2046,28 +2045,6 @@ func (bc *Blockchain) GetReorgBlocks(tip *BlockNode, newNode *BlockNode) (
 	}
 
 	return commonAncestor, detachBlocks, attachBlocks
-}
-
-func updateBestChainInMemory(mainChainList []*BlockNode, mainChainMap *lru.Cache[BlockHash, *BlockNode], detachBlocks []*BlockNode, attachBlocks []*BlockNode) (
-	chainList []*BlockNode, chainMap *lru.Cache[BlockHash, *BlockNode]) {
-
-	// Remove the nodes we detached from the end of the best chain node list.
-	tipIndex := len(mainChainList) - 1
-	for blockOffset := 0; blockOffset < len(detachBlocks); blockOffset++ {
-		blockIndex := tipIndex - blockOffset
-		mainChainMap.Remove(*mainChainList[blockIndex].Hash)
-	}
-	mainChainList = mainChainList[:len(mainChainList)-len(detachBlocks)]
-
-	// Add the nodes we attached to the end of the list. Note that this loop iterates
-	// forward because attachBlocks has the node right after the common ancestor
-	// first, with the new tip at the end.
-	for _, attachNode := range attachBlocks {
-		mainChainList = append(mainChainList, attachNode)
-		mainChainMap.Add(*attachNode.Hash, attachNode)
-	}
-
-	return mainChainList, mainChainMap
 }
 
 // Caller must acquire the ChainLock for writing prior to calling this.

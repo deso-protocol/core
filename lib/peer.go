@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"net"
 	"sort"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang/glog"
-	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -110,7 +110,7 @@ type Peer struct {
 
 	// Inventory stuff.
 	// The inventory that we know the peer already has.
-	knownInventory *lru.Cache[InvVect, struct{}]
+	knownInventory *collections.LruSet[InvVect]
 
 	// Whether the peer is ready to receive INV messages. For a peer that
 	// still needs a mempool download, this is false.
@@ -291,7 +291,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 	for _, invVect := range msg.InvList {
 		// No matter what, add the inv to the peer's known inventory.
-		pp.knownInventory.Add(*invVect, struct{}{})
+		pp.knownInventory.Put(*invVect)
 
 		// If this is a hash we are currently processing, no need to do anything.
 		// This check serves to fill the gap between the time when we've decided
@@ -343,7 +343,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 		// If we made it here, it means the inventory was added to one of the
 		// lists so mark it as processed on the Server.
-		pp.srv.inventoryBeingProcessed.Add(*invVect, struct{}{})
+		pp.srv.inventoryBeingProcessed.Put(*invVect)
 	}
 
 	// If there were any transactions we don't yet have, request them using
@@ -644,7 +644,7 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 	_syncType NodeSyncType,
 	peerDisconnectedChan chan *Peer) *Peer {
 
-	knownInventoryCache, _ := lru.New[InvVect, struct{}](maxKnownInventory)
+	knownInventoryCache, _ := collections.NewLruSet[InvVect](maxKnownInventory)
 
 	pp := Peer{
 		ID:                     _id,
@@ -984,7 +984,7 @@ out:
 
 				// Add the new inventory to the peer's knownInventory.
 				for _, invVect := range invMsg.InvList {
-					pp.knownInventory.Add(*invVect, struct{}{})
+					pp.knownInventory.Put(*invVect)
 				}
 			}
 

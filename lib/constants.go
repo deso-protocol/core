@@ -1956,6 +1956,9 @@ const DefaultTestnetCheckpointProvider = "https://test.deso.org"
 
 const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
 
+// BlockIndexMigrationFileName is the name of the file that contains a boolean value
+// that indicates whether the block index migration has been run. See RunBlockIndexMigrationOnce
+// for more information.
 const BlockIndexMigrationFileName = "block_index_migration.txt"
 
 // BtcecPubKeyBytesLenUncompressed is a constant that was removed from newer version of Btcec

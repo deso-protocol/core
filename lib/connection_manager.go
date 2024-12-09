@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"net"
 	"sync"
@@ -11,7 +12,6 @@ import (
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang/glog"
-	"github.com/hashicorp/golang-lru/v2"
 )
 
 // connection_manager.go contains most of the logic for creating and managing
@@ -53,7 +53,7 @@ type ConnectionManager struct {
 	// TODO: seems like we don't use this.
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
-	sentNonces *lru.Cache[uint64, struct{}]
+	sentNonces *collections.LruSet[uint64]
 
 	// This section defines the data structures for storing all the
 	// peers we're aware of.
@@ -126,7 +126,7 @@ func NewConnectionManager(
 
 	ValidateHyperSyncFlags(_hyperSync, _syncType)
 
-	sentNoncesCache, _ := lru.New[uint64, struct{}](1000)
+	sentNoncesCache, _ := collections.NewLruSet[uint64](1000)
 	return &ConnectionManager{
 		srv:       _srv,
 		params:    _params,

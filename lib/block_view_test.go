@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	_ "net/http/pprof"
 	"reflect"
@@ -797,7 +797,7 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// We don't pass the chain's snapshot above to prevent certain concurrency issues. As a
 	// result, we need to reset the snapshot's db cache to get rid of stale data.
 	if tm.chain.snapshot != nil {
-		tm.chain.snapshot.DatabaseCache, err = lru.New[string, []byte](int(DatabaseCacheSize))
+		tm.chain.snapshot.DatabaseCache, err = collections.NewLruCache[string, []byte](int(DatabaseCacheSize))
 		require.NoError(err)
 	}
 

@@ -22,7 +22,6 @@ import (
 	"github.com/deso-protocol/core/consensus"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
-	"github.com/hashicorp/golang-lru/v2"
 	"github.com/pkg/errors"
 )
 
@@ -88,7 +87,7 @@ type Server struct {
 	// adding it to this map and checking this map before replying will make it
 	// so that we only send a reply to the first peer that sent us the inv, which
 	// is more efficient.
-	inventoryBeingProcessed *lru.Cache[InvVect, struct{}]
+	inventoryBeingProcessed *collections.LruSet[InvVect]
 
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
@@ -227,7 +226,7 @@ func (srv *Server) _removeRequest(hash *BlockHash) {
 		Type: InvTypeTx,
 		Hash: *hash,
 	}
-	srv.inventoryBeingProcessed.Remove(*invVect)
+	srv.inventoryBeingProcessed.Delete(*invVect)
 }
 
 // dataLock must be acquired for writing before calling this function.
@@ -705,7 +704,7 @@ func NewServer(
 	srv.blockProducer = _blockProducer
 	srv.incomingMessages = _incomingMessages
 	// Make this hold a multiple of what we hold for individual peers.
-	srv.inventoryBeingProcessed, _ = lru.New[InvVect, struct{}](maxKnownInventory)
+	srv.inventoryBeingProcessed, _ = collections.NewLruSet[InvVect](maxKnownInventory)
 
 	srv.requestTimeoutSeconds = 10
 
@@ -1902,7 +1901,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
-	srv.snapshot.DatabaseCache, _ = lru.New[string, []byte](int(DatabaseCacheSize))
+	srv.snapshot.DatabaseCache, _ = collections.NewLruCache[string, []byte](int(DatabaseCacheSize))
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.syncingState = false
@@ -2192,7 +2191,7 @@ func (srv *Server) _relayTransactions() {
 			// Add the transaction to the peer's known inventory. We do
 			// it here when we enqueue the message to the peers outgoing
 			// message queue so that we don't have to remember to do it later.
-			pp.knownInventory.Add(*invVect, struct{}{})
+			pp.knownInventory.Put(*invVect)
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {

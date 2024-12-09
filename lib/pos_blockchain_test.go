@@ -253,7 +253,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
 	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{*genesisBlock.Hash: genesisBlock})
-	bc.blockIndex.blockIndexByHash.Add(*genesisBlock.Hash, genesisBlock)
+	bc.blockIndex.blockIndexByHash.Put(*genesisBlock.Hash, genesisBlock)
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
@@ -842,7 +842,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		PrevBlockHash:  hash1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 	bc.blockIndex.setTip(block2)
-	bc.blockIndex.blockIndexByHash.Add(*hash2, block2)
+	bc.blockIndex.blockIndexByHash.Put(*hash2, block2)
 	ancestors, missingBlockHashes, err = bc.getStoredLineageFromCommittedTip(block.Header)
 	require.Error(t, err)
 	require.Equal(t, err, RuleErrorDoesNotExtendCommittedTip)
@@ -1320,9 +1320,9 @@ func TestTryApplyNewTip(t *testing.T) {
 	bc.addTipBlockToBestChain(bn1)
 	bc.addTipBlockToBestChain(bn2)
 	bc.addTipBlockToBestChain(bn3)
-	bc.blockIndex.blockIndexByHash.Add(*hash1, bn1)
-	bc.blockIndex.blockIndexByHash.Add(*hash2, bn2)
-	bc.blockIndex.blockIndexByHash.Add(*hash3, bn3)
+	bc.blockIndex.blockIndexByHash.Put(*hash1, bn1)
+	bc.blockIndex.blockIndexByHash.Put(*hash2, bn2)
+	bc.blockIndex.blockIndexByHash.Put(*hash3, bn3)
 
 	// Simple reorg. Just replacing the uncommitted tip.
 	newBlock := &MsgDeSoBlock{
@@ -1407,8 +1407,8 @@ func TestTryApplyNewTip(t *testing.T) {
 			Height:         6,
 		},
 	}
-	bc.blockIndex.blockIndexByHash.Add(*hash4, bn4)
-	bc.blockIndex.blockIndexByHash.Add(*hash5, bn5)
+	bc.blockIndex.blockIndexByHash.Put(*hash4, bn4)
+	bc.blockIndex.blockIndexByHash.Put(*hash5, bn5)
 
 	// Set new block's parent to hash5
 	newBlockNode.Header.PrevBlockHash = hash5

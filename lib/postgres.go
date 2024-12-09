@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/golang-lru/v2"
+	"github.com/deso-protocol/core/collections"
 	"net/url"
 	"regexp"
 	"strings"
@@ -1299,6 +1299,7 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 	if blockNode.Parent != nil {
 		block.ParentHash = blockNode.Parent.Hash
 	} else if !blockNode.Header.PrevBlockHash.IsEqual(GenesisBlockHash) {
+		// TODO: LN - why did I need to add this?
 		block.ParentHash = blockNode.Header.PrevBlockHash
 	}
 
@@ -1307,16 +1308,16 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (*lru.Cache[BlockHash, *BlockNode], error) {
+func (postgres *Postgres) GetBlockIndex() (*collections.LruCache[BlockHash, *BlockNode], error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap, _ := lru.New[BlockHash, *BlockNode](MaxBlockIndexNodes)
+	blockMap, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	for _, block := range blocks {
-		blockMap.Add(*block.Hash, &BlockNode{
+		blockMap.Put(*block.Hash, &BlockNode{
 			Hash:             block.Hash,
 			Height:           uint32(block.Height),
 			DifficultyTarget: block.DifficultyTarget,

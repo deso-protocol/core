@@ -606,7 +606,11 @@ type DBPrefixes struct {
 
 	// PrefixHashToHeight is used to store the height of a block given its hash.
 	// This helps us map a block hash to its height so we can look up the full info
-	// in PrefixHeightHashToNodeInfo.
+	// in PrefixHeightHashToNodeInfo. Note that the block index migration will run
+	// to populate this index when upgrading the node to the new version that
+	// introduces this index. Before the introduction of this index, the only way
+	// to find a block node given its hash was to do a full scan of
+	// PrefixHeightHashToNodeInfo.
 	PrefixHashToHeight []byte `prefix_id:"[98]"`
 	// NEXT_TAG: 99
 }
@@ -1142,7 +1146,7 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 			return errors.Wrapf(err, "DBSetWithTxn: Problem preparing ancestral record")
 		}
 		// Now save the newest record to cache.
-		snap.DatabaseCache.Add(keyString, value)
+		snap.DatabaseCache.Put(keyString, value)
 
 		if !snap.disableChecksum {
 			// We have to remove the previous value from the state checksum.
@@ -1241,7 +1245,7 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 			return errors.Wrapf(err, "DBDeleteWithTxn: Problem preparing ancestral record")
 		}
 		// Now delete the past record from the cache.
-		snap.DatabaseCache.Remove(keyString)
+		snap.DatabaseCache.Delete(keyString)
 		// We have to remove the previous value from the state checksum.
 		// Because checksum is commutative, we can safely remove the past value here.
 		if !snap.disableChecksum {
@@ -5192,6 +5196,8 @@ func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
 	return prefix
 }
 
+// _heightHashToNodePrefixByHeight returns the prefix for the height hash to node index
+// for a given height. This is useful to find all blocks at a given height.
 func _heightHashToNodePrefixByHeight(height uint32, bitcoinNodes bool) []byte {
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
 	heightBytes := make([]byte, 4)
@@ -5210,6 +5216,7 @@ func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool
 	return key
 }
 
+// _hashToHeightIndexKey returns the key for the hash to height index.
 func _hashToHeightIndexKey(hash *BlockHash) []byte {
 	key := append([]byte{}, Prefixes.PrefixHashToHeight...)
 	key = append(key, hash[:]...)
@@ -5252,10 +5259,12 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
 	}
 
+	// Store the full block node in the hash height to block node index.
 	if err := DBSetWithTxn(txn, snap, key, serializedNode, eventManager); err != nil {
 		return err
 	}
 
+	// Also store the height to hash mapping.
 	hashToHeightKey := _hashToHeightIndexKey(node.Hash)
 	if err = DBSetWithTxn(txn, snap, hashToHeightKey, UintToBuf(uint64(node.Height)), eventManager); err != nil {
 		return err
@@ -5264,6 +5273,8 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 	return nil
 }
 
+// PutHashToHeightBatch puts a map of block hashes to heights in the db in the hash to height index.
+// This is only used for the block index migration.
 func PutHashToHeightBatch(handle *badger.DB, snap *Snapshot, hashToHeight map[BlockHash]uint32, eventManager *EventManager) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		for hash, height := range hashToHeight {
@@ -5276,6 +5287,7 @@ func PutHashToHeightBatch(handle *badger.DB, snap *Snapshot, hashToHeight map[Bl
 	})
 }
 
+// GetHeightForHash returns the height for a given block hash by using the hash to height index.
 func GetHeightForHash(db *badger.DB, snap *Snapshot, hash *BlockHash) (uint64, error) {
 	var height uint64
 	err := db.View(func(txn *badger.Txn) error {
@@ -5342,7 +5354,7 @@ func DbBulkDeleteHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, nodes [
 	return nil
 }
 
-// InitDbWithGenesisBlock initializes the database to contain only the genesis
+// InitDbWithDeSoGenesisBlock initializes the database to contain only the genesis
 // block.
 func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	eventManager *EventManager, snap *Snapshot, postgres *Postgres) error {
@@ -5596,7 +5608,11 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 	return blockIndex, nil
 }
 
+// LoadBlockIndexFromHeight loads the block index from the database starting at
+// a given height. This is only used by initChain, where we want to load all blocks
+// that could be descendents of the current tip block in the database.
 func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams) error {
+	// Get the prefix for the provided height.
 	prefix := _heightHashToNodePrefixByHeight(height, false)
 
 	return bi.db.View(func(txn *badger.Txn) error {
@@ -5612,9 +5628,6 @@ func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams
 			err := item.Value(func(blockNodeBytes []byte) error {
 				// Deserialize the block node.
 				var err error
-				// TODO: There is room for optimization here by pre-allocating a
-				// contiguous list of block nodes and then populating that list
-				// rather than having each blockNode be a stand-alone allocation.
 				blockNode, err = DeserializeBlockNode(blockNodeBytes)
 				if err != nil {
 					return err
@@ -5630,48 +5643,54 @@ func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams
 			bi.addNewBlockNodeToBlockIndex(blockNode)
 
 			// Find the parent of this block, which should already have been read
-			// in and connect it. Skip the genesis block, which has height 0. Also
-			// skip the block if its PrevBlockHash is empty, which will be true for
-			// the BitcoinStartBlockNode.
-			//
-			// TODO: There is room for optimization here by keeping a reference to
-			// the last node we've iterated over and checking if that node is the
-			// parent. Doing this would avoid an expensive hashmap check to get
-			// the parent by its block hash.
+			// in and connect it. Skip the genesis block, which has height 0.
 			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
 				continue
 			}
 			if parent, ok := bi.GetBlockNodeByHashAndHeight(blockNode.Header.PrevBlockHash, uint64(blockNode.Height)); ok {
 				// We found the parent node so connect it.
 				blockNode.Parent = parent
-			} else {
-				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
-				// be orphan blocks in the block index. In this case, we don't throw an error.
-				if params.IsPoSBlockHeight(uint64(blockNode.Height)) {
-					continue
-				}
-				// In this case we didn't find the parent so error. There shouldn't
-				// be any unconnectedTxns in our block index.
-				return fmt.Errorf("GetBlockIndex: Could not find parent for blockNode: %+v", blockNode)
+				continue
 			}
+			// If we're syncing a DeSo node and we hit a PoS block, we expect there to
+			// be orphan blocks in the block index. In this case, we don't throw an error.
+			if params.IsPoSBlockHeight(uint64(blockNode.Height)) {
+				continue
+			}
+			// In this case we didn't find the parent so error. There shouldn't
+			// be any unconnectedTxns in our block index.
+			return fmt.Errorf("GetBlockIndex: Could not find parent for blockNode: %+v", blockNode)
 		}
 		return nil
 	})
 }
 
+// RunBlockIndexMigration runs a migration to populate the hash to height index from the height hash to
+// block node index. We can't use the encoder migrations to handle this situation since it's a new index
+// and not a modification of the existing entry type stored. This migration simply iterates over the keys in the
+// height hash to block node index, extracts the height and hash, and puts a key of the hash and a value of the
+// height in the hash to height prefix.
 func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager, params *DeSoParams) error {
+	// @diamondhands - if we want to migrate from a uint32 -> uint64 for height in the height hash to node index,
+	// this would be a good time to do it. It's not necessary, but it's a bit annoying that we use uint64 in some
+	// places and uint32 in others. Specifically, we don't always validate that we have a uint32 when we go to get
+	// the block from teh DB.
 	return handle.Update(func(txn *badger.Txn) error {
+		// Get the prefix for the height hash to node index.
 		prefix := _heightHashToNodeIndexPrefix(false)
 		opts := badger.DefaultIteratorOptions
 		opts.Prefix = prefix
-		// We don't need values for this migration.
+		// We don't need values for this migration since the height and hash are in the key.
 		opts.PrefetchValues = false
 		nodeIterator := txn.NewIterator(opts)
 		defer nodeIterator.Close()
+		// Initialize a map to store the hash to height mappings.
 		hashToHeightMap := make(map[BlockHash]uint32)
 		// Just in case we need it, get the height of the best hash.
 		bestHash := DbGetBestHash(handle, snapshot, ChainTypeDeSoBlock)
 		var bestHashHeight uint32
+		// Iterate over all the keys in the height hash to node index, extract the height and hash,
+		// and batch write every 10k entries to the hash to height index.
 		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 			item := nodeIterator.Item().Key()
 
@@ -5680,18 +5699,23 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 			hash := BlockHash{}
 			copy(hash[:], item[5:])
 			hashToHeightMap[hash] = height
+			// If we have a best hash, we want to store the height of the best hash.
 			if bestHash != nil && bestHash.IsEqual(&hash) {
 				bestHashHeight = height
 			}
+			// If we have fewer than 10K entries, continue.
 			if len(hashToHeightMap) < 10000 {
 				continue
 			}
+			// If we have more than 10K entries, batch write the entries to the hash to height index
+			// and reset the map.
 			innerErr := PutHashToHeightBatch(handle, snapshot, hashToHeightMap, eventManager)
 			if innerErr != nil {
 				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
 			}
 			hashToHeightMap = make(map[BlockHash]uint32)
 		}
+		// If we have any entries left in the map, batch write them to the hash to height index.
 		if len(hashToHeightMap) > 0 {
 			innerErr := PutHashToHeightBatch(handle, snapshot, hashToHeightMap, eventManager)
 			if innerErr != nil {
@@ -5702,7 +5726,18 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		if bestHash == nil {
 			return nil
 		}
-		// TODO: get best chain up to PoS Cutover height and set all blocks in that chain to committed.
+
+		// We want to mark all PoW blocks as committed, so we'll get the first pos block
+		// and iterate backwards marking all blocks as committed. If the PoS cutover hasn't
+		// happened yet, then we'll just the current best hash from the DB to determine the
+		// current tip to iterate back from. This allows us to track the best chain even if
+		// we have multiple proof-of-work blocks at the same height in the DB. Before the
+		// change to not keep the entire best chain in memory, we would know if a block was
+		// in the best chain by looking it up in the best chain map. Now that we no longer
+		// have this, we rely on the IsCommitted function to determine if blocks are in the
+		// best chain. Without this, nodes upgrading to this code that have been running for
+		// a long time and experienced PoW forks will have issues determining which blocks
+		// are in the best chain for PoW block heights.
 		firstPoSBlockHeight := params.GetFirstPoSBlockHeight()
 		// Look up blocks at cutover height.
 		prefixKey := _heightHashToNodePrefixByHeight(uint32(firstPoSBlockHeight), false)
@@ -5710,17 +5745,20 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		if err != nil {
 			return errors.Wrap(err, "RunBlockIndexMigration: Problem enumerating keys for prefix")
 		}
+		// There should be 0 or 1 blocks at the cutover height.
 		if len(valsFound) > 1 {
 			return fmt.Errorf("RunBlockIndexMigration: More than one block found at PoS cutover height")
 		}
 		var blockNode *BlockNode
-		// In this case, we need to find pull the best hash from the DB and iterate backwards.
+		// In this case we have not reached the cutover, we need to find pull the best hash
+		// from the DB and iterate backwards.
 		if len(valsFound) == 0 {
 			blockNode = GetHeightHashToNodeInfoWithTxn(txn, snapshot, bestHashHeight, bestHash, false)
 			if blockNode == nil {
 				return fmt.Errorf("RunBlockIndexMigration: block with Best hash (%v) and height (%v) not found", bestHash, bestHashHeight)
 			}
 		} else {
+			// If we have 1 block at the cutover height, we'll use that block to iterate backwards.
 			blockNode, err = DeserializeBlockNode(valsFound[0])
 			if err != nil {
 				return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node for pos cutover")
@@ -5728,34 +5766,43 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		}
 		var blockNodeBatch []*BlockNode
 		for blockNode != nil {
+			// If the block is not committed, mark it as committed.
 			if !blockNode.IsCommitted() {
 				blockNode.Status |= StatusBlockCommitted
 			}
-			// TODO: make sure I don't need a copy.
+			// Add it to the batch.
 			blockNodeBatch = append(blockNodeBatch, blockNode)
-			if len(blockNodeBatch) < 10000 {
-				continue
-			}
-			err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
-			if err != nil {
-				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
-			}
+			// Find the parent of this block.
 			parentBlockNode := GetHeightHashToNodeInfoWithTxn(txn, snapshot, blockNode.Height, blockNode.Hash, false /*bitcoinNodes*/)
 			if blockNode.Height > 0 && parentBlockNode == nil {
 				return errors.New("RunBlockIndexMigration: Parent block node not found")
 			}
+			// Jump up to the parent block node.
 			blockNode = parentBlockNode
+			// If we have fewer than 10K entries, continue.
+			if len(blockNodeBatch) < 10000 {
+				continue
+			}
+			// If we have more than 10K entries, write the batch and reset the slice.
+			err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+			}
+			blockNodeBatch = []*BlockNode{}
 		}
-		err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
-		if err != nil {
-			return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+		// If any entries are left in the batch, write them to the DB.
+		if len(blockNodeBatch) > 0 {
+			err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+			}
 		}
 		return nil
 	})
 }
 
 // TODO: refactor to actually get the whole best chain if that's
-// what someone wants. It'll take a while, but whatever.
+// what someone wants. It'll take a while and a lot of memory.
 func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
 	maxBestChainInitLength := 3600 * 100 // Cache up to 100 hours of blocks.

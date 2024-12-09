@@ -94,8 +94,8 @@ type Config struct {
 func GetStringSliceWorkaround(flagName string) []string {
 	value := viper.GetString(flagName)
 	if value == "" || value == " " {
-		values := viper.GetStringSlice(flagName)
-		return values
+		// Backwards compatibility for n0 scripts.
+		return viper.GetStringSlice(flagName)
 	}
 	return strings.Split(value, ",")
 }
@@ -148,6 +148,7 @@ func LoadConfig() *Config {
 
 	// Peers
 	config.ConnectIPs = GetStringSliceWorkaround("connect-ips")
+	glog.V(2).Infof("Connect IPs read in: %v", config.ConnectIPs)
 	config.AddIPs = GetStringSliceWorkaround("add-ips")
 	config.AddSeeds = GetStringSliceWorkaround("add-seeds")
 	config.TargetOutboundPeers = viper.GetUint32("target-outbound-peers")
