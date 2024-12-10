@@ -121,12 +121,17 @@ func (nn *BlockNode) IsValidateFailed() bool {
 }
 
 // IsCommitted returns true if a BlockNode has passed all validations, and it has been committed to
-// the Blockchain according to the Fast HotStuff commit rule.
+// the Blockchain according to the Fast HotStuff commit rule. This function previously considered
+// as PoW blocks to be committed regardless of status, but since we no longer keep the entire best
+// chain in-memory, we needed to update all PoW blocks in the best chain to be Committed such that
+// we could distinguish them from forks that occurred in PoW and still determine if a node is in the
+// best chain or not.
 func (nn *BlockNode) IsCommitted() bool {
-	//return nn.Status&StatusBlockCommitted != 0 || !blockNodeProofOfStakeCutoverMigrationTriggered(nn.Height)
 	return nn.Status&StatusBlockCommitted != 0
 }
 
+// ClearCommittedStatus is used to clear the committed status from a BlockNode. This is useful
+// only for PoW blocks when handling forks.
 func (nn *BlockNode) ClearCommittedStatus() {
 	nn.Status &= BlockStatus(^uint32(StatusBlockCommitted))
 }
@@ -245,7 +250,9 @@ func (nn *BlockNode) GetParent(blockIndex *BlockIndex) *BlockNode {
 	if nn.Parent != nil {
 		return nn.Parent
 	}
-	// If we don't have a parent, try to get it from the block index.
+	// If we don't have a parent, try to get it from the block index. We
+	// no longer have a guarantee that we have set the parent node since
+	// we no longer keep the entire block index in memory.
 	parentNode, exists := blockIndex.GetBlockNodeByHashAndHeight(nn.Header.PrevBlockHash, uint64(nn.Height-1))
 	if !exists {
 		return nil
@@ -449,15 +456,6 @@ func (nn *BlockNode) Ancestor(height uint32, blockIndex *BlockIndex) *BlockNode 
 	return node
 }
 
-// RelativeAncestor returns the ancestor block node a relative 'distance' blocks
-// before this node. This is equivalent to calling Ancestor with the node's
-// height minus provided distance.
-//
-// This function is safe for concurrent access.
-//func (nn *BlockNode) RelativeAncestor(distance uint32, blockIndex *BlockIndex) *BlockNode {
-//	return nn.Ancestor(nn.Height-distance, blockIndex)
-//}
-
 // CalcNextDifficultyTarget computes the difficulty target expected of the
 // next block.
 func (bc *Blockchain) CalcNextDifficultyTarget(
@@ -497,9 +495,6 @@ func (bc *Blockchain) CalcNextDifficultyTarget(
 	maxRetargetTimeSecs := targetSecs * bc.params.MaxDifficultyRetargetFactor
 
 	firstNodeHeight := lastNode.Height - blocksPerRetarget
-	// TODO: we need to write the migration to only have committed blocks from PoW.
-	// This code is dead for PoS.
-	// TODO: do we need to do something if we need to get this from the header chain?
 	firstNode, exists, err := bc.GetBlockFromBestChainByHeight(uint64(firstNodeHeight), true)
 	if err != nil {
 		return nil, errors.Wrapf(err, "CalcNextDifficultyTarget: Problem getting block at "+
@@ -567,6 +562,11 @@ type CheckpointBlockInfoAndError struct {
 	Error               error
 }
 
+// BlockIndex operates as a read-through cache for block nodes. It is used to
+// look up any block node we know by its height or hash (but is faster if you
+// provide both!). It also is used to determine which block nodes are in the
+// best chain using the provided functions. Additionally, it always tracks
+// the block tip and header tip.
 type BlockIndex struct {
 	db                 *badger.DB
 	snapshot           *Snapshot
@@ -576,6 +576,7 @@ type BlockIndex struct {
 	headerTip          *BlockNode
 }
 
+// NewBlockIndex creates a new BlockIndex with the provided snapshot and tip node.
 func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *BlockIndex {
 	blockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)  // TODO: parameterize this?
 	blockIndexByHeight, _ := collections.NewLruCache[uint64, []*BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
@@ -588,6 +589,8 @@ func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *Block
 	}
 }
 
+// setBlockIndexFromMap is a helper function only used in tests. It constructs the
+// block index from the provided map of block hashes to block nodes.
 func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) {
 	newHashToBlockNodeMap, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)  // TODO: parameterize this?
 	newHeightToBlockNodeMap, _ := collections.NewLruCache[uint64, []*BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
@@ -605,42 +608,55 @@ func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) {
 	}
 }
 
+// setHeaderTip sets the header tip of the block index to the provided block node.
+// This must be called whenever we have a new tip added to the best header chain.
 func (bi *BlockIndex) setHeaderTip(tip *BlockNode) {
 	// Just to be safe, we also add it to the block index.
 	bi.addNewBlockNodeToBlockIndex(tip)
 	bi.headerTip = tip
 }
 
+// setTip sets the tip of the block index to the provided block node. This must be
+// called whenever we have a new tip added to the best chain.
 func (bi *BlockIndex) setTip(tip *BlockNode) {
 	// Just to be safe, we also add it to the block index.
 	bi.addNewBlockNodeToBlockIndex(tip)
 	bi.tip = tip
 }
 
+// addNewBlockNodeToBlockIndex adds a new block node to the block index. This adds
+// it to both the block index by hash and the block index by height.
 func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 	bi.blockIndexByHash.Put(*blockNode.Hash, blockNode)
 	blocksAtHeight, exists := bi.blockIndexByHeight.Get(uint64(blockNode.Height))
-	if !exists {
+	if !exists || blocksAtHeight == nil {
 		blocksAtHeight = []*BlockNode{}
 	} else {
-		// Make sure we don't add the same block node twice.
 		// TODO: we *could* make this more efficient by using a map,
 		// but generally we won't have many blocks at the same height.
-		for ii, blockAtHeight := range blocksAtHeight {
+		// Make sure we don't add the same block node twice.
+		for _, blockAtHeight := range blocksAtHeight {
 			if blockAtHeight.Hash.IsEqual(blockNode.Hash) {
-				blocksAtHeight[ii] = blockNode
-				break
+				// If we've already seen this block node, just
+				// return early. there's nothing left to do.
+				return
 			}
 		}
 	}
 	bi.blockIndexByHeight.Put(uint64(blockNode.Height), append(blocksAtHeight, blockNode))
 }
 
+// GetBlockNodeByHashOnly retrieves a block node from the block index by its hash.
+// Note that this is the least efficient method of getting a block node from the block
+// index if we don't have it in the cache as we need to first get the block height
+// from the database and then get the block node from the database.
 func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, bool, error) {
+	// If we have it in the cache, just return it!
 	val, exists := bi.blockIndexByHash.Get(*blockHash)
 	if exists {
 		return val, true, nil
 	}
+	// If we don't have it in the cache, we need to get the height from the database.
 	height, err := GetHeightForHash(bi.db, bi.snapshot, blockHash)
 	if err != nil {
 		if errors.Is(err, badger.ErrKeyNotFound) {
@@ -648,61 +664,82 @@ func (bi *BlockIndex) GetBlockNodeByHashOnly(blockHash *BlockHash) (*BlockNode, 
 		}
 		return nil, false, errors.Wrapf(err, "GetBlockNodeByHashOnly: Problem getting height for hash")
 	}
+	// Then we can get the block node from the database.
 	blockNode := GetHeightHashToNodeInfo(bi.db, bi.snapshot, uint32(height), blockHash, false)
 	if blockNode == nil {
 		return nil, false, nil
 	}
+	// Add it to the cache and return it.
 	bi.addNewBlockNodeToBlockIndex(blockNode)
 	return blockNode, true, nil
 }
 
+// GetBlockNodeByHashAndHeight retrieves a block node from the block index by its hash
+// height. This is the most efficient method of getting a block node from the block
+// index as we do not need to get the block height from the database.
 func (bi *BlockIndex) GetBlockNodeByHashAndHeight(blockHash *BlockHash, height uint64) (*BlockNode, bool) {
+	// If we have it in the cache, just return it!
 	val, exists := bi.blockIndexByHash.Get(*blockHash)
 	if exists {
 		return val, true
 	}
+	// If the height exceeds an uint32, we have a problem as the height hash to node
+	// prefix only supports uint32 heights.
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodeByHashAndHeight: Height %d is greater than math.MaxUint32", height)
 	}
+	// If we don't have it in the cache, we need to get the block node from the database.
 	bn := GetHeightHashToNodeInfo(bi.db, bi.snapshot, uint32(height), blockHash, false)
 	if bn == nil {
 		return nil, false
 	}
+	// Add it to the cache and return it.
 	bi.addNewBlockNodeToBlockIndex(bn)
 	return bn, true
 }
 
+// GetBlockNodesByHeight retrieves all block nodes at a given height from the block index.
+// We may have many block nodes at the same height, so the caller must determine which they
+// want to use.
 func (bi *BlockIndex) GetBlockNodesByHeight(height uint64) []*BlockNode {
+	// If the height exceeds an uint32, we have a problem as the height hash to node
+	// prefix only supports uint32 heights.
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodesByHeight: Height %d is greater than math.MaxUint32", height)
 	}
-	//if height > bi.maxHeightSeen {
-	//	return []*BlockNode{}
-	//}
+	// If we have it in the cache, just return it!
+	// TODO: maybe this isn't necessarily correct. We probably need to check the DB
+	// to be safe...
 	blockNodesAtHeight, exists := bi.blockIndexByHeight.Get(height)
 	if exists {
 		return blockNodesAtHeight
 	}
-	// TODO: cache current height to exit early?
+	// If we don't have it in the cache, we need to get the block nodes from the database.
+	// We need to get the prefix key for the height hash to node prefix.
 	prefixKey := _heightHashToNodePrefixByHeight(uint32(height), false)
+	// Enumerate all block nodes for the prefix.
 	_, valsFound := EnumerateKeysForPrefix(bi.db, prefixKey, false)
 	blockNodes := []*BlockNode{}
 	for _, val := range valsFound {
+		// Deserialize all block nodes.
 		blockNode, err := DeserializeBlockNode(val)
 		if err != nil {
 			glog.Errorf("GetBlockNodesByHeight: Problem deserializing block node: %v", err)
 			continue
 		}
+		// Add them to the block index and append them to our result.
 		bi.addNewBlockNodeToBlockIndex(blockNode)
 		blockNodes = append(blockNodes, blockNode)
 	}
 	return blockNodes
 }
 
+// GetTip retrieves the tip of the best chain.
 func (bi *BlockIndex) GetTip() *BlockNode {
 	return bi.tip
 }
 
+// GetHeaderTip retrieves the tip of the header chain.
 func (bi *BlockIndex) GetHeaderTip() *BlockNode {
 	return bi.headerTip
 }
@@ -733,7 +770,15 @@ type Blockchain struct {
 	ChainLock deadlock.RWMutex
 
 	// These should only be accessed after acquiring the ChainLock.
-	blockIndex           *BlockIndex
+	//
+	// blockIndex is a read-through cache for block nodes. It is used to look up any block node we know
+	// by its height or hash (but is faster if you provide both!). It also is used to determine which
+	// block nodes are in the best chain using the provided functions. Additionally, it always tracks
+	// the block tip and header tip.
+	blockIndex *BlockIndex
+	// lowestBlockNotStored tracks the lowest known block height that is not stored in the database.
+	// This is only used for hypersync-archival syncing to determine at which height need to start
+	// requesting blocks in GetBlocksToStore.
 	lowestBlockNotStored uint64
 
 	// We keep track of orphan blocks with the following data structures. Orphans
@@ -872,14 +917,19 @@ func getCheckpointBlockInfoFromProviderHelper(provider string) *CheckpointBlockI
 	}
 }
 
+// addNewBlockNodeToBlockIndex is a pass-through to calling the same function on the
+// BlockIndex of a Blockchain.
 func (bc *Blockchain) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 	bc.blockIndex.addNewBlockNodeToBlockIndex(blockNode)
 }
 
+// CopyBlockIndexes returns a copy of the BlockIndex of a Blockchain.
 func (bc *Blockchain) CopyBlockIndexes() (
 	_blockIndexByHash *collections.LruCache[BlockHash, *BlockNode],
 ) {
+	// Create a new lru cache.
 	newBlockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)
+	// Iterate over the keys of the block index and copy them to the new lru cache.
 	for _, key := range bc.blockIndex.blockIndexByHash.Keys() {
 		val, _ := bc.blockIndex.blockIndexByHash.Get(key)
 		newBlockIndexByHash.Put(key, val)
@@ -887,16 +937,22 @@ func (bc *Blockchain) CopyBlockIndexes() (
 	return newBlockIndexByHash
 }
 
+// GetBlockIndex is a helper to return the BlockIndex of a Blockchain.
+// This is used by the backend.
 func (bc *Blockchain) GetBlockIndex() *BlockIndex {
 	return bc.blockIndex
 }
 
-// TODO: read through to DB.
+// getAllBlockNodesIndexedAtHeight returns all block nodes at a given height from the block index.
 func (bc *Blockchain) getAllBlockNodesIndexedAtHeight(blockHeight uint64) []*BlockNode {
 	return bc.blockIndex.GetBlockNodesByHeight(blockHeight)
 }
 
+// hasBlockNodesIndexedAtHeight returns whether or not there are block nodes at a given height in the block index.
 func (bc *Blockchain) hasBlockNodesIndexedAtHeight(blockHeight uint64) bool {
+	// TODO: there's an optimization we can do here where we just check if the
+	// cache has any block nodes at the height instead of loading everything
+	// from the database as well.
 	blockNodes := bc.blockIndex.GetBlockNodesByHeight(blockHeight)
 	return len(blockNodes) > 0
 }
@@ -905,42 +961,54 @@ func (bc *Blockchain) hasBlockNodesIndexedAtHeight(blockHeight uint64) bool {
 func (bc *Blockchain) IsFullyStored() bool {
 	// TODO: figure out how to iterate over best chain w/o having entire thing in memory.
 	chainState := bc.ChainState()
-	if chainState == SyncStateFullyCurrent || (chainState == SyncStateNeedBlocksss &&
-		bc.headerTip().Height-bc.blockTip().Height < 10) {
-		// Get a sampling of blocks from the best chain and check if they are fully stored.
-		// We only need to check a few blocks to determine if the chain is fully stored.
-		blockTipHeight := uint64(bc.BlockTip().Height)
-		increment := blockTipHeight / 20
-		if increment == 0 {
-			increment = 1
-		}
-		blockHeights := []uint64{}
-		for ii := uint64(0); ii < blockTipHeight; ii += increment {
+	if chainState != SyncStateFullyCurrent && !(chainState == SyncStateNeedBlocksss &&
+		bc.headerTip().Height-bc.blockTip().Height >= 10) {
+		return false
+	}
+	// Get a sampling of blocks from the best chain and check if they are fully stored.
+	// We only need to check a few blocks to determine if the chain is fully stored.
+	blockTipHeight := uint64(bc.BlockTip().Height)
+	increment := blockTipHeight / 20
+	if increment == 0 {
+		increment = 1
+	}
+	blockHeights := []uint64{}
+	// Sample 20 blocks. If we have 200 blocks, we'll check the following blocks:
+	// 0, 10, 20, 30, ..., 180, 190, 200.
+	for ii := uint64(0); ii < blockTipHeight; ii += increment {
+		blockHeights = append(blockHeights, ii)
+	}
+	// Check the most recent 20 blocks if we're past block 100.
+	if blockTipHeight > 100 {
+		// Continuing the above example, if we have 200 blocks, we'll add the following blocks:
+		// 180, 181, 182, 183, ..., 198, 199, 200.
+		// Note that it's not a big deal that we may have the same block twice, we dedupe them
+		// when we convert to a set.
+		for ii := blockTipHeight - 20; ii < blockTipHeight; ii++ {
 			blockHeights = append(blockHeights, ii)
 		}
-		if blockTipHeight > 100 {
-			for ii := blockTipHeight - 20; ii < blockTipHeight; ii++ {
-				blockHeights = append(blockHeights, ii)
-			}
-		}
-		blockHeights = append(blockHeights, blockTipHeight)
-		blockHeightSet := NewSet(blockHeights)
-		for _, blockHeight := range blockHeightSet.ToSlice() {
-			blockNode, exists, err := bc.GetBlockFromBestChainByHeight(blockHeight, false)
-			if err != nil {
-				glog.Errorf("IsFullyStored: Problem getting block at height %d: %v", blockHeight, err)
-				return false
-			}
-			if !exists {
-				return false
-			}
-			if !blockNode.Status.IsFullyProcessed() {
-				return false
-			}
-		}
-		return true
 	}
-	return false
+	// Always add the tip height to the sample.
+	blockHeights = append(blockHeights, blockTipHeight)
+	// Convert all block heights to a set to dedupe them.
+	blockHeightSet := NewSet(blockHeights)
+	for _, blockHeight := range blockHeightSet.ToSlice() {
+		// Get the block node at the height from the best blockchain chain.
+		blockNode, exists, err := bc.GetBlockFromBestChainByHeight(blockHeight, false)
+		if err != nil {
+			glog.Errorf("IsFullyStored: Problem getting block at height %d: %v", blockHeight, err)
+			return false
+		}
+		// If the block node doesn't exist, the chain is not fully stored.
+		if !exists {
+			return false
+		}
+		// If the block node is not fully processed, the chain is not fully stored.
+		if !blockNode.Status.IsFullyProcessed() {
+			return false
+		}
+	}
+	return true
 }
 
 // _initChain initializes the in-memory data structures for the Blockchain object
@@ -995,18 +1063,15 @@ func (bc *Blockchain) _initChain() error {
 	// to previous blocks we've read in and error if they don't. This works because
 	// reading blocks in height order as we do here ensures that we'll always
 	// add a block's parents, if they exist, before adding the block itself.
-	//var err error
-	//if bc.postgres != nil {
-	//	bc.blockIndexByHash, err = bc.postgres.GetBlockIndex()
-	//} else {
-	//	bc.blockIndexByHash, err = GetBlockIndex(bc.db, false /*bitcoinNodes*/, bc.params)
-	//}
-	//if err != nil {
-	//	return errors.Wrapf(err, "_initChain: Problem reading block index from db")
-	//}
-	//bc.blockIndexByHeight = bc.constructBlockIndexByHeight()
 
-	// For postgres, we still load the entire block index into memory. This is because
+	// Update: we no longer track the entire block index in memory. After the
+	// migration to Proof-of-Stake, we are producing blocks ~300x faster than before.
+	// It has become too memory intensive to keep the entire best chain and block index
+	// in memory. We now only keep track of the tip of the best header chain and best
+	// block chain. We still keep a cache of recently seen block nodes in order to speed
+	// up processing, but we use the BlockIndex struct as a read-through cache to look up
+	// blocks from the cache or database as needed.
+
 	var err error
 	var tipNode *BlockNode
 	if bc.postgres != nil {
@@ -1019,7 +1084,7 @@ func (bc *Blockchain) _initChain() error {
 	} else {
 		var tipNodeExists bool
 		// For badger, we only need the tip block to get started.
-		// Weird hack required for the genesis block.
+		// Special case for looking up the genesis block.
 		if bestBlockHash.IsEqual(GenesisBlockHash) {
 			tipNode, tipNodeExists = bc.blockIndex.GetBlockNodeByHashAndHeight(bestBlockHash, 0)
 		} else {
@@ -1038,6 +1103,8 @@ func (bc *Blockchain) _initChain() error {
 				currBlockCounter++
 			}
 		}
+		// Load all blocks greater than the tip node into the block index. This allows us to
+		// have quick access to all uncommitted blocks and orphans.
 		if err = bc.blockIndex.LoadBlockIndexFromHeight(tipNode.Height, bc.params); err != nil {
 			return errors.Wrapf(err, "_initChain: Problem loading block index from db")
 		}
@@ -1091,6 +1158,7 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 		return errors.Wrapf(err, "_applyUncommittedBlocksToBestChain: ")
 	}
 
+	// Set the tip of the best header chain and best block chain to the uncommitted tip.
 	bc.blockIndex.setTip(uncommittedTipBlockNode)
 	bc.blockIndex.setHeaderTip(uncommittedTipBlockNode)
 	return nil
@@ -1143,7 +1211,7 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex:     NewBlockIndex(db, snapshot, nil), // TODO: replace with actual tip.
+		blockIndex:     NewBlockIndex(db, snapshot, nil), // This tip will be set in _initChain.
 		blockViewCache: blockViewCache,
 		snapshotCache:  NewSnapshotCache(),
 
@@ -1276,27 +1344,19 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 	return blockNodesToFetch
 }
 
+// HasHeader checks if a header exists in the block index given its hash.
 func (bc *Blockchain) HasHeader(headerHash *BlockHash) (bool, error) {
 	_, exists, err := bc.blockIndex.GetBlockNodeByHashOnly(headerHash)
 	return exists, errors.Wrap(err, "Blockchain.HasHeader: ")
 }
 
+// HasHeaderByHashAndHeight checks if a header exists in the block index given its hash and height.
 func (bc *Blockchain) HasHeaderByHashAndHeight(headerHash *BlockHash, height uint64) bool {
-	if height > uint64(bc.headerTip().Height) {
-		return false
-	}
 	_, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(headerHash, height)
 	return exists
 }
 
-// TODO: delete me?
-func (bc *Blockchain) HeaderAtHeight(blockHeight uint32) (*BlockNode, bool, error) {
-	if blockHeight >= bc.blockIndex.GetHeaderTip().Height {
-		return nil, false, nil
-	}
-	return bc.GetBlockFromBestChainByHeight(uint64(blockHeight), true)
-}
-
+// HasBlockInBlockIndex checks if a block exists in the block index given its hash.
 func (bc *Blockchain) HasBlockInBlockIndex(blockHash *BlockHash) (bool, error) {
 	bc.ChainLock.RLock()
 	defer bc.ChainLock.RUnlock()
@@ -1494,25 +1554,40 @@ func (bc *Blockchain) checkArchivalMode() bool {
 	firstSnapshotHeight := bc.snapshot.CurrentEpochSnapshotMetadata.FirstSnapshotBlockHeight
 	// @diamondhands - can we spot check just a few blocks such as firstSnapshotHeight - 1,
 	// firstSnapshotHeight / 2 - 1, and firstSnapshotHeight / 4 - 1 to see if they are stored?
+	// And then we can do check some intervals between firstSnapshotHeight and the tip of the best chain.
 	// We take a sampling of blocks to determine if we've downloaded all the blocks up to the first snapshot height.
 	blockHeights := []uint64{}
 	increment := firstSnapshotHeight / 10
+	if increment == 0 {
+		increment = 1
+	}
+	// We'll sample 10 blocks. If we have 200 as the first snapshot block height,
+	// we'll check the following blocks:
+	// 0, 20, 40, 60, ..., 180, 200.
 	for ii := uint64(0); ii < firstSnapshotHeight; ii += increment {
 		blockHeights = append(blockHeights, ii)
 	}
-	for ii := firstSnapshotHeight - 10; ii < firstSnapshotHeight; ii++ {
-		blockHeights = append(blockHeights, ii)
+	// Check the most recent 10 blocks if we're past block 10.
+	if firstSnapshotHeight > 10 {
+		for ii := firstSnapshotHeight - 10; ii < firstSnapshotHeight; ii++ {
+			blockHeights = append(blockHeights, ii)
+		}
 	}
-	blockHeights = append(blockHeights, firstSnapshotHeight)
-	for _, height := range blockHeights {
+
+	// Convert to set to de-dupe and check the block node for each height.
+	for _, height := range NewSet(append(blockHeights, firstSnapshotHeight)).ToSlice() {
 		blockNode, exists, err := bc.GetBlockFromBestChainByHeight(height, false)
 		if err != nil {
 			glog.Errorf("checkArchivalMode: Problem getting block by height: %v", err)
 			return false
 		}
+		// If the block node doesn't exist, we're not in for archival mode.
 		if !exists {
 			return false
 		}
+		// If the block node is greater than the first snapshot height,
+		// we're not ready for archival mode. This shouldn't happen since
+		// the move to not having the entire best chain in memory.
 		if uint64(blockNode.Height) > firstSnapshotHeight {
 			return false
 		}
@@ -1606,6 +1681,9 @@ func (bc *Blockchain) BestChain() []*BlockNode {
 	panic("BestChain not supported.")
 }
 
+// GetBlockFromBestChainByHashAndOptionalHeight returns a block node from the best chain
+// given a block hash and an optional height. Providing the height is optional, but it can
+// greatly improve the performance of calls to this function.
 func (bc *Blockchain) GetBlockFromBestChainByHashAndOptionalHeight(
 	blockHash *BlockHash,
 	optionalHeight *uint64,
@@ -1626,7 +1704,8 @@ func (bc *Blockchain) GetBlockFromBestChainByHashAndOptionalHeight(
 		return nil, false, nil
 	}
 	if bn.IsCommitted() {
-		return bn, true, nil // TODO: what do we do about header chain? they're not committed so we're going to
+		return bn, true, nil
+		// TODO: what do we do about header chain? they're not committed so we're going to
 		// have to get a bunch of parents in order to be sure it is part of the best header chain. I guess we could
 		// have a map, but kinda defeats the purpose of this refactor.
 	}
@@ -1662,9 +1741,14 @@ func (bc *Blockchain) GetBlockFromBestChainByHashAndOptionalHeight(
 	return nil, false, nil
 }
 
+// GetBlockFromBestChainByHeight returns a block node from the best chain given a height.
 func (bc *Blockchain) GetBlockFromBestChainByHeight(height uint64, useHeaderChain bool) (*BlockNode, bool, error) {
 	// TODO: figure out an optimization for header chain handling uncommitted state.
 	if !useHeaderChain {
+		// If we're looking for a block from the best block chain, we first
+		// check if the height is greater than the committed tip. If it is, we
+		// know it's an uncommitted block and will need to trace it back from
+		// the best block tip.
 		committedTip, exists := bc.GetCommittedTip()
 		if !exists {
 			return nil, false, nil
@@ -1684,6 +1768,7 @@ func (bc *Blockchain) GetBlockFromBestChainByHeight(height uint64, useHeaderChai
 			return nil, false, nil
 		}
 	}
+	// Otherwise, get the block nodes by height and find the one in the best chain.
 	blockNodes := bc.blockIndex.GetBlockNodesByHeight(height)
 	if len(blockNodes) == 0 {
 		return nil, false, nil
@@ -1715,14 +1800,6 @@ func (bc *Blockchain) SetBestChain(bestChain []*BlockNode) {
 			bc.blockIndex.setTip(blockNode)
 		}
 	}
-}
-
-func (bc *Blockchain) setBestChainMap(
-	blockIndexByHash *collections.LruCache[BlockHash, *BlockNode],
-	tipNode *BlockNode,
-) {
-	bc.blockIndex.blockIndexByHash = blockIndexByHash
-	bc.blockIndex.setTip(tipNode)
 }
 
 func (bc *Blockchain) _validateOrphanBlockPoW(desoBlock *MsgDeSoBlock) error {
@@ -1867,7 +1944,8 @@ func (bc *Blockchain) MarkBlockInvalid(node *BlockNode, errOccurred RuleError) {
 	//}
 }
 
-// Note: we make some assumptions that we only care about ancestors in the best chain.
+// Note: we make some assumptions that we only care about ancestors in the best chain. This
+// is only used for processBlockPoW so it's not a *huge* deal.
 func (bc *Blockchain) _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *BlockNode {
 	if node1 == nil || node2 == nil {
 		// If either node is nil then there can't be a common ancestor.
