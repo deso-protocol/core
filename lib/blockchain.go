@@ -568,34 +568,29 @@ type CheckpointBlockInfoAndError struct {
 // best chain using the provided functions. Additionally, it always tracks
 // the block tip and header tip.
 type BlockIndex struct {
-	db                 *badger.DB
-	snapshot           *Snapshot
-	blockIndexByHash   *collections.LruCache[BlockHash, *BlockNode]
-	blockIndexByHeight *collections.LruCache[uint64, []*BlockNode]
-	tip                *BlockNode
-	headerTip          *BlockNode
+	db               *badger.DB
+	snapshot         *Snapshot
+	blockIndexByHash *collections.LruCache[BlockHash, *BlockNode]
+	tip              *BlockNode
+	headerTip        *BlockNode
 }
 
 // NewBlockIndex creates a new BlockIndex with the provided snapshot and tip node.
 func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *BlockIndex {
-	blockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)  // TODO: parameterize this?
-	blockIndexByHeight, _ := collections.NewLruCache[uint64, []*BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
+	blockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
 	return &BlockIndex{
-		db:                 db,
-		snapshot:           snapshot,
-		blockIndexByHash:   blockIndexByHash,
-		blockIndexByHeight: blockIndexByHeight,
-		tip:                tipNode,
+		db:               db,
+		snapshot:         snapshot,
+		blockIndexByHash: blockIndexByHash,
+		tip:              tipNode,
 	}
 }
 
 // setBlockIndexFromMap is a helper function only used in tests. It constructs the
 // block index from the provided map of block hashes to block nodes.
 func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) {
-	newHashToBlockNodeMap, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)  // TODO: parameterize this?
-	newHeightToBlockNodeMap, _ := collections.NewLruCache[uint64, []*BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
+	newHashToBlockNodeMap, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
 	bi.blockIndexByHash = newHashToBlockNodeMap
-	bi.blockIndexByHeight = newHeightToBlockNodeMap
 	for _, val := range input {
 		bi.addNewBlockNodeToBlockIndex(val)
 		// This function is always used for tests.
@@ -628,22 +623,6 @@ func (bi *BlockIndex) setTip(tip *BlockNode) {
 // it to both the block index by hash and the block index by height.
 func (bi *BlockIndex) addNewBlockNodeToBlockIndex(blockNode *BlockNode) {
 	bi.blockIndexByHash.Put(*blockNode.Hash, blockNode)
-	blocksAtHeight, exists := bi.blockIndexByHeight.Get(uint64(blockNode.Height))
-	if !exists || blocksAtHeight == nil {
-		blocksAtHeight = []*BlockNode{}
-	} else {
-		// TODO: we *could* make this more efficient by using a map,
-		// but generally we won't have many blocks at the same height.
-		// Make sure we don't add the same block node twice.
-		for _, blockAtHeight := range blocksAtHeight {
-			if blockAtHeight.Hash.IsEqual(blockNode.Hash) {
-				// If we've already seen this block node, just
-				// return early. there's nothing left to do.
-				return
-			}
-		}
-	}
-	bi.blockIndexByHeight.Put(uint64(blockNode.Height), append(blocksAtHeight, blockNode))
 }
 
 // GetBlockNodeByHashOnly retrieves a block node from the block index by its hash.
@@ -707,15 +686,6 @@ func (bi *BlockIndex) GetBlockNodesByHeight(height uint64) []*BlockNode {
 	if height > math.MaxUint32 {
 		glog.Fatalf("GetBlockNodesByHeight: Height %d is greater than math.MaxUint32", height)
 	}
-	// If we have it in the cache, just return it!
-	// TODO: maybe this isn't necessarily correct. We probably need to check the DB
-	// to be safe...
-	blockNodesAtHeight, exists := bi.blockIndexByHeight.Get(height)
-	if exists {
-		return blockNodesAtHeight
-	}
-	// If we don't have it in the cache, we need to get the block nodes from the database.
-	// We need to get the prefix key for the height hash to node prefix.
 	prefixKey := _heightHashToNodePrefixByHeight(uint32(height), false)
 	// Enumerate all block nodes for the prefix.
 	_, valsFound := EnumerateKeysForPrefix(bi.db, prefixKey, false)
@@ -943,18 +913,11 @@ func (bc *Blockchain) GetBlockIndex() *BlockIndex {
 	return bc.blockIndex
 }
 
-// getAllBlockNodesIndexedAtHeight returns all block nodes at a given height from the block index.
-func (bc *Blockchain) getAllBlockNodesIndexedAtHeight(blockHeight uint64) []*BlockNode {
-	return bc.blockIndex.GetBlockNodesByHeight(blockHeight)
-}
-
 // hasBlockNodesIndexedAtHeight returns whether or not there are block nodes at a given height in the block index.
 func (bc *Blockchain) hasBlockNodesIndexedAtHeight(blockHeight uint64) bool {
-	// TODO: there's an optimization we can do here where we just check if the
-	// cache has any block nodes at the height instead of loading everything
-	// from the database as well.
-	blockNodes := bc.blockIndex.GetBlockNodesByHeight(blockHeight)
-	return len(blockNodes) > 0
+	prefix := _heightHashToNodePrefixByHeight(uint32(blockHeight), false)
+	keysFound := EnumeratePaginatedLimitedKeysForPrefix(bc.db, prefix, prefix, 1)
+	return len(keysFound) > 0
 }
 
 // IsFullyStored determines if there are block nodes that haven't been fully stored or processed in the best block chain.

@@ -50,10 +50,8 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 
 	// If the incoming header is already part of the best header chain, then we can exit early.
 	// The header is not part of a fork, and is already an ancestor of the current header chain tip.
-	// Here we explicitly check the bestHeaderChain.ChainMap to make sure the in-memory struct is properly
-	// updated. This is necessary because the block index may have been updated with the header but the
-	// bestHeaderChain.ChainMap may not have been updated yet.
-	blockNode, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(headerHash, &header.Height, true)
+	blockNode, isInBestHeaderChain, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(
+		headerHash, &header.Height, true)
 	if err != nil {
 		return nil, false, false,
 			errors.Wrapf(err, "processHeaderPoS: Problem getting block from best chain by hash: ")
@@ -75,13 +73,6 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 		return blockNode, false, false, errors.Wrapf(err, "processHeaderPoS: Problem validating and indexing header: ")
 	}
 
-	// Don't worry about healing orphan children when we're syncing.
-	//if !bc.isSyncing() {
-	//	// Now that we know we have a valid header, we check the block index for it any orphan children for it
-	//	// and heal the parent pointers for all of them.
-	//	bc.healPointersForOrphanChildren(blockNode)
-	//}
-
 	// Exit early if the header is an orphan.
 	if isOrphan {
 		return blockNode, false, true, nil
@@ -99,38 +90,6 @@ func (bc *Blockchain) processHeaderPoS(header *MsgDeSoHeader, headerHash *BlockH
 	// Success. The header is at the tip of the best header chain.
 	return blockNode, true, false, nil
 }
-
-// healPointersForOrphanChildren fixes an inconsistency in the block index that may have
-// occurred as a result of a node restart. In cases where we have an orphan node that we store in the
-// DB, then on restart, that node's parent will not be in the block index. When processing the parent
-// later on, we not only need to store the parent in the block index but also need to update the
-// pointer from the orphan block's BlockNode to the parent. We do that dynamically here as we
-// process headers.
-//func (bc *Blockchain) healPointersForOrphanChildren(blockNode *BlockNode) {
-//	// Fetch all potential children of this blockNode from the block index.
-//	blockNodesAtNextHeight := bc.blockIndex.GetBlockNodesByHeight(blockNode.Header.Height + 1)
-//	exists := len(blockNodesAtNextHeight) > 0
-//	if !exists {
-//		// No children of this blockNode exist in the block index. Exit early.
-//		return
-//	}
-//
-//	// Iterate through all block nodes at the next block height and update their parent pointers.
-//	for _, blockNodeAtNextHeight := range blockNodesAtNextHeight {
-//		// Check if it's a child of the parent block node.
-//		if !blockNodeAtNextHeight.Header.PrevBlockHash.IsEqual(blockNode.Hash) {
-//			continue
-//		}
-//
-//		// Check if it has its parent pointer set. If it does, then we exit early.
-//		if blockNodeAtNextHeight.Parent != nil {
-//			continue
-//		}
-//
-//		// If the parent block node is not set, then we set it to the parent block node.
-//		blockNodeAtNextHeight.Parent = blockNode
-//	}
-//}
 
 func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHash *BlockHash, verifySignatures bool) (
 	_headerBlockNode *BlockNode, _isOrphan bool, _err error,
@@ -155,8 +114,11 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	}
 
 	// The header is an orphan. No need to store it in the block index. Exit early.
-	// TODO: validate that height - 1 > 0
-	parentBlockNode, parentBlockNodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(header.PrevBlockHash, header.Height-1)
+	if header.Height < 1 {
+		return nil, false, errors.New("validateAndIndexHeaderPoS: Header height is less than 1 - no valid parent height")
+	}
+	parentBlockNode, parentBlockNodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(
+		header.PrevBlockHash, header.Height-1)
 	if !parentBlockNodeExists {
 		return nil, true, nil
 	}
@@ -308,6 +270,9 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			"processBlockPoS: Unexpected problem getting lineage from committed tip: ")
 	}
 
+	if block.Header.Height < 1 {
+		return false, false, nil, errors.New("processBlockPoS: Block height is less than 1 - no valid parent height")
+	}
 	// We expect the utxoView for the parent block to be valid because we check that all ancestor blocks have
 	// been validated.
 	parentUtxoViewAndUtxoOps, err := bc.GetUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash, block.Header.Height-1)
@@ -685,7 +650,6 @@ func (bc *Blockchain) validateAndIndexBlockPoS(
 ) (*BlockNode, error) {
 
 	// Base case - Check if the block is validated or validate failed. If so, we can return early.
-	// TODO: validate height doesn't overflow uint32
 	blockNode, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(blockHash, block.Header.Height)
 	if exists && (blockNode.IsValidateFailed() || blockNode.IsValidated()) {
 		return blockNode, nil
@@ -812,6 +776,9 @@ func (bc *Blockchain) validatePreviouslyIndexedBlockPoS(
 		// If we can't fetch the block from the DB, we should return an error. This should never happen
 		// provided the block was cached in the block index and stored in the DB first.
 		return nil, errors.Wrapf(err, "validatePreviouslyIndexedBlockPoS: Problem fetching block from DB")
+	}
+	if block.Header.Height < 1 {
+		return nil, errors.New("processBlockPoS: Block height is less than 1 - no valid parent height")
 	}
 	// Build utxoView for the block's parent.
 	parentUtxoViewAndUtxoOps, err := bc.GetUtxoViewAndUtxoOpsAtBlockHash(*block.Header.PrevBlockHash, block.Header.Height-1)
@@ -1659,7 +1626,6 @@ func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	// Remove the last block from the best chain.
 	lastBlock := bc.blockIndex.GetTip()
-	// Uhhh what happens if we don't have the parent set up!?
 	bc.blockIndex.setTip(lastBlock.GetParent(bc.blockIndex))
 	return lastBlock
 }
@@ -2068,12 +2034,13 @@ func (bc *Blockchain) getSafeBlockNodes() ([]*BlockNode, error) {
 	safeBlocks := []*BlockNode{committedTip}
 	maxHeightWithSafeBlocks := bc.getMaxSequentialBlockHeightAfter(uint64(committedTip.Height))
 	for ii := uint64(committedTip.Height + 1); ii < maxHeightWithSafeBlocks+1; ii++ {
+		blockNodes := bc.blockIndex.GetBlockNodesByHeight(ii)
 		// If we don't have any blocks at this height, we know that any blocks at a later height are not safe blocks.
-		if !bc.hasBlockNodesIndexedAtHeight(ii) {
+		if len(blockNodes) == 0 {
 			break
 		}
 		hasSeenValidatedBlockAtThisHeight := false
-		blockNodes := bc.getAllBlockNodesIndexedAtHeight(ii)
+
 		for _, blockNode := range blockNodes {
 			// TODO: Are there other conditions we should consider?
 			if blockNode.IsValidated() {

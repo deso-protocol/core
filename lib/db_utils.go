@@ -1585,6 +1585,20 @@ func _enumerateKeysOnlyForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keys
 	return _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, dbPrefix, dbPrefix, math.MaxUint32)
 }
 
+func EnumeratePaginatedLimitedKeysForPrefix(
+	db *badger.DB,
+	dbPrefix []byte,
+	startKey []byte,
+	limit uint32,
+) (_keysFound [][]byte) {
+	var keysFound [][]byte
+	_ = db.View(func(txn *badger.Txn) error {
+		keysFound = _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, dbPrefix, startKey, limit)
+		return nil
+	})
+	return keysFound
+}
+
 // _enumeratePaginatedLimitedKeysForPrefixWithTxn will look for keys in the db that are GREATER OR EQUAL to the startKey
 // and satisfy the dbPrefix prefix. The total number of entries fetched will be EQUAL OR SMALLER than provided limit.
 func _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, startKey []byte, limit uint32) (_keysFound [][]byte) {
