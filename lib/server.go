@@ -774,7 +774,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 		maxHeadersPerMsg = MaxHeadersPerMsgPos
 	}
 
-	headers, err := srv.GetHeadersForLocatorAndStopHash2(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
+	headers, err := srv.GetHeadersForLocatorAndStopHash(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
 	if err != nil {
 		glog.Errorf("Server._handleGetHeadersMessage: Error getting headers: %v", err)
 	}
