@@ -774,7 +774,7 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 		maxHeadersPerMsg = MaxHeadersPerMsgPos
 	}
 
-	headers, err := srv.GetHeadersForLocatorAndStopHash(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
+	headers, err := srv.GetHeadersForLocatorAndStopHash2(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
 	if err != nil {
 		glog.Errorf("Server._handleGetHeadersMessage: Error getting headers: %v", err)
 	}
@@ -812,26 +812,49 @@ func (srv *Server) GetHeadersForLocatorAndStopHash(
 	if startNodeError != nil || !startNodeExists || startNode == nil {
 		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Start hash provided but no start node found")
 	}
-	nextNodeHeight := startNode.Header.Height + 1
-	nextNode, nextNodeExists, nextNodeError := srv.blockchain.GetBlockFromBestChainByHeight(nextNodeHeight, true)
-	if nextNodeError != nil {
-		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Error getting start node by height: %v", startNodeError)
-	}
-	if !nextNodeExists || nextNode == nil {
-		return nil, nil
+	var backtrackingNode *BlockNode
+	var backtrackingNodeExists bool
+	var backtrackingNodeError error
+	// If the stop node isn't provided and the max header msgs would put us past the header tip,
+	// we use the header tip to start back tracking.
+	if stopNode == nil && srv.blockchain.HeaderTip().Height < startNode.Height+maxHeadersPerMsg {
+		backtrackingNode = srv.blockchain.HeaderTip()
+		backtrackingNodeExists = true
+	} else if stopNode == nil || stopNode.Height > startNode.Height+maxHeadersPerMsg {
+		// If the stop node isn't provided or the stop node is more than maxHeadersPerMsg away
+		// from the start node, we compute the height of the last header expected and start
+		// back tracking from there.
+		backtrackingNode, backtrackingNodeExists, backtrackingNodeError = srv.blockchain.GetBlockFromBestChainByHeight(
+			uint64(startNode.Height+maxHeadersPerMsg), true)
+		if backtrackingNodeError != nil {
+			return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Error getting backtracking node by height: %v", backtrackingNodeError)
+		}
+		if !backtrackingNodeExists || backtrackingNode == nil {
+			return nil, errors.New("GetHeadersForLocatorAndStopHash: Backtracking node not found")
+		}
+	} else {
+		// Otherwise, the stop node is provided and we start back tracking from the stop node.
+		backtrackingNode = stopNode
 	}
 	for ii := uint32(0); ii < maxHeadersPerMsg; ii++ {
-		headers = append(headers, nextNode.Header)
-		if stopNode != nil && nextNode.Hash.IsEqual(stopNode.Hash) {
+		// If we've back tracked all the way to the start node, exit.
+		if backtrackingNode.Hash.IsEqual(startNode.Hash) {
 			break
 		}
-		nextNode, nextNodeExists, nextNodeError = srv.blockchain.GetBlockFromBestChainByHeight(
-			nextNode.Header.Height+1, true)
-		if nextNodeError != nil {
-			glog.Errorf("Server._handleGetHeadersMessage: Error getting next node by height: %v", nextNodeError)
+		headers = append([]*MsgDeSoHeader{backtrackingNode.Header}, headers...)
+		// Avoid underflow.
+		if backtrackingNode.Height < 1 {
 			break
 		}
-		if !nextNodeExists || nextNode == nil {
+		prevNodeHeight := backtrackingNode.Header.Height - 1
+		backtrackingNode, backtrackingNodeExists, backtrackingNodeError = srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(
+			backtrackingNode.Header.PrevBlockHash,
+			&prevNodeHeight, true)
+		if backtrackingNodeError != nil {
+			glog.Errorf("Server._handleGetHeadersMessage: Error getting prev node by height: %v", backtrackingNodeError)
+			break
+		}
+		if !backtrackingNodeExists || backtrackingNode == nil {
 			break
 		}
 	}
@@ -2148,7 +2171,7 @@ func (srv *Server) _relayTransactions() {
 
 	for _, pp := range allPeers {
 		if !pp.canReceiveInvMessages {
-			glog.V(1).Infof("Skipping invs for peer %v because not ready "+
+			glog.V(2).Infof("Skipping invs for peer %v because not ready "+
 				"yet: %v", pp, pp.canReceiveInvMessages)
 			continue
 		}
