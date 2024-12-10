@@ -2267,6 +2267,11 @@ func (bc *Blockchain) processHeaderPoW(
 		bc.blockIndex.setHeaderTip(newNode)
 	}
 
+	// Put the height hash to node info in the db.
+	if err = PutHeightHashToNodeInfo(bc.db, bc.snapshot, newNode, false /*bitcoinNodes*/, bc.eventManager); err != nil {
+		return nil, false, false, errors.Wrapf(err, "ProcessHeader: Problem calling PutHeightHashToNodeInfo")
+	}
+
 	return newNode, isMainChain, false, nil
 }
 

@@ -1247,7 +1247,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
@@ -1255,7 +1255,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
-
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1285,7 +1285,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 4 second, which is 2x too slow.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
@@ -1293,7 +1293,7 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
-
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1349,7 +1349,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
@@ -1357,7 +1357,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
-
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1387,7 +1387,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 8 second, which is >2x too slow.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
@@ -1395,7 +1395,7 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
-
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1451,7 +1451,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating all at once.
 				TstampNanoSecs: SecondsToNanoSeconds(0),
@@ -1459,6 +1459,7 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1509,7 +1510,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 2 second, which is under the limit.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 2)),
@@ -1517,6 +1518,7 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1568,7 +1570,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
@@ -1576,6 +1578,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1605,7 +1608,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 3 seconds, which is slow but under the limit.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii) * 3),
@@ -1613,6 +1616,7 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 			StatusHeaderValidated,
 		))
 		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
