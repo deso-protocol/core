@@ -2193,6 +2193,8 @@ func (bc *Blockchain) processHeaderPoW(
 		return nil, false, false, HeaderErrorTimestampTooEarly
 	}
 
+	// @diamondhands - this check is significantly slower because we need to go
+	// to the DB to get a block at a specific height without knowledge of its hash.
 	// Check that the proof of work beats the difficulty as calculated from
 	// the parent block. Note that if the parent block is in the block index
 	// then it has necessarily had its difficulty validated, and so using it to
