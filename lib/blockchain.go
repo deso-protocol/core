@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"reflect"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1215,15 +1216,20 @@ func (bc *Blockchain) LatestHeaderLocator() []*BlockHash {
 	bc.ChainLock.RLock()
 	defer bc.ChainLock.RUnlock()
 	headerTip := bc.headerTip()
+	committedTip, _ := bc.GetCommittedTip()
 
-	return []*BlockHash{headerTip.Hash}
+	return []*BlockHash{headerTip.Hash, committedTip.Hash}
 }
 
 func (bc *Blockchain) GetBlockNodesToFetch(
 	numBlocks int, _maxHeight int, blocksToIgnore map[BlockHash]bool) []*BlockNode {
 
 	// Get the tip of the main block chain.
-	bestBlockTip := bc.blockTip()
+	bestBlockTip, ok := bc.GetCommittedTip()
+	if !ok {
+		glog.Errorf("GetBlockToFetch: Problem getting best block tip")
+		return nil
+	}
 
 	// If the maxHeight is set to < 0, then we don't want to use it as a constraint.
 	maxHeight := uint32(math.MaxUint32)
@@ -1231,77 +1237,61 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 		maxHeight = uint32(_maxHeight)
 	}
 
-	// If the tip of the best block chain is in the main header chain, make that
-	// the start point for our fetch.
-	bestBlockTipHeight := uint64(bestBlockTip.Height)
-	headerNodeStart, blockTipExistsInBestHeaderChain, err := bc.GetBlockFromBestChainByHashAndOptionalHeight(
-		bestBlockTip.Hash, &bestBlockTipHeight, true)
-	if err != nil {
-		glog.Errorf("GetBlockToFetch: Problem getting block by height: %v", err)
+	// Find the height of the node we want to back track from.
+	// If the max height is greater than the current header tip,
+	// we should use the header tip.
+	// If the header tip is still greater than bestBlockTip.Height + numBlocks,
+	// then we need to reduce the height limit.
+	blockNodesToFetch := []*BlockNode{}
+	heightLimit := uint64(maxHeight)
+	if heightLimit > bc.blockIndex.GetHeaderTip().Header.Height {
+		heightLimit = bc.blockIndex.GetHeaderTip().Header.Height
+	}
+	if heightLimit > bestBlockTip.Header.Height+uint64(numBlocks) {
+		heightLimit = bestBlockTip.Header.Height + uint64(numBlocks)
+	}
+	currentHeight := heightLimit
+	maxNode, maxNodeExists, maxNodeError := bc.GetBlockFromBestChainByHeight(currentHeight, true)
+	if maxNodeError != nil {
+		glog.Errorf("GetBlockToFetch: Problem getting block by height: %v", maxNodeError)
 		return nil
 	}
-	if !blockTipExistsInBestHeaderChain {
-		// If the hash of the tip of the best blockchain is not in the best header chain, then
-		// this is a case where the header chain has forked off from the best block
-		// chain. In this situation, the best header chain is taken as the source of truth
-		// and so we iterate backward over the best header chain starting at the tip
-		// until we find the first block that has StatusBlockProcessed. Then we fetch
-		// blocks starting from there. Note that, at minimum, the genesis block has
-		// StatusBlockProcessed so this loop is guaranteed to terminate successfully.
-		headerNodeStart = bc.headerTip()
-		for headerNodeStart != nil && (headerNodeStart.Status&StatusBlockProcessed) == 0 {
-			headerNodeStart = headerNodeStart.GetParent(bc.blockIndex)
-		}
-
-		if headerNodeStart == nil {
-			// If for some reason we ended up with the headerNode being nil, log
-			// an error and set it to the genesis block.
-			glog.Errorf("GetBlockToFetch: headerNode was nil after iterating " +
-				"backward through best header chain; using genesis block")
-			var err error
-			var genesisBlockExists bool
-			headerNodeStart, genesisBlockExists, err = bc.GetBlockFromBestChainByHeight(0, true)
-			if err != nil {
-				glog.Errorf("GetBlockToFetch: Problem getting genesis block: %v", err)
-				return nil
-			}
-			if !genesisBlockExists {
-				glog.Errorf("GetBlockToFetch: Genesis block not found")
-				return nil
-			}
-		}
+	if !maxNodeExists || maxNode == nil {
+		glog.Errorf("GetBlockToFetch: Block at height %d not found", heightLimit)
+		return nil
 	}
-
-	// At this point, headerNodeStart should point to a node in the best header
-	// chain that has StatusBlockProcessed set. As such, the blocks we need to
-	// fetch are those right after this one. Fetch the desired number.
-	currentHeight := headerNodeStart.Height + 1
-	blockNodesToFetch := []*BlockNode{}
-	heightLimit := maxHeight
-	if heightLimit >= bc.blockIndex.GetHeaderTip().Height {
-		heightLimit = bc.blockIndex.GetHeaderTip().Height - 1
-	}
-	for currentHeight <= heightLimit &&
-		len(blockNodesToFetch) < numBlocks {
-
-		// Get the current hash and increment the height.
-		currentNode, currentNodeExists, err := bc.GetBlockFromBestChainByHeight(uint64(currentHeight), true)
-		if err != nil {
-			glog.Errorf("GetBlockToFetch: Problem getting block by height: %v", err)
+	currentHash := maxNode.Hash
+	// Walk back from the maxNode to the bestBlockTip.
+	for len(blockNodesToFetch) < numBlocks &&
+		currentHeight >= uint64(bestBlockTip.Height) {
+		backtrackingNode, backtrackingNodeExists, backtrackingNodeError :=
+			bc.GetBlockFromBestChainByHashAndOptionalHeight(currentHash, &currentHeight, true)
+		if backtrackingNodeError != nil {
+			glog.Errorf("GetBlockToFetch: Problem getting block by height: %v", backtrackingNodeError)
 			return nil
 		}
-		if !currentNodeExists {
+		if !backtrackingNodeExists || backtrackingNode == nil {
 			glog.Errorf("GetBlockToFetch: Block at height %d not found", currentHeight)
 			return nil
 		}
-		currentHeight++
 
-		if _, exists := blocksToIgnore[*currentNode.Hash]; exists {
+		currentHeight--
+		currentHash = backtrackingNode.Header.PrevBlockHash
+
+		// Exclude any blocks we're supposed to ignore.
+		if _, exists := blocksToIgnore[*backtrackingNode.Hash]; exists {
 			continue
 		}
 
-		blockNodesToFetch = append(blockNodesToFetch, currentNode)
+		// Skip any stored blocks as we already have them.
+		if backtrackingNode.IsStored() {
+			continue
+		}
+
+		blockNodesToFetch = append(blockNodesToFetch, backtrackingNode)
 	}
+
+	slices.Reverse(blockNodesToFetch)
 
 	// Return the nodes for the blocks we should fetch.
 	return blockNodesToFetch

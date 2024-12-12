@@ -652,6 +652,14 @@ func (bc *Blockchain) validateAndIndexBlockPoS(
 	// Base case - Check if the block is validated or validate failed. If so, we can return early.
 	blockNode, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(blockHash, block.Header.Height)
 	if exists && (blockNode.IsValidateFailed() || blockNode.IsValidated()) {
+		// If the block isn't stored, we store it now.
+		if !blockNode.IsStored() {
+			var err error
+			blockNode, err = bc.storeBlockInBlockIndex(block, blockHash)
+			if err != nil {
+				return nil, errors.Wrap(err, "validateAndIndexBlockPoS: Problem storing block to block index")
+			}
+		}
 		return blockNode, nil
 	}
 
@@ -1295,8 +1303,8 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 	currentHash := header.PrevBlockHash.NewBlockHash()
 	currentHeight := header.Height - 1
 	ancestors := []*BlockNode{}
-	prevHeight := header.Height
-	prevView := header.GetView()
+	childHeight := header.Height
+	childView := header.GetView()
 	for {
 		// TODO: is currentHeight correct here?
 		currentBlock, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(currentHash, currentHeight)
@@ -1312,10 +1320,10 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 		if currentBlock.IsValidateFailed() {
 			return nil, nil, RuleErrorAncestorBlockValidationFailed
 		}
-		if uint64(currentBlock.Header.Height)+1 != prevHeight {
+		if uint64(currentBlock.Header.Height)+1 != childHeight {
 			return nil, nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
 		}
-		if currentBlock.Header.GetView() >= prevView {
+		if currentBlock.Header.GetView() >= childView {
 			return nil, nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
 
@@ -1329,8 +1337,9 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 
 		ancestors = append(ancestors, currentBlock)
 		currentHash = currentBlock.Header.PrevBlockHash
-		prevHeight = currentBlock.Header.Height
-		prevView = currentBlock.Header.GetView()
+		currentHeight = currentBlock.Header.Height - 1
+		childHeight = currentBlock.Header.Height
+		childView = currentBlock.Header.GetView()
 	}
 	return collections.Reverse(ancestors), nil, nil
 }
@@ -1608,6 +1617,10 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	chainTip := bc.BlockTip()
 	// If this block extends from the chain tip, there's no need to reorg.
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
+		return false
+	}
+	// If the block is proposed in a view less than the current tip, there's no need to reorg.
+	if blockNode.Header.ProposedInView < chainTip.Header.ProposedInView {
 		return false
 	}
 	// If the block is proposed in a view less than the current view, there's no need to reorg.
