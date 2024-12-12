@@ -2298,6 +2298,7 @@ func (bc *Blockchain) ProcessBlock(desoBlock *MsgDeSoBlock, verifySignatures boo
 	// If the block's height is after the PoS cut-over fork height, then we use the PoS block processing logic.
 	// Otherwise, fall back to the PoW logic.
 	if bc.params.IsPoSBlockHeight(desoBlock.Header.Height) {
+		// TODO: can we pass some legit view number in here for non-validator nodes?
 		return bc.processBlockPoS(desoBlock, 1, verifySignatures)
 	}
 

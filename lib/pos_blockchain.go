@@ -1619,10 +1619,6 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
 		return false
 	}
-	// If the block is proposed in a view less than the current tip, there's no need to reorg.
-	if blockNode.Header.ProposedInView < chainTip.Header.ProposedInView {
-		return false
-	}
 	// If the block is proposed in a view less than the current view, there's no need to reorg.
 	return blockNode.Header.ProposedInView >= currentView
 }
