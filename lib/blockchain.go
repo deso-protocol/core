@@ -584,6 +584,7 @@ func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *Block
 		snapshot:         snapshot,
 		blockIndexByHash: blockIndexByHash,
 		tip:              tipNode,
+		headerTip:        tipNode,
 	}
 }
 

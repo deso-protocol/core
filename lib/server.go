@@ -1126,9 +1126,6 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	if checkpointBlockInfo == nil {
 		return true, false
 	}
-	// TODO: @diamondhands - why can't we move this up in this function? It seems like we can avoid
-	// checking if we have the checkpoint block node if the header we're processing is below the height.
-	// This will save us 17-18% of the time it takes to process headers.
 	// If the current header has a height below the checkpoint block height, we should skip signature verification
 	// even if we've seen the checkpoint block hash.
 	if header.Height < checkpointBlockInfo.Height {
