@@ -1234,11 +1234,17 @@ func TestShouldReorg(t *testing.T) {
 			Hash:   hash1,
 			Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
 			Height: 0,
+			Header: &MsgDeSoHeader{
+				ProposedInView: 0,
+			},
 		},
 		{
 			Hash:   hash3,
 			Status: StatusBlockStored | StatusBlockValidated,
 			Height: 1,
+			Header: &MsgDeSoHeader{
+				ProposedInView: 1,
+			},
 		},
 	}
 	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
