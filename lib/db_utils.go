@@ -5622,63 +5622,6 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 	return blockIndex, nil
 }
 
-// LoadBlockIndexFromHeight loads the block index from the database starting at
-// a given height. This is only used by initChain, where we want to load all blocks
-// that could be descendents of the current tip block in the database.
-func (bi *BlockIndex) LoadBlockIndexFromHeight(height uint32, params *DeSoParams) error {
-	// Get the prefix for the provided height.
-	prefix := _heightHashToNodePrefixByHeight(height, false)
-
-	return bi.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		nodeIterator := txn.NewIterator(opts)
-		defer nodeIterator.Close()
-		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
-			var blockNode *BlockNode
-
-			// Don't bother checking the key. We assume that the key lines up
-			// with what we've stored in the value in terms of (height, block hash).
-			item := nodeIterator.Item()
-			err := item.Value(func(blockNodeBytes []byte) error {
-				// Deserialize the block node.
-				var err error
-				blockNode, err = DeserializeBlockNode(blockNodeBytes)
-				if err != nil {
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-
-			// If we got here it means we read a blockNode successfully. Store it
-			// into our node index.
-			bi.addNewBlockNodeToBlockIndex(blockNode)
-
-			// Find the parent of this block, which should already have been read
-			// in and connect it. Skip the genesis block, which has height 0.
-			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
-				continue
-			}
-			if parent, ok := bi.GetBlockNodeByHashAndHeight(blockNode.Header.PrevBlockHash, uint64(blockNode.Height)); ok {
-				// We found the parent node so connect it.
-				blockNode.Parent = parent
-				continue
-			}
-			// If we're syncing a DeSo node and we hit a PoS block, we expect there to
-			// be orphan blocks in the block index. In this case, we don't throw an error.
-			if params.IsPoSBlockHeight(uint64(blockNode.Height)) {
-				continue
-			}
-			// In this case we didn't find the parent so error. There shouldn't
-			// be any unconnectedTxns in our block index.
-			return fmt.Errorf("GetBlockIndex: Could not find parent for blockNode: %+v", blockNode)
-		}
-		return nil
-	})
-}
-
 // RunBlockIndexMigration runs a migration to populate the hash to height index from the height hash to
 // block node index. We can't use the encoder migrations to handle this situation since it's a new index
 // and not a modification of the existing entry type stored. This migration simply iterates over the keys in the

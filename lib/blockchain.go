@@ -1068,11 +1068,6 @@ func (bc *Blockchain) _initChain() error {
 				currBlockCounter++
 			}
 		}
-		// Load all blocks greater than the tip node into the block index. This allows us to
-		// have quick access to all uncommitted blocks and orphans.
-		if err = bc.blockIndex.LoadBlockIndexFromHeight(tipNode.Height, bc.params); err != nil {
-			return errors.Wrapf(err, "_initChain: Problem loading block index from db")
-		}
 
 		// We start by simply setting the chain tip and header tip to the tip node.
 		bc.blockIndex.setTip(tipNode)
