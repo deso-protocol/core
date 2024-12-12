@@ -1929,7 +1929,7 @@ func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	}
 
 	highestCommittedBlock, exists := bc.GetCommittedTip()
-	glog.Infof("Highest committed block: %v", highestCommittedBlock)
+	glog.V(4).Infof("Highest committed block: %v", highestCommittedBlock)
 	if !exists || highestCommittedBlock == nil {
 		return nil, errors.Errorf("GetUtxoViewAndUtxoOpsAtBlockHash: No committed blocks found")
 	}
