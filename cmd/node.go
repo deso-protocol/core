@@ -66,7 +66,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
 	flag.Set("vmodule", node.Config.GlogVmodule)
-	flag.Set("alsologtostderr", "true")
+	flag.Set("alsologtostderr", fmt.Sprintf("%t", !node.Config.NoLogToStdErr))
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 	node.runningMutex.Lock()

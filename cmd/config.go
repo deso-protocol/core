@@ -79,6 +79,7 @@ type Config struct {
 	LogDBSummarySnapshots bool
 	DatadogProfiler       bool
 	TimeEvents            bool
+	NoLogToStdErr         bool
 
 	// State Syncer
 	StateChangeDir                 string
