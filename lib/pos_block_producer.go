@@ -4,8 +4,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec/v2"
-
 	"github.com/btcsuite/btcd/wire"
 
 	"github.com/deso-protocol/core/bls"
@@ -347,14 +345,9 @@ func (pbp *PosBlockProducer) getBlockTransactions(
 				return nil, 0,
 					errors.New("Error casting txn meta to AtomicSwapMetadata")
 			}
-			blockProducerPublicKeyBtcec, err := btcec.ParsePubKey(blockProducerPublicKey.ToBytes())
-			if err != nil {
-				return nil, 0,
-					errors.Wrapf(err, "Error parsing block producer public key: ")
-			}
 			// Set fees to the sum of fees paid by public keys other than the block producer.
 			fees, err = filterOutBlockRewardRecipientFees(
-				txnMeta.Txns, blockProducerPublicKeyBtcec)
+				txnMeta.Txns, blockProducerPublicKey)
 			if err != nil {
 				return nil, 0,
 					errors.Wrapf(err, "error filtering out block reward recipient fees")

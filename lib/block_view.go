@@ -4348,7 +4348,7 @@ func (bav *UtxoView) ConnectBlock(
 	}
 
 	blockHeader := desoBlock.Header
-	var blockRewardOutputPublicKey *btcec.PublicKey
+	var blockRewardOutputPublicKey *PublicKey
 	// If the block height is greater than or equal to the block reward patch height,
 	// we will verify that there is only one block reward output and we'll parse
 	// that public key
@@ -4365,11 +4365,12 @@ func (bav *UtxoView) ConnectBlock(
 		if len(desoBlock.Txns[0].TxOutputs) != 1 {
 			return nil, errors.Wrap(RuleErrorBlockRewardTxnMustHaveOneOutput, "ConnectBlock: Block reward transaction must have exactly one output")
 		}
-		var err error
-		blockRewardOutputPublicKey, err =
-			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey)
-		if err != nil {
-			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
+		blockRewardOutputPublicKey =
+			NewPublicKey(desoBlock.Txns[0].TxOutputs[0].PublicKey)
+		if blockRewardOutputPublicKey == nil {
+			return nil, fmt.Errorf(
+				"ConnectBlock: Problem parsing block reward public key: incorrect number of bytes in public key: %v",
+				desoBlock.Txns[0].TxOutputs[0].PublicKey)
 		}
 	}
 
@@ -4407,11 +4408,13 @@ func (bav *UtxoView) ConnectBlock(
 		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
 			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 			txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey)
-			if err != nil {
-				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
+			transactorPubKey := NewPublicKey(txn.PublicKey)
+			if transactorPubKey == nil {
+				return nil, fmt.Errorf(
+					"ConnectBlock: Problem parsing transactor public key: incorrect number of bytes in txn.PublicKey: %v",
+					txn.PublicKey)
 			}
-			includeFeesInBlockReward = !transactorPubKey.IsEqual(blockRewardOutputPublicKey)
+			includeFeesInBlockReward = !transactorPubKey.Equal(*blockRewardOutputPublicKey)
 		}
 
 		if includeFeesInBlockReward {
