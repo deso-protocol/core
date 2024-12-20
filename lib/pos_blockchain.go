@@ -1960,13 +1960,19 @@ func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	// Connect the uncommitted blocks to the tip so that we can validate subsequent blocks
 	utxoView := NewUtxoViewWithSnapshotCache(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager,
 		bc.snapshotCache)
-	// TODO: there's another performance enhancement we can make here. If we have a view in the
-	// cache for one of the ancestors, we can skip fetching the block and connecting it by taking
-	// a copy of it and replacing the existing view.
 	var utxoOps [][]*UtxoOperation
 	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
 		glog.V(4).Infof("Connecting block %v", uncommittedAncestors[ii])
+		// Check the cache to see if we already have a view for this block.
+		cachedView, cachedAncestorExists := bc.getCachedBlockViewAndUtxoOps(*uncommittedAncestors[ii].Hash)
+		if cachedAncestorExists {
+			cachedViewCopy := cachedView.Copy()
+			utxoView = cachedViewCopy.UtxoView
+			fullBlock = cachedViewCopy.Block
+			utxoOps = cachedViewCopy.UtxoOps
+			continue
+		}
 		var err error
 		// We need to get these blocks from badger
 		fullBlock, err = GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
