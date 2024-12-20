@@ -1966,7 +1966,7 @@ func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	var utxoOps [][]*UtxoOperation
 	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
-		glog.Infof("Connecting block %v", uncommittedAncestors[ii])
+		glog.V(4).Infof("Connecting block %v", uncommittedAncestors[ii])
 		var err error
 		// We need to get these blocks from badger
 		fullBlock, err = GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)

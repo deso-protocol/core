@@ -371,7 +371,7 @@ func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
 		glog.V(2).Info("Block index migration has already been run")
 		return nil
 	}
-	glog.V(2).Info("Running block index migration")
+	glog.V(0).Info("Running block index migration")
 	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
 		return errors.Wrapf(err, "Problem running block index migration")
 	}

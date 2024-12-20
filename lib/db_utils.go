@@ -5648,6 +5648,7 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		var bestHashHeight uint32
 		// Iterate over all the keys in the height hash to node index, extract the height and hash,
 		// and batch write every 10k entries to the hash to height index.
+		startTime := time.Now()
 		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
 			item := nodeIterator.Item().Key()
 
@@ -5659,6 +5660,9 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 			// If we have a best hash, we want to store the height of the best hash.
 			if bestHash != nil && bestHash.IsEqual(&hash) {
 				bestHashHeight = height
+			}
+			if height%100000 == 0 {
+				glog.V(0).Infof("Time to run block index migration to height %v: %v", height, time.Since(startTime))
 			}
 			// If we have fewer than 10K entries, continue.
 			if len(hashToHeightMap) < 10000 {
@@ -5679,6 +5683,7 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
 			}
 		}
+		glog.V(0).Infof("Time to run block index migration: %v", time.Since(startTime))
 		// If we don't have a best hash, then we certainly haven't hit the first pos block height.
 		if bestHash == nil {
 			return nil
