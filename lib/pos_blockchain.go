@@ -1963,7 +1963,6 @@ func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	var utxoOps [][]*UtxoOperation
 	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
-		glog.V(4).Infof("Connecting block %v", uncommittedAncestors[ii])
 		// Check the cache to see if we already have a view for this block.
 		cachedView, cachedAncestorExists := bc.getCachedBlockViewAndUtxoOps(*uncommittedAncestors[ii].Hash)
 		if cachedAncestorExists {
