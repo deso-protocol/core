@@ -5689,6 +5689,8 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 			return nil
 		}
 
+		glog.V(0).Infof("Running PoW block committed migration...")
+
 		// We want to mark all PoW blocks as committed, so we'll get the first pos block
 		// and iterate backwards marking all blocks as committed. If the PoS cutover hasn't
 		// happened yet, then we'll just the current best hash from the DB to determine the
@@ -5715,29 +5717,46 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 		// In this case we have not reached the cutover, we need to find pull the best hash
 		// from the DB and iterate backwards.
 		if len(valsFound) == 0 {
+			glog.V(0).Infof("Found multiple blocks at PoS cutover height: %v num blocks", len(valsFound))
 			blockNode = GetHeightHashToNodeInfoWithTxn(txn, snapshot, bestHashHeight, bestHash, false)
 			if blockNode == nil {
 				return fmt.Errorf("RunBlockIndexMigration: block with Best hash (%v) and height (%v) not found", bestHash, bestHashHeight)
 			}
 		} else {
-			// If we have 1 block at the cutover height, we'll use that block to iterate backwards.
-			blockNode, err = DeserializeBlockNode(valsFound[0])
-			if err != nil {
-				return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node for pos cutover")
+			// If we have one or more blocks at the cutover height, we need to find the block that is committed.
+			for _, val := range valsFound {
+				blockNode, err = DeserializeBlockNode(val)
+				if err != nil {
+					return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node")
+				}
+				// If we found the committed block, break out.
+				if blockNode.IsCommitted() {
+					break
+				}
+			}
+			if !blockNode.IsCommitted() {
+				return fmt.Errorf("RunBlockIndexMigration: No committed block found at PoS cutover height")
 			}
 		}
+		startHeight := blockNode.Height
+		startTime = time.Now()
 		var blockNodeBatch []*BlockNode
 		for blockNode != nil {
 			// If the block is not committed, mark it as committed.
 			if !blockNode.IsCommitted() {
 				blockNode.Status |= StatusBlockCommitted
+				// Add it to the batch.
+				blockNodeBatch = append(blockNodeBatch, blockNode)
 			}
-			// Add it to the batch.
-			blockNodeBatch = append(blockNodeBatch, blockNode)
 			// Find the parent of this block.
-			parentBlockNode := GetHeightHashToNodeInfoWithTxn(txn, snapshot, blockNode.Height, blockNode.Hash, false /*bitcoinNodes*/)
+			parentBlockNode := GetHeightHashToNodeInfoWithTxn(
+				txn, snapshot, blockNode.Height-1, blockNode.Header.PrevBlockHash, false /*bitcoinNodes*/)
 			if blockNode.Height > 0 && parentBlockNode == nil {
 				return errors.New("RunBlockIndexMigration: Parent block node not found")
+			}
+			if blockNode.Height%10000 == 0 {
+				glog.V(0).Infof("Time to run PoW block committed migration from start height %v to height %v: %v",
+					startHeight, blockNode.Height, time.Since(startTime))
 			}
 			// Jump up to the parent block node.
 			blockNode = parentBlockNode
