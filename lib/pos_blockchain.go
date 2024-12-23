@@ -2052,9 +2052,8 @@ func (bc *Blockchain) getSafeBlockNodes() ([]*BlockNode, error) {
 	safeBlocks := []*BlockNode{committedTip}
 	// TODO: improve performance of getMaxSequentialBlockHeightAfter. It's too slow when
 	// we don't have the entire block index in memory.
-	//maxHeightWithSafeBlocks := bc.getMaxSequentialBlockHeightAfter(uint64(committedTip.Height))
-	// Only get the blocks from the block index for the next 100 heights.
-	for ii := uint64(committedTip.Height + 1); ii < uint64(committedTip.Height+101); ii++ {
+	maxHeightWithSafeBlocks := bc.getMaxSequentialBlockHeightAfter(uint64(committedTip.Height))
+	for ii := uint64(committedTip.Height + 1); ii < maxHeightWithSafeBlocks+1; ii++ {
 		blockNodes := bc.blockIndex.GetBlockNodesByHeight(ii)
 		// If we don't have any blocks at this height, we know that any blocks at a later height are not safe blocks.
 		if len(blockNodes) == 0 {
