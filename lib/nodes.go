@@ -1,29 +1,14 @@
 package lib
 
 type DeSoNode struct {
-    	// Whether entry is active
-	Active bool
-
-	// Name of the node, displayed to users
-	Name string
-
-    	// DeSo username of the node owner
-	Owner string
-
-	// HTTPs URL to backend/node (IF operating backend/node API service)
-	URL string
-
-    	// HTTPs URL to frontend (IF operating frontend service)
-    	FrontendURL string
-
-    	// HTTPs URL to graphql (IF operating graphql service)
-    	GraphqlURL string
-
-    	// PublicKeyBase58Check for the entry
-	EntryPublicKeyBase58Check string
-
-    	// PublicKeyBase58Check for the owner of this entry
-	OwnerPublicKeyBase58Check string
+	Active bool			 // Whether entry is active
+	Name string			 // Name of the node, displayed to users
+	Owner string			 // DeSo username of the node owner
+	URL string 			 // HTTPs URL to backend/node (IF operating backend/node API service)
+    	FrontendURL string 		 // HTTPs URL to frontend (IF operating frontend service)
+    	GraphqlURL string 		 // HTTPs URL to graphql (IF operating graphql service)
+	EntryPublicKeyBase58Check string // PublicKeyBase58Check for the entry
+	OwnerPublicKeyBase58Check string // PublicKeyBase58Check for the owner of this entry
 }
 
 //
@@ -235,7 +220,7 @@ var NODES = map[uint64]DeSoNode{
         OwnerPublicKeyBase58Check: "BC1YLhMAJLqN3LksgxnyR5qQCkS6ccwxcANsEVBCH7saP7gcQ44HAux",
     },
     23: {
-        Active: false, // is this still a deso project?
+        Active: false,
         Name: "Entre",
         Owner: "entre",
         URL: "https://joinentre.com",
@@ -302,7 +287,7 @@ var NODES = map[uint64]DeSoNode{
         Owner: "nader",
         URL: "https://focus.xyz",
         FrontendURL: "https://focus.xyz",
-        GraphqlURL: "https://graphql.focus.xyz/graphql",
+        GraphqlURL: "https://graphql.focus.xyz",
         EntryPublicKeyBase58Check: "BC1YLgCHoNcwi8h6gQ8ajayqN6BELu11jc2C5A7jPUgPT253xL3jXUq",
         OwnerPublicKeyBase58Check: "BC1YLhyuDGeWVgHmh3UQEoKstda525T1LnonYWURBdpgWbFBfRuntP5",
     },
