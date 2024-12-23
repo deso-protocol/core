@@ -1962,6 +1962,9 @@ func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	var utxoOps [][]*UtxoOperation
 	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
+		// TODO: this optimization is disabled for now. Although this speeds up the fetching of
+		// a utxo view for a given block hash, it actually ends up building up a lot of data in the
+		// view of already committed data.
 		// Check the cache to see if we already have a view for this block.
 		//cachedView, cachedAncestorExists := bc.getCachedBlockViewAndUtxoOps(*uncommittedAncestors[ii].Hash)
 		//if cachedAncestorExists {
