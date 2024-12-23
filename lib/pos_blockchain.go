@@ -117,9 +117,8 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	if header.Height < 1 {
 		return nil, false, errors.New("validateAndIndexHeaderPoS: Header height is less than 1 - no valid parent height")
 	}
-	parentBlockNode, parentBlockNodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(
-		header.PrevBlockHash, header.Height-1)
-	if !parentBlockNodeExists {
+	parentBlockNode := blockNode.GetParent(bc.blockIndex)
+	if parentBlockNode == nil {
 		return nil, true, nil
 	}
 
@@ -1685,13 +1684,13 @@ func (bc *Blockchain) canCommitGrandparent(currentBlock *BlockNode) (
 ) {
 	// TODO: Is it sufficient that the current block's header points to the parent
 	// or does it need to have something to do with the QC?
-	parent, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
-	if !exists {
+	parent := currentBlock.GetParent(bc.blockIndex)
+	if parent == nil {
 		glog.Errorf("canCommitGrandparent: Parent block %v not found in best chain map", currentBlock.Header.PrevBlockHash.String())
 		return nil, false
 	}
-	grandParent, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(parent.Header.PrevBlockHash, uint64(parent.Height-1))
-	if !exists {
+	grandParent := parent.GetParent(bc.blockIndex)
+	if grandParent == nil {
 		glog.Errorf("canCommitGrandparent: Grandparent block %v not found in best chain map", parent.Header.PrevBlockHash.String())
 		return nil, false
 	}

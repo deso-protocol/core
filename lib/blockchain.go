@@ -1063,8 +1063,9 @@ func (bc *Blockchain) _initChain() error {
 			// @diamondhands - we could reduce this to just the last hour if we want.
 			// Walk back the last 24 hours of blocks.
 			currBlockCounter := 1
-			for currBlockCounter < 3600*24 && tipNode.Header.PrevBlockHash != nil {
-				bc.blockIndex.GetBlockNodeByHashAndHeight(tipNode.Header.PrevBlockHash, tipNode.Header.Height-1)
+			parentNode := tipNode.GetParent(bc.blockIndex)
+			for currBlockCounter < 3600*24 && parentNode != nil {
+				parentNode = parentNode.GetParent(bc.blockIndex)
 				currBlockCounter++
 			}
 		}
@@ -1913,14 +1914,13 @@ func (bc *Blockchain) _FindCommonAncestor(node1 *BlockNode, node2 *BlockNode) *B
 	// reach the end of the lists. We only need to check node1 for nil
 	// since they're the same height and we are iterating both back
 	// in tandem.
-	var exists bool
 	for !node1.Hash.IsEqual(node2.Hash) {
-		node1, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(node1.Header.PrevBlockHash, uint64(node1.Height-1))
-		if !exists {
+		node1 = node1.GetParent(bc.blockIndex)
+		if node1 == nil {
 			return nil
 		}
-		node2, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(node2.Header.PrevBlockHash, uint64(node2.Height-1))
-		if !exists {
+		node2 = node2.GetParent(bc.blockIndex)
+		if node2 == nil {
 			return nil
 		}
 	}
@@ -2038,9 +2038,8 @@ func (bc *Blockchain) GetReorgBlocks(tip *BlockNode, newNode *BlockNode) (
 	*currentBlock = *tip
 	for currentBlock != nil && *currentBlock.Hash != *commonAncestor.Hash {
 		detachBlocks = append(detachBlocks, currentBlock)
-		var exists bool
-		currentBlock, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
-		if !exists {
+		currentBlock = currentBlock.GetParent(bc.blockIndex)
+		if currentBlock == nil {
 			glog.Fatalf("GetReorgBlocks: Failed to find parent of block. Parent hash %v", currentBlock.Header.PrevBlockHash)
 		}
 	}
@@ -2057,9 +2056,8 @@ func (bc *Blockchain) GetReorgBlocks(tip *BlockNode, newNode *BlockNode) (
 	*currentBlock = *newNode
 	for *currentBlock.Hash != *commonAncestor.Hash {
 		attachBlocks = append(attachBlocks, currentBlock)
-		var exists bool
-		currentBlock, exists = bc.blockIndex.GetBlockNodeByHashAndHeight(currentBlock.Header.PrevBlockHash, uint64(currentBlock.Height-1))
-		if !exists {
+		currentBlock = currentBlock.GetParent(bc.blockIndex)
+		if currentBlock == nil {
 			// TODO: what should we do here?
 			glog.Fatal("GetReorgBlocks: Failed to find parent of block")
 		}
