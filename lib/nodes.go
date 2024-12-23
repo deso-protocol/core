@@ -11,13 +11,13 @@ type DeSoNode struct {
 	Owner string
 
 	// HTTPs URL to backend/node (IF operating backend/node API service)
-	URL *string
+	URL string
 
     	// HTTPs URL to frontend (IF operating frontend service)
-    	FrontendURL *string
+    	FrontendURL string
 
     	// HTTPs URL to graphql (IF operating graphql service)
-    	GraphqlURL *string
+    	GraphqlURL string
 
     	// PublicKeyBase58Check for the entry
 	EntryPublicKeyBase58Check string
