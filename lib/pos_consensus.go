@@ -238,6 +238,8 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 	event *consensus.FastHotStuffEvent,
 	expectedEventType consensus.FastHotStuffEventType,
 ) error {
+	// TODO: DELETE ME!!
+	glog.Infof("FastHotStuffConsensus.handleBlockProposalEvent: %s", event.ToString())
 	// Validate that the event's type is the expected proposal event type
 	if !isValidBlockProposalEvent(event, expectedEventType) {
 		return errors.Errorf("Unexpected event type: %v vs %v", event.EventType, expectedEventType)
