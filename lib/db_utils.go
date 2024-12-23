@@ -2,18 +2,21 @@ package lib
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/core/collections"
+	"github.com/dgraph-io/ristretto/z"
 	"io"
 	"log"
 	"math"
 	"math/big"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -1525,6 +1528,76 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []by
 	}
 
 	return nil
+}
+
+// _enumerateKeysForPrefixWithStream demonstrates scanning keys (and optional values)
+// that share a prefix via the Badger Stream API.
+func _enumerateKeysForPrefixWithStream(db *badger.DB, dbPrefix []byte, keysOnly bool) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	// Create a new stream on the DB.
+	stream := db.NewStream()
+	stream.NumGo = runtime.NumCPU() // use all cores
+
+	// Restrict the stream to process only keys that match this prefix.
+	// The Stream API will fetch items in key order, parallelizing internally.
+	stream.Prefix = dbPrefix
+
+	type StreamEntry struct {
+		key   []byte
+		value []byte
+	}
+
+	streamEntries := []StreamEntry{}
+
+	// The Send callback receives batches of KVs.
+	stream.Send = func(buf *z.Buffer) error {
+		list, err := badger.BufferToKVList(buf)
+		if err != nil {
+			return err
+		}
+		for _, kv := range list.Kv {
+			// Double-check the prefix if you want a safeguard:
+			if !bytes.HasPrefix(kv.Key, dbPrefix) {
+				continue
+			}
+
+			// Copy the key so it doesn't get overwritten by subsequent batches.
+			keyCopy := make([]byte, len(kv.Key))
+			copy(keyCopy, kv.Key)
+			streamEntry := StreamEntry{
+				key: keyCopy,
+			}
+
+			// If we aren't in keysOnly mode, retrieve the value.
+			if !keysOnly {
+				// If KeyOnly = true above, kv.Value is empty.
+				// If KeyOnly = false, we can copy the value here.
+				valCopy := make([]byte, len(kv.Value))
+				copy(valCopy, kv.Value)
+				//valsFound = append(valsFound, valCopy)
+				streamEntry.value = valCopy
+			}
+			streamEntries = append(streamEntries, streamEntry)
+		}
+		return nil
+	}
+
+	// Execute the stream scan.
+	err := stream.Orchestrate(context.Background())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, streamEntry := range streamEntries {
+		keysFound = append(keysFound, streamEntry.key)
+		if !keysOnly {
+			valsFound = append(valsFound, streamEntry.value)
+		}
+	}
+
+	return keysFound, valsFound, nil
 }
 
 func EnumerateKeysForPrefix(
