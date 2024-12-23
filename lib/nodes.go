@@ -341,24 +341,25 @@ var NODES = map[uint64]DeSoNode{
         OwnerPublicKeyBase58Check: "BC1YLjWERF3xWcAD3SeCqtnRwF3FvhoXScZmF5TECd98qeCZpEzgsJD",
     }
 
-    /* Note the following entries exist in transactions on the blockchain
-
-    30: { // NOTE: was USING #30, but #30 is now registered as focus.xyz
-        Active: false,
-        Name: "CooperativaLocal",
-        Owner: "CooperativaLocal",
-        URL: "https://node.cooperativalocal.org",
-        FrontendURL: "https://node.cooperativalocal.org",
-        EntryPublicKeyBase58Check: "BC1YLjFYcyrfzZBxaQAAtuKnHTE9t8ozbX6VqvN3Ryza8z2cnUAPR7J",
-        OwnerPublicKeyBase58Check: "BC1YLjFYcyrfzZBxaQAAtuKnHTE9t8ozbX6VqvN3Ryza8z2cnUAPR7J",
-    },
-    30: { // NOTE: USING 30, but not a node and #30  is now registered as focus.xyz
-        Active: true,
-        Name: "MyDeSoSpace",
-        Owner: "nathanwells",
-        FrontendURL: "https://mydesospace.com",
-        EntryPublicKeyBase58Check: "BC1YLfzejg1ak9KuSDchYpwT9VGjwmyVWH1GCHJRRoaPbkJezG5pCRA",
-        OwnerPublicKeyBase58Check: "BC1YLh3xfZeXxLNnMaMwhvnTBWozbyoWbDzzyk5ydh6rikNdzPuYEY4",
-    }
-    */
+// Note the following unregistered entries exist in transactions on the blockchain
+//
+// NOTE: following was USING #30, but #30 is now registered as focus.xyz
+//    30: {
+//        Active: false,
+//        Name: "CooperativaLocal",
+//        Owner: "CooperativaLocal",
+//        URL: "https://node.cooperativalocal.org",
+//        FrontendURL: "https://node.cooperativalocal.org",
+//        EntryPublicKeyBase58Check: "BC1YLjFYcyrfzZBxaQAAtuKnHTE9t8ozbX6VqvN3Ryza8z2cnUAPR7J",
+//        OwnerPublicKeyBase58Check: "BC1YLjFYcyrfzZBxaQAAtuKnHTE9t8ozbX6VqvN3Ryza8z2cnUAPR7J",
+//    },
+// NOTE: following USING 30, not a node and #30 is now registered as focus.xyz
+//    30: {
+//        Active: true,
+//        Name: "MyDeSoSpace",
+//        Owner: "nathanwells",
+//        FrontendURL: "https://mydesospace.com",
+//        EntryPublicKeyBase58Check: "BC1YLfzejg1ak9KuSDchYpwT9VGjwmyVWH1GCHJRRoaPbkJezG5pCRA",
+//        OwnerPublicKeyBase58Check: "BC1YLh3xfZeXxLNnMaMwhvnTBWozbyoWbDzzyk5ydh6rikNdzPuYEY4",
+//    }
 }
