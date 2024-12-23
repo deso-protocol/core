@@ -1964,14 +1964,14 @@ func (bc *Blockchain) GetUtxoViewAndUtxoOpsAtBlockHash(blockHash BlockHash, bloc
 	var fullBlock *MsgDeSoBlock
 	for ii := len(uncommittedAncestors) - 1; ii >= 0; ii-- {
 		// Check the cache to see if we already have a view for this block.
-		cachedView, cachedAncestorExists := bc.getCachedBlockViewAndUtxoOps(*uncommittedAncestors[ii].Hash)
-		if cachedAncestorExists {
-			cachedViewCopy := cachedView.Copy()
-			utxoView = cachedViewCopy.UtxoView
-			fullBlock = cachedViewCopy.Block
-			utxoOps = cachedViewCopy.UtxoOps
-			continue
-		}
+		//cachedView, cachedAncestorExists := bc.getCachedBlockViewAndUtxoOps(*uncommittedAncestors[ii].Hash)
+		//if cachedAncestorExists {
+		//	cachedViewCopy := cachedView.Copy()
+		//	utxoView = cachedViewCopy.UtxoView
+		//	fullBlock = cachedViewCopy.Block
+		//	utxoOps = cachedViewCopy.UtxoOps
+		//	continue
+		//}
 		var err error
 		// We need to get these blocks from badger
 		fullBlock, err = GetBlock(uncommittedAncestors[ii].Hash, bc.db, bc.snapshot)
