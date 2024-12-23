@@ -1,21 +1,5 @@
 package lib
 
-// @StarGeezer - 23 Dec 2024
-//
-// Description: improved structure to make '/get-app-state' more useful for live services.
-// May also provide trusted active node list for backend init.
-// Updated with active statuses and known changes to URLs and service availability.
-//
-// ** Note: existing keys retained to avoid breaking changes **
-//
-// New keys to specify: 
-// - whether entry is active (for history and active service lookups)
-// - URL endpoints for service(s) provided:- (presence/absence indicates service provision)
-//     - URL (backend)
-//     - FrontendURL (frontend)
-//     - GraphqlURL (graphQL)
-// - Entry/OwnerPublicKeyBase58Check (consistency over username, provide profile & avatar for listings)
-
 type DeSoNode struct {
     	// Whether entry is active
 	Active bool
@@ -339,7 +323,7 @@ var NODES = map[uint64]DeSoNode{
         FrontendURL: "https://beyondsocial.app",
         EntryPublicKeyBase58Check: "BC1YLg6ZPmoFXwdRMe7EhnuJJJmbckATPpbK3Cy9miH6WSE4UWBzz2u",
         OwnerPublicKeyBase58Check: "BC1YLjWERF3xWcAD3SeCqtnRwF3FvhoXScZmF5TECd98qeCZpEzgsJD",
-    }
+    },
 
 // Note the following unregistered entries exist in transactions on the blockchain
 //
