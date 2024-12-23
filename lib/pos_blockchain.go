@@ -117,8 +117,9 @@ func (bc *Blockchain) validateAndIndexHeaderPoS(header *MsgDeSoHeader, headerHas
 	if header.Height < 1 {
 		return nil, false, errors.New("validateAndIndexHeaderPoS: Header height is less than 1 - no valid parent height")
 	}
-	parentBlockNode := blockNode.GetParent(bc.blockIndex)
-	if parentBlockNode == nil {
+	parentBlockNode, parentBlockNodeExists := bc.blockIndex.GetBlockNodeByHashAndHeight(
+		header.PrevBlockHash, header.Height-1)
+	if !parentBlockNodeExists {
 		return nil, true, nil
 	}
 
