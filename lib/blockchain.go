@@ -690,12 +690,7 @@ func (bi *BlockIndex) GetBlockNodesByHeight(height uint64) []*BlockNode {
 	}
 	prefixKey := _heightHashToNodePrefixByHeight(uint32(height), false)
 	// Enumerate all block nodes for the prefix.
-	//_, valsFound := EnumerateKeysForPrefix(bi.db, prefixKey, false, true) // skip prefetch.
-	_, valsFound, err := _enumerateKeysForPrefixWithStream(bi.db, prefixKey, false)
-	if err != nil {
-		glog.Errorf("GetBlockNodesByHeight: Problem enumerating keys for prefix: %v", err)
-		return nil
-	}
+	_, valsFound := EnumerateKeysForPrefix(bi.db, prefixKey, false, true) // skip prefetch.
 	blockNodes := []*BlockNode{}
 	for _, val := range valsFound {
 		// Deserialize all block nodes.
