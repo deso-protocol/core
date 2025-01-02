@@ -2,6 +2,7 @@ package lib
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"github.com/deso-protocol/core/collections"
 	"path/filepath"
@@ -683,6 +684,7 @@ func (mp *PosMempool) loadPersistedTransactions() error {
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem retrieving transactions from persister")
 	}
+	glog.V(0).Infof("PosMempool.loadPersistedTransactions: Retrieved %d transactions from persister", len(txns))
 	// We set the persistToDb flag to false so that persister doesn't try to save the transactions.
 	for _, txn := range txns {
 		if err := mp.addTransactionNoLock(txn, false); err != nil {
@@ -847,7 +849,12 @@ func (mp *PosMempool) validateTransactions() error {
 			// try to resubmit it.
 			txn.SetValidated(false)
 			mp.recentRejectedTxnCache.Put(*txn.Hash, err)
-
+			txnBytes, toBytesErr := txn.Tx.ToBytes(false)
+			if toBytesErr != nil {
+				glog.Errorf("PosMempool.validateTransactions: Problem converting txn to bytes: %v", toBytesErr)
+			}
+			glog.V(0).Infof("PosMempool.validateTransactions: Removing txn %v from mempool: %v\nTxn Hex: %v",
+				txn.Hash, err, hex.EncodeToString(txnBytes))
 			// Try to remove the transaction with a lock.
 			mp.removeTransaction(txn, true)
 

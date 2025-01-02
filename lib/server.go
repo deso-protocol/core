@@ -1041,6 +1041,8 @@ func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
 		numBlocksToFetch, maxHeight, pp.requestedBlocks,
 	)
 	if len(blockNodesToFetch) == 0 {
+		glog.V(0).Infof("GetBlocks: No blocks to fetch from peer %v: maxBlocksInFlight: %d, peer requested blocks: %d",
+			pp, srv.getMaxBlocksInFlight(pp), len(pp.requestedBlocks))
 		// This can happen if, for example, we're already requesting the maximum
 		// number of blocks we can. Just return in this case.
 		return
@@ -1055,7 +1057,8 @@ func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
 
 	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: hashList}, false)
 
-	glog.V(1).Infof("GetBlocks: Downloading %d blocks from header %v to header %v from peer %v",
+	// TODO: revert to V(1) after testing.
+	glog.V(0).Infof("GetBlocks: Downloading %d blocks from header %v to header %v from peer %v",
 		len(blockNodesToFetch),
 		blockNodesToFetch[0].Header,
 		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
@@ -1203,24 +1206,24 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		headerHash, _ := headerReceived.Hash()
 		hasHeader := srv.blockchain.HasHeaderByHashAndHeight(headerHash, headerReceived.Height)
 		if hasHeader {
-			if srv.blockchain.isSyncing() {
+			//if srv.blockchain.isSyncing() {
+			// Always log a warning if we get a duplicate header. This is useful for debugging.
+			glog.Warningf("Server._handleHeaderBundle: Duplicate header %v received from peer %v "+
+				"in state %s. Local header tip height %d "+
+				"hash %s with duplicate %v",
+				headerHash,
+				pp, srv.blockchain.chainState(), srv.blockchain.headerTip().Height,
+				hex.EncodeToString(srv.blockchain.headerTip().Hash[:]), headerHash)
 
-				glog.Warningf("Server._handleHeaderBundle: Duplicate header %v received from peer %v "+
-					"in state %s. Local header tip height %d "+
-					"hash %s with duplicate %v",
-					headerHash,
-					pp, srv.blockchain.chainState(), srv.blockchain.headerTip().Height,
-					hex.EncodeToString(srv.blockchain.headerTip().Hash[:]), headerHash)
-
-				// TODO: This logic should really be commented back in, but there was a bug that
-				// arises when a program is killed forcefully whereby a partial write leads to this
-				// logic causing the sync to stall. As such, it's more trouble than it's worth
-				// at the moment but we should consider being more strict about it in the future.
-				/*
-					pp.Disconnect()
-					return
-				*/
-			}
+			// TODO: This logic should really be commented back in, but there was a bug that
+			// arises when a program is killed forcefully whereby a partial write leads to this
+			// logic causing the sync to stall. As such, it's more trouble than it's worth
+			// at the moment but we should consider being more strict about it in the future.
+			/*
+				pp.Disconnect()
+				return
+			*/
+			//}
 
 			// Don't process duplicate headers.
 			continue
@@ -1282,7 +1285,11 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		glog.Errorf("Server._handleHeaderBundle: Problem writing block nodes to db, error: (%v)", err)
 		return
 	}
-	glog.V(0).Info("Server._handleHeaderBundle: PutHeightHashToNodeInfoBatch took: ", time.Since(currTime))
+	if len(blockNodeBatch) > 0 {
+		glog.V(0).Info("Server._handleHeaderBundle: PutHeightHashToNodeInfoBatch took: ", time.Since(currTime))
+	} else {
+		glog.V(0).Info("Server._handleHeaderBundle: No block nodes to write to db")
+	}
 
 	// After processing all the headers this will check to see if we are fully current
 	// and send a request to our Peer to start a Mempool sync if so.
@@ -1457,7 +1464,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// are 100% positive the peer has them.
 			hasHeader := srv.blockchain.HasHeaderByHashAndHeight(msg.TipHash, uint64(msg.TipHeight))
 			if !hasHeader {
-				glog.V(1).Infof("Server._handleHeaderBundle: Peer's tip is not in our "+
+				glog.V(0).Infof("Server._handleHeaderBundle: Peer's tip is not in our "+
 					"blockchain so not requesting anything else from them. Our block "+
 					"tip %v, their tip %v:%d, peer: %v",
 					srv.blockchain.blockTip().Header, msg.TipHash, msg.TipHeight, pp)
@@ -1469,7 +1476,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// them should be available as long as they don't exceed the peer's
 			// tip height.
 			blockTip := srv.blockchain.blockTip()
-			glog.V(1).Infof("Server._handleHeaderBundle: *Downloading* blocks starting at "+
+			glog.V(0).Infof("Server._handleHeaderBundle: *Downloading* blocks starting at "+
 				"block tip %v out of %d from peer %v",
 				blockTip.Header, msg.TipHeight, pp)
 			srv.RequestBlocksUpToHeight(pp, int(msg.TipHeight))
@@ -2682,7 +2689,7 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 	// TODO: We should fetch the next batch of blocks while we process this batch.
 	// This requires us to modify GetBlocks to take a start hash and a count
 	// of the number of blocks we want. Or we could make the existing GetBlocks
-	// take a start hash and the other node can just return as many blcoks as it
+	// take a start hash and the other node can just return as many blocks as it
 	// can.
 
 	// Process each block in the bundle. Record our blocks per second.

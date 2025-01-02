@@ -2768,7 +2768,7 @@ func (mp *DeSoMempool) LoadTxnsFromDB() {
 		}
 	}
 	endTime := time.Now()
-	glog.V(1).Infof("LoadTxnsFromDB: Loaded %v txns in %v seconds", len(dbMempoolTxnsOrderedByTime), endTime.Sub(startTime).Seconds())
+	glog.V(0).Infof("LoadTxnsFromDB: Loaded %v txns in %v seconds", len(dbMempoolTxnsOrderedByTime), endTime.Sub(startTime).Seconds())
 }
 
 func (mp *DeSoMempool) Stop() {

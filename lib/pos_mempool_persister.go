@@ -168,6 +168,8 @@ func (mp *MempoolPersister) persistBatchNoLock() error {
 		return nil
 	}
 
+	glog.V(0).Infof("MempoolPersister: Persisting batch of %d mempool events", len(mp.updateBatch))
+
 	// If there are no transactions to persist, return.
 	if len(mp.updateBatch) == 0 {
 		return nil
@@ -176,6 +178,7 @@ func (mp *MempoolPersister) persistBatchNoLock() error {
 	wb := mp.db.NewWriteBatch()
 	defer wb.Cancel()
 
+	addEvents, removeEvents := 0, 0
 	for _, event := range mp.updateBatch {
 		if event.Txn == nil || event.Txn.Hash == nil {
 			continue
@@ -194,10 +197,12 @@ func (mp *MempoolPersister) persistBatchNoLock() error {
 			if err := wb.Set(key, value); err != nil {
 				glog.Errorf("MempoolPersister: Error setting key: %v", err)
 			}
+			addEvents++
 		case MempoolEventRemove:
 			if err := wb.Delete(key); err != nil {
 				glog.Errorf("MempoolPersister: Error deleting key: %v", err)
 			}
+			removeEvents++
 		}
 	}
 	err := wb.Flush()
@@ -206,6 +211,8 @@ func (mp *MempoolPersister) persistBatchNoLock() error {
 	}
 
 	mp.updateBatch = nil
+
+	glog.V(0).Infof("MempoolPersister: Persisted %d add events and %d remove events", addEvents, removeEvents)
 
 	return nil
 }
