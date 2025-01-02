@@ -1206,7 +1206,7 @@ func NewBlockchain(
 
 // LatestHeaderLocator calls returns a block locator for the current tip of the
 // header chain.
-func (bc *Blockchain) LatestHeaderLocator() []*BlockHash {
+func (bc *Blockchain) LatestHeaderLocator() ([]*BlockHash, []uint32) {
 	// We can acquire the ChainLock here because all calls to this function happen in peer.go
 	// and server.go, which don't hold the lock.
 	// If we do not acquire the lock, we may hit a concurrent map read write error which causes panic.
@@ -1215,7 +1215,7 @@ func (bc *Blockchain) LatestHeaderLocator() []*BlockHash {
 	headerTip := bc.headerTip()
 	committedTip, _ := bc.GetCommittedTip()
 
-	return []*BlockHash{headerTip.Hash, committedTip.Hash}
+	return []*BlockHash{headerTip.Hash, committedTip.Hash}, []uint32{headerTip.Height, committedTip.Height}
 }
 
 func (bc *Blockchain) GetBlockNodesToFetch(

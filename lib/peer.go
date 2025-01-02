@@ -377,7 +377,14 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 	// - When the blocks come in, we process them by adding them to the chain
 	//   one-by-one.
 	if len(blockHashList) > 0 {
-		locator := pp.srv.blockchain.LatestHeaderLocator()
+		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
+		headerTip := pp.srv.blockchain.headerTip()
+		blockTip := pp.srv.blockchain.blockTip()
+		glog.V(0).Infof("Server._handleInv: Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+			blockTip.Hash, blockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,

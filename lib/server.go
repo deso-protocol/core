@@ -1184,6 +1184,14 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		len(msg.Headers), srv.blockchain.chainState(), pp,
 		srv.blockchain.headerTip().Header.Height, printHeight, srv.getCheckpointSyncingStatus(true))))
 
+	headerStrings := collections.Transform(msg.Headers, func(header *MsgDeSoHeader) string { return header.ShortString() })
+	if len(msg.Headers) < 50 {
+		glog.Infof("Received headers <Height, Hash>:\n %v", strings.Join(headerStrings, "\n"))
+	} else {
+		glog.Infof("Received headers <Height, Hash>:\n %v", strings.Join(
+			append(headerStrings[:10], headerStrings[len(headerStrings)-10:]...), "\n"))
+	}
+
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
 	// to the blocksync rules.
@@ -1501,11 +1509,18 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// even if the peer has a long fork with more work than our current header
 	// chain.
 	lastHash, _ := msg.Headers[len(msg.Headers)-1].Hash()
+	lastHeight := msg.Headers[len(msg.Headers)-1].Height
+	headerTip := srv.blockchain.headerTip()
+	currentBlockTip := srv.blockchain.blockTip()
+	glog.V(0).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
+		"Block Locator Hashes & Heights: (%v, %v) \n"+
+		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+		pp, lastHash, lastHeight, headerTip.Hash, headerTip.Height,
+		currentBlockTip.Hash, currentBlockTip.Height)
 	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
 		BlockLocator: []*BlockHash{lastHash},
 	}, false)
-	headerTip := srv.blockchain.headerTip()
 	glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
 		"header tip %v out of %d from peer %v",
 		headerTip.Header, msg.TipHeight, pp)
@@ -2019,7 +2034,14 @@ func (srv *Server) _startSync() {
 	// Send a GetHeaders message to the Peer to start the headers sync.
 	// Note that we include an empty BlockHash as the stopHash to indicate we want as
 	// many headers as the Peer can give us.
-	locator := srv.blockchain.LatestHeaderLocator()
+	locator, locatorHeights := bestPeer.srv.blockchain.LatestHeaderLocator()
+	headerTip := bestPeer.srv.blockchain.headerTip()
+	currentBlockTip := bestPeer.srv.blockchain.blockTip()
+	glog.V(0).Infof("Server._startSync: Sending GET_HEADERS message to peer %v\n"+
+		"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+		bestPeer, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+		currentBlockTip.Hash, currentBlockTip.Height)
 	bestPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
 		BlockLocator: locator,
@@ -2606,7 +2628,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
 		glog.Infof("Requesting headers: %v", pp)
 
-		locator := srv.blockchain.LatestHeaderLocator()
+		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
+		headerTip := pp.srv.blockchain.headerTip()
+		currentBlockTip := pp.srv.blockchain.blockTip()
+		glog.V(0).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+			currentBlockTip.Hash, currentBlockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
@@ -2650,7 +2679,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		//   and worst case the peer will return an empty header bundle that will
 		//   result in us not sending anything back because there won’t be any new
 		//   blocks to request.
-		locator := srv.blockchain.LatestHeaderLocator()
+		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
+		headerTip := pp.srv.blockchain.headerTip()
+		currentBlockTip := pp.srv.blockchain.blockTip()
+		glog.V(0).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+			currentBlockTip.Hash, currentBlockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
