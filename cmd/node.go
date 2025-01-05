@@ -78,6 +78,12 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// listenToNodeMessages handles the messages received from the engine through the nodeMessageChan.
 	go node.listenToNodeMessages()
 
+	glog.Info("INFO: HIHIHIHI")
+	glog.V(0).Info("V0Info: HIHIHIHI")
+	glog.V(1).Info("V1Info: HIHIHIHI")
+	glog.V(1).Infof("processBlockPoS: Missing ancestor block for block %v", "hihihi")
+	glog.V(2).Infof("v2info: HIHIHI")
+
 	// Print config
 	node.Config.Print()
 
