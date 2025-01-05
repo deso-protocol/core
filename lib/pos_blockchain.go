@@ -258,6 +258,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: ")
 	}
 	if errors.Is(err, RuleErrorMissingAncestorBlock) {
+		glog.V(0).Infof("processBlockPoS: Missing ancestor block for block %v", block.Header.String())
 		// In this case, the block is an orphan that does not extend from any blocks
 		// on our best chain. Try to process the orphan by running basic validations.
 		// If it passes basic integrity checks, we'll store it with the hope that we
