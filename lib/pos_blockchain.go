@@ -1305,25 +1305,38 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 	ancestors := []*BlockNode{}
 	childHeight := header.Height
 	childView := header.GetView()
+	calledWithHeader := fmt.Sprintf("\nCalled with header for block at height %v", header.Height)
 	for {
 		// TODO: is currentHeight correct here?
-		currentBlock, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(currentHash, currentHeight)
-		if !exists {
+		currentBlock, currentBlockExists := bc.blockIndex.GetBlockNodeByHashAndHeight(currentHash, currentHeight)
+		if !currentBlockExists {
+			glog.Errorf("getStoredLineageFromCommittedTip: Missing block %v - does not exist.%v",
+				currentHash, calledWithHeader)
 			return nil, []*BlockHash{currentHash}, RuleErrorMissingAncestorBlock
 		}
 		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
 			break
 		}
 		if currentBlock.IsCommitted() {
+			glog.Errorf("getStoredLineageFromCommittedTip: Block %v (%v) is committed. Committed tip is %v (%v). %v",
+				currentHash, currentHeight, highestCommittedBlock.Hash, highestCommittedBlock.Height, calledWithHeader)
 			return nil, nil, RuleErrorDoesNotExtendCommittedTip
 		}
 		if currentBlock.IsValidateFailed() {
+			glog.Errorf("getStoredLineageFromCommittedTip: Block %v (%v) has failed validation. %v",
+				currentHash, currentHeight, calledWithHeader)
 			return nil, nil, RuleErrorAncestorBlockValidationFailed
 		}
 		if uint64(currentBlock.Header.Height)+1 != childHeight {
+			glog.Errorf("getStoredLineageFromCommittedTip: "+
+				"Parent block height %v is not sequential with child block height %v. %v",
+				currentBlock.Header.Height, childHeight, calledWithHeader)
 			return nil, nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
 		}
 		if currentBlock.Header.GetView() >= childView {
+			glog.Errorf("getStoredLineageFromCommittedTip: "+
+				"Parent block view %v is greater than or equal to child block view %v. %v",
+				currentBlock.Header.GetView(), childView, calledWithHeader)
 			return nil, nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
 
@@ -1332,6 +1345,8 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 		// we previously saw its header. We need to request the block again from a peer and
 		// consider it to be missing.
 		if !currentBlock.IsStored() {
+			glog.Errorf("getStoredLineageFromCommittedTip: Block %v (%v) is not stored. %v",
+				currentHash, currentHeight, calledWithHeader)
 			return nil, []*BlockHash{currentHash}, RuleErrorMissingAncestorBlock
 		}
 
