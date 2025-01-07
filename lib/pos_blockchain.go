@@ -1374,15 +1374,9 @@ func (bc *Blockchain) getOrCreateBlockNodeFromBlockIndex(block *MsgDeSoBlock, ha
 	}
 	blockNode, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(hash, block.Header.Height)
 	if blockNode != nil {
-		// If the block node already exists, we should set its parent if it doesn't have one already.
-		if blockNode.Parent == nil {
-			prevBlockNode, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(block.Header.PrevBlockHash, block.Header.Height-1)
-			blockNode.Parent = prevBlockNode
-		}
 		return blockNode, nil
 	}
-	prevBlockNode, _ := bc.blockIndex.GetBlockNodeByHashAndHeight(block.Header.PrevBlockHash, block.Header.Height-1)
-	newBlockNode := NewBlockNode(prevBlockNode, hash, uint32(block.Header.Height), nil, nil, block.Header, StatusNone)
+	newBlockNode := NewBlockNode(hash, uint32(block.Header.Height), nil, nil, block.Header, StatusNone)
 	bc.addNewBlockNodeToBlockIndex(newBlockNode)
 	return newBlockNode, nil
 }

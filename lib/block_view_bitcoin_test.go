@@ -49,21 +49,10 @@ func GetTestParamsCopy(
 	// Set the BitcoinExchange-related params to canned values.
 	paramsCopy := *paramss
 	headerHash := (BlockHash)(startHeader.BlockHash())
-	paramsCopy.BitcoinStartBlockNode = NewBlockNode(
-		nil,         /*ParentNode*/
-		&headerHash, /*Hash*/
-		startHeight,
-		_difficultyBitsToHash(startHeader.Bits),
-		// CumWork: We set the work of the start node such that, when added to all of the
-		// blocks that follow it, it hurdles the min chain work.
-		big.NewInt(0),
-		// We are bastardizing the DeSo header to store Bitcoin information here.
-		&MsgDeSoHeader{
-			TstampNanoSecs: SecondsToNanoSeconds(startHeader.Timestamp.Unix()),
-			Height:         0,
-		},
-		StatusBitcoinHeaderValidated,
-	)
+	paramsCopy.BitcoinStartBlockNode = NewBlockNode(&headerHash, startHeight, _difficultyBitsToHash(startHeader.Bits), big.NewInt(0), &MsgDeSoHeader{
+		TstampNanoSecs: SecondsToNanoSeconds(startHeader.Timestamp.Unix()),
+		Height:         0,
+	}, StatusBitcoinHeaderValidated)
 
 	return &paramsCopy
 }

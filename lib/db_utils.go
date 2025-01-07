@@ -4975,15 +4975,7 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 }
 
 func DeserializeBlockNode(data []byte) (*BlockNode, error) {
-	blockNode := NewBlockNode(
-		nil,          // Parent
-		&BlockHash{}, // Hash
-		0,            // Height
-		&BlockHash{}, // DifficultyTarget
-		nil,          // CumWork
-		nil,          // Header
-		StatusNone,   // Status
-	)
+	blockNode := NewBlockNode(&BlockHash{}, 0, &BlockHash{}, nil, nil, StatusNone)
 
 	rr := bytes.NewReader(data)
 
@@ -5462,15 +5454,7 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	genesisBlock := params.GenesisBlock
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
-	genesisNode := NewBlockNode(
-		nil, // Parent
-		blockHash,
-		0, // Height
-		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
-		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated|StatusBlockCommitted, // Status
-	)
+	genesisNode := NewBlockNode(blockHash, 0, diffTarget, BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), genesisBlock.Header, StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
 
 	// Set the fields in the db to reflect the current state of our chain.
 	//
@@ -5682,9 +5666,10 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
 				continue
 			}
-			if parent, ok := blockIndex.Get(*blockNode.Header.PrevBlockHash); ok {
+			if _, ok := blockIndex.Get(*blockNode.Header.PrevBlockHash); ok {
+				// DO NOTHING.
 				// We found the parent node so connect it.
-				blockNode.Parent = parent
+				//blockNode.Parent = parent
 			} else {
 				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
 				// be orphan blocks in the block index. In this case, we don't throw an error.
@@ -5878,7 +5863,7 @@ func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 		}
 
 		reversedBestChain = append(reversedBestChain, tipNode)
-		tipNode = tipNode.Parent
+		tipNode = tipNode.GetParent(nil)
 	}
 
 	bestChain := make([]*BlockNode, len(reversedBestChain))

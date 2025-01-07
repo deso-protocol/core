@@ -1296,8 +1296,8 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 	}
 
 	// The genesis block has a nil parent
-	if blockNode.Parent != nil {
-		block.ParentHash = blockNode.Parent.Hash
+	if blockNode.Header.PrevBlockHash != nil {
+		block.ParentHash = blockNode.Header.PrevBlockHash
 	} else if !blockNode.Header.PrevBlockHash.IsEqual(GenesisBlockHash) {
 		// TODO: LN - why did I need to add this?
 		block.ParentHash = blockNode.Header.PrevBlockHash
@@ -1333,20 +1333,6 @@ func (postgres *Postgres) GetBlockIndex() (*collections.LruCache[BlockHash, *Blo
 			},
 			Status: block.Status,
 		})
-	}
-
-	// Setup parent pointers
-	for _, key := range blockMap.Keys() {
-		blockNode, _ := blockMap.Get(key)
-		// Genesis block has nil parent
-		parentHash := blockNode.Header.PrevBlockHash
-		if parentHash != nil {
-			parent, exists := blockMap.Get(*parentHash)
-			if !exists && blockNode.Height > 0 {
-				glog.Fatal("Parent block not found in block map")
-			}
-			blockNode.Parent = parent
-		}
 	}
 
 	return blockMap, nil
@@ -4097,7 +4083,6 @@ func (postgres *Postgres) InitGenesisBlock(params *DeSoParams, db *badger.DB) er
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
 	genesisNode := NewBlockNode(
-		nil,
 		blockHash,
 		0,
 		diffTarget,

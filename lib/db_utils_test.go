@@ -193,12 +193,6 @@ func TestBlockNodePutGet(t *testing.T) {
 	require.Equal(b3.Hash[:], b3Ret.Hash[:])
 	require.Equal(b4.Hash[:], b4Ret.Hash[:])
 
-	// Make sure the nodes are connected properly.
-	require.Nil(b1Ret.Parent)
-	require.Equal(b2Ret.Parent, b1Ret)
-	require.Equal(b3Ret.Parent, b2Ret)
-	require.Equal(b4Ret.Parent, b1Ret)
-
 	// Check that getting the best chain works.
 	{
 		bestChain, err := GetBestChain(b3Ret)
