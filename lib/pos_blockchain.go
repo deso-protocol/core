@@ -1307,12 +1307,58 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 	childHeight := header.Height
 	childView := header.GetView()
 	calledWithHeader := fmt.Sprintf("\nCalled with header for block at height %v", header.Height)
+
+	bigLogger := func(otherBlock *BlockNode) {
+		// Log HighestCommittedBlock
+		glog.V(0).Infof("HighestCommittedBlock: %v", highestCommittedBlock.String())
+		// Get the highest committed block from the block index cache.
+		highestCommittedBlockFromCache, highestCommittedBlockExistsInCache :=
+			bc.blockIndex.blockIndexByHash.Get(*highestCommittedBlock.Hash)
+		if highestCommittedBlockExistsInCache {
+			glog.V(0).Infof("HighestCommittedBlockFromCache: %v", highestCommittedBlockFromCache.String())
+		} else {
+			glog.V(0).Infof("HighestCommittedBlockFromCache: nil")
+		}
+
+		highestCommittedBlockFromDB := GetHeightHashToNodeInfo(
+			bc.db, bc.snapshot, highestCommittedBlock.Height, highestCommittedBlock.Hash, false)
+		if highestCommittedBlockFromDB != nil {
+			glog.V(0).Infof("HighestCommittedBlockFromDB: %v", highestCommittedBlockFromDB.String())
+		} else {
+			glog.V(0).Infof("HighestCommittedBlockFromDB: nil")
+		}
+
+		if otherBlock == nil {
+			glog.V(0).Infof("OtherBlock: nil")
+			return
+		}
+		// Log OtherBlock
+		glog.V(0).Infof("OtherBlock: %v", otherBlock.String())
+
+		// Get the other block from the block index cache.
+		otherBlockFromCache, otherBlockExistsInCache :=
+			bc.blockIndex.blockIndexByHash.Get(*otherBlock.Hash)
+		if otherBlockExistsInCache {
+			glog.V(0).Infof("OtherBlockFromCache: %v", otherBlockFromCache.String())
+		} else {
+			glog.V(0).Infof("OtherBlockFromCache: nil")
+		}
+
+		otherBlockFromDB := GetHeightHashToNodeInfo(
+			bc.db, bc.snapshot, otherBlock.Height, otherBlock.Hash, false)
+		if otherBlockFromDB != nil {
+			glog.V(0).Infof("OtherBlockFromDB: %v", otherBlockFromDB.String())
+		} else {
+			glog.V(0).Infof("OtherBlockFromDB: nil")
+		}
+	}
 	for {
 		// TODO: is currentHeight correct here?
 		currentBlock, currentBlockExists := bc.blockIndex.GetBlockNodeByHashAndHeight(currentHash, currentHeight)
 		if !currentBlockExists {
 			glog.Errorf("getStoredLineageFromCommittedTip: Missing block %v - does not exist.%v",
 				currentHash, calledWithHeader)
+			bigLogger(currentBlock)
 			return nil, []*BlockHash{currentHash}, RuleErrorMissingAncestorBlock
 		}
 		if currentBlock.Hash.IsEqual(highestCommittedBlock.Hash) {
@@ -1321,23 +1367,27 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 		if currentBlock.IsCommitted() {
 			glog.Errorf("getStoredLineageFromCommittedTip: Block %v (%v) is committed. Committed tip is %v (%v). %v",
 				currentHash, currentHeight, highestCommittedBlock.Hash, highestCommittedBlock.Height, calledWithHeader)
+			bigLogger(currentBlock)
 			return nil, nil, RuleErrorDoesNotExtendCommittedTip
 		}
 		if currentBlock.IsValidateFailed() {
 			glog.Errorf("getStoredLineageFromCommittedTip: Block %v (%v) has failed validation. %v",
 				currentHash, currentHeight, calledWithHeader)
+			bigLogger(currentBlock)
 			return nil, nil, RuleErrorAncestorBlockValidationFailed
 		}
 		if uint64(currentBlock.Header.Height)+1 != childHeight {
 			glog.Errorf("getStoredLineageFromCommittedTip: "+
 				"Parent block height %v is not sequential with child block height %v. %v",
 				currentBlock.Header.Height, childHeight, calledWithHeader)
+			bigLogger(currentBlock)
 			return nil, nil, RuleErrorParentBlockHeightNotSequentialWithChildBlockHeight
 		}
 		if currentBlock.Header.GetView() >= childView {
 			glog.Errorf("getStoredLineageFromCommittedTip: "+
 				"Parent block view %v is greater than or equal to child block view %v. %v",
 				currentBlock.Header.GetView(), childView, calledWithHeader)
+			bigLogger(currentBlock)
 			return nil, nil, RuleErrorParentBlockHasViewGreaterOrEqualToChildBlock
 		}
 
@@ -1348,6 +1398,7 @@ func (bc *Blockchain) getStoredLineageFromCommittedTip(header *MsgDeSoHeader) (
 		if !currentBlock.IsStored() {
 			glog.Errorf("getStoredLineageFromCommittedTip: Block %v (%v) is not stored. %v",
 				currentHash, currentHeight, calledWithHeader)
+			bigLogger(currentBlock)
 			return nil, []*BlockHash{currentHash}, RuleErrorMissingAncestorBlock
 		}
 

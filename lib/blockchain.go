@@ -393,8 +393,8 @@ func (nn *BlockNode) String() string {
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
 	}
-	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v>",
-		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork)
+	return fmt.Sprintf("< TstampSecs: %d, Height: %d, Hash: %s, ParentHash %s, Status: %s, CumWork: %v, IsCommitted: %v >",
+		tstamp, nn.Header.Height, nn.Hash, parentHash, nn.Status, nn.CumWork, nn.IsCommitted())
 }
 
 // NewBlockNode is a helper function to create a BlockNode
