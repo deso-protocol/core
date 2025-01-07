@@ -195,7 +195,8 @@ func TestBlockNodePutGet(t *testing.T) {
 
 	// Check that getting the best chain works.
 	{
-		bestChain, err := GetBestChain(b3Ret)
+		bi := NewBlockIndex(db, nil, b4)
+		bestChain, err := GetBestChain(b3Ret, bi)
 		require.NoError(err)
 		require.Len(bestChain, 3)
 		require.Equal(b1Ret, bestChain[0])
@@ -228,7 +229,8 @@ func TestInitDbWithGenesisBlock(t *testing.T) {
 	require.Equal(&genesisHash, genesis.Hash)
 
 	// Check the bestChain.
-	bestChain, err := GetBestChain(genesis)
+	bi := NewBlockIndex(db, nil, genesis)
+	bestChain, err := GetBestChain(genesis, bi)
 	require.NoError(err)
 	require.Len(bestChain, 1)
 	require.Equal(genesis, bestChain[0])
