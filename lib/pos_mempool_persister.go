@@ -168,7 +168,7 @@ func (mp *MempoolPersister) persistBatchNoLock() error {
 		return nil
 	}
 
-	glog.V(0).Infof("MempoolPersister: Persisting batch of %d mempool events", len(mp.updateBatch))
+	glog.V(1).Infof("MempoolPersister: Persisting batch of %d mempool events", len(mp.updateBatch))
 
 	// If there are no transactions to persist, return.
 	if len(mp.updateBatch) == 0 {
@@ -212,7 +212,7 @@ func (mp *MempoolPersister) persistBatchNoLock() error {
 
 	mp.updateBatch = nil
 
-	glog.V(0).Infof("MempoolPersister: Persisted %d add events and %d remove events", addEvents, removeEvents)
+	glog.V(1).Infof("MempoolPersister: Persisted %d add events and %d remove events", addEvents, removeEvents)
 
 	return nil
 }

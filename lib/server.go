@@ -1184,14 +1184,15 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		len(msg.Headers), srv.blockchain.chainState(), pp,
 		srv.blockchain.headerTip().Header.Height, printHeight, srv.getCheckpointSyncingStatus(true))))
 
-	headerStrings := collections.Transform(msg.Headers, func(header *MsgDeSoHeader) string { return header.ShortString() })
-	if len(msg.Headers) < 50 {
-		glog.Infof("Received headers <Height, Hash>:\n %v", strings.Join(headerStrings, "\n"))
-	} else {
-		glog.Infof("Received headers <Height, Hash>:\n %v", strings.Join(
-			append(headerStrings[:10], headerStrings[len(headerStrings)-10:]...), "\n"))
+	if glog.V(2) {
+		headerStrings := collections.Transform(msg.Headers, func(header *MsgDeSoHeader) string { return header.ShortString() })
+		if len(msg.Headers) < 50 {
+			glog.V(2).Infof("Received headers <Height, Hash>:\n %v", strings.Join(headerStrings, "\n"))
+		} else {
+			glog.V(2).Infof("Received headers <Height, Hash>:\n %v", strings.Join(
+				append(headerStrings[:10], headerStrings[len(headerStrings)-10:]...), "\n"))
+		}
 	}
-
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
 	// to the blocksync rules.
@@ -2682,7 +2683,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		locator, locatorHeights := srv.blockchain.LatestHeaderLocator()
 		headerTip := srv.blockchain.headerTip()
 		currentBlockTip := srv.blockchain.blockTip()
-		glog.V(0).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
+		glog.V(0).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
 			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
 			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
