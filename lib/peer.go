@@ -380,7 +380,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
 		headerTip := pp.srv.blockchain.headerTip()
 		blockTip := pp.srv.blockchain.blockTip()
-		glog.V(0).Infof("Server._handleInv: Sending GET_HEADERS message to peer %v\n"+
+		glog.V(2).Infof("Server._handleInv: Sending GET_HEADERS message to peer %v\n"+
 			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
 			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,

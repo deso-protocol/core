@@ -1041,7 +1041,7 @@ func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
 		numBlocksToFetch, maxHeight, pp.requestedBlocks,
 	)
 	if len(blockNodesToFetch) == 0 {
-		glog.V(0).Infof("GetBlocks: No blocks to fetch from peer %v: maxBlocksInFlight: %d, peer requested blocks: %d",
+		glog.V(1).Infof("RequestBlocksUpToHeight: No blocks to fetch from peer %v: maxBlocksInFlight: %d, peer requested blocks: %d",
 			pp, srv.getMaxBlocksInFlight(pp), len(pp.requestedBlocks))
 		// This can happen if, for example, we're already requesting the maximum
 		// number of blocks we can. Just return in this case.
@@ -1057,8 +1057,7 @@ func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
 
 	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: hashList}, false)
 
-	// TODO: revert to V(1) after testing.
-	glog.V(0).Infof("GetBlocks: Downloading %d blocks from header %v to header %v from peer %v",
+	glog.V(1).Infof("RequestBlocksUpToHeight: Downloading %d blocks from header %v to header %v from peer %v",
 		len(blockNodesToFetch),
 		blockNodesToFetch[0].Header,
 		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
@@ -1513,7 +1512,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	lastHeight := msg.Headers[len(msg.Headers)-1].Height
 	headerTip := srv.blockchain.headerTip()
 	currentBlockTip := srv.blockchain.blockTip()
-	glog.V(0).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
+	glog.V(2).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
 		"Block Locator Hashes & Heights: (%v, %v) \n"+
 		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
 		pp, lastHash, lastHeight, headerTip.Hash, headerTip.Height,
@@ -2038,7 +2037,7 @@ func (srv *Server) _startSync() {
 	locator, locatorHeights := bestPeer.srv.blockchain.LatestHeaderLocator()
 	headerTip := bestPeer.srv.blockchain.headerTip()
 	currentBlockTip := bestPeer.srv.blockchain.blockTip()
-	glog.V(0).Infof("Server._startSync: Sending GET_HEADERS message to peer %v\n"+
+	glog.V(2).Infof("Server._startSync: Sending GET_HEADERS message to peer %v\n"+
 		"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
 		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
 		bestPeer, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
@@ -2632,7 +2631,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
 		headerTip := pp.srv.blockchain.headerTip()
 		currentBlockTip := pp.srv.blockchain.blockTip()
-		glog.V(0).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
+		glog.V(2).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
 			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
 			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
@@ -2683,7 +2682,7 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		locator, locatorHeights := srv.blockchain.LatestHeaderLocator()
 		headerTip := srv.blockchain.headerTip()
 		currentBlockTip := srv.blockchain.blockTip()
-		glog.V(0).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
+		glog.V(2).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
 			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
 			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,

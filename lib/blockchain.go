@@ -1048,11 +1048,10 @@ func (bc *Blockchain) _initChain() error {
 				currBlockCounter++
 			}
 		}
-
-		// We start by simply setting the chain tip and header tip to the tip node.
-		bc.blockIndex.setTip(tipNode)
-		bc.blockIndex.setHeaderTip(tipNode)
 	}
+	// We start by simply setting the chain tip and header tip to the tip node.
+	bc.blockIndex.setTip(tipNode)
+	bc.blockIndex.setHeaderTip(tipNode)
 	bc.isInitialized = true
 
 	return nil
