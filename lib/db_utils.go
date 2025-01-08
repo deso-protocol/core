@@ -4976,7 +4976,6 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 
 func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	blockNode := NewBlockNode(
-		nil,          // Parent
 		&BlockHash{}, // Hash
 		0,            // Height
 		&BlockHash{}, // DifficultyTarget
@@ -5463,7 +5462,6 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
 	genesisNode := NewBlockNode(
-		nil, // Parent
 		blockHash,
 		0, // Height
 		diffTarget,
@@ -5682,10 +5680,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
 				continue
 			}
-			if parent, ok := blockIndex.Get(*blockNode.Header.PrevBlockHash); ok {
-				// We found the parent node so connect it.
-				blockNode.Parent = parent
-			} else {
+			if _, ok := blockIndex.Get(*blockNode.Header.PrevBlockHash); !ok {
 				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
 				// be orphan blocks in the block index. In this case, we don't throw an error.
 				if bitcoinNodes == false && params.IsPoSBlockHeight(uint64(blockNode.Height)) {
@@ -5867,7 +5862,7 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 
 // TODO: refactor to actually get the whole best chain if that's
 // what someone wants. It'll take a while and a lot of memory.
-func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
+func GetBestChain(tipNode *BlockNode, blockIndex *BlockIndex) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
 	maxBestChainInitLength := 3600 * 100 // Cache up to 100 hours of blocks.
 	for tipNode != nil && len(reversedBestChain) < maxBestChainInitLength {
@@ -5878,7 +5873,7 @@ func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 		}
 
 		reversedBestChain = append(reversedBestChain, tipNode)
-		tipNode = tipNode.Parent
+		tipNode = tipNode.GetParent(blockIndex)
 	}
 
 	bestChain := make([]*BlockNode, len(reversedBestChain))

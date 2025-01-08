@@ -244,7 +244,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash := NewBlockHash(RandomBytes(32))
 	nowTimestamp := time.Now().UnixNano()
-	genesisBlock := NewBlockNode(nil, hash, 1, nil, nil, &MsgDeSoHeader{
+	genesisBlock := NewBlockNode(hash, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
 		TstampNanoSecs:               nowTimestamp - time.Minute.Nanoseconds(),
 		Height:                       1,
@@ -319,12 +319,12 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
-	genesisNode := NewBlockNode(nil, hash1, 0, nil, nil, &MsgDeSoHeader{
+	genesisNode := NewBlockNode(hash1, 0, nil, nil, &MsgDeSoHeader{
 		Version:        2,
 		Height:         0,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated)
-	block2 := NewBlockNode(genesisNode, hash2, 1, nil, nil, &MsgDeSoHeader{
+	block2 := NewBlockNode(hash2, 1, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
 		Height:                       1,
 		ProposedInView:               2,
@@ -458,12 +458,12 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 	bc, _, _ := NewTestBlockchain(t)
 	hash1 := NewBlockHash(RandomBytes(32))
 	hash2 := NewBlockHash(RandomBytes(32))
-	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
+	genesisNode := NewBlockNode(hash1, 1, nil, nil, &MsgDeSoHeader{
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated)
-	block2 := NewBlockNode(genesisNode, hash2, 2, nil, nil, &MsgDeSoHeader{
+	block2 := NewBlockNode(hash2, 2, nil, nil, &MsgDeSoHeader{
 		Version:                      2,
 		Height:                       2,
 		ProposedInView:               2,
@@ -797,7 +797,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	}
 	t.Cleanup(resetGlobalDeSoParams)
 	hash1 := NewBlockHash(RandomBytes(32))
-	genesisNode := NewBlockNode(nil, hash1, 1, nil, nil, &MsgDeSoHeader{
+	genesisNode := NewBlockNode(hash1, 1, nil, nil, &MsgDeSoHeader{
 		Version:        2,
 		Height:         1,
 		ProposedInView: 1,
@@ -832,7 +832,7 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 	block.Header.PrevBlockHash = hash1
 	// add another block to the best chain.
 	hash2 := NewBlockHash(RandomBytes(32))
-	block2 := NewBlockNode(genesisNode, hash2, 2, nil, nil, &MsgDeSoHeader{
+	block2 := NewBlockNode(hash2, 2, nil, nil, &MsgDeSoHeader{
 		Version:        2,
 		Height:         2,
 		ProposedInView: 2,
@@ -1412,8 +1412,6 @@ func TestTryApplyNewTip(t *testing.T) {
 	newBlockNode.Header.ProposedInView = 7
 	newBlockNode.Header.Height = 7
 	newBlockNode.Height = 7
-	// Clear parent out for safety.
-	newBlockNode.Parent = nil
 	require.NoError(t, err)
 	ancestors, _, err = bc.getStoredLineageFromCommittedTip(newBlock.Header)
 	require.NoError(t, err)

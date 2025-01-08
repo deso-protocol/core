@@ -2462,7 +2462,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.NoError(t, utxoView.FlushToDb(blk2.Header.Height))
 
 	// Update the tip
-	testMeta.chain.blockIndex.tip = testMeta.chain.blockIndex.tip.Parent
+	testMeta.chain.blockIndex.tip = testMeta.chain.blockIndex.tip.GetParent(testMeta.chain.blockIndex)
 
 	// Validate the state update
 	utxoView = NewUtxoView(
@@ -2517,7 +2517,7 @@ func TestLockupBlockConnectsAndDisconnects(t *testing.T) {
 	require.NoError(t, utxoView.FlushToDb(blk1.Header.Height))
 
 	// Update the tip
-	testMeta.chain.blockIndex.setTip(testMeta.chain.blockIndex.tip.Parent)
+	testMeta.chain.blockIndex.setTip(testMeta.chain.blockIndex.tip.GetParent(testMeta.chain.blockIndex))
 
 	// Verify we return back to the initial state
 	utxoView = NewUtxoView(

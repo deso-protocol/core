@@ -1243,7 +1243,6 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
@@ -1281,7 +1280,6 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
@@ -1345,7 +1343,6 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
@@ -1383,7 +1380,6 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
@@ -1447,7 +1443,6 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
@@ -1506,7 +1501,6 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
@@ -1566,7 +1560,6 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
@@ -1604,7 +1597,6 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
 			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,

@@ -192,9 +192,6 @@ func (blockStatus BlockStatus) String() string {
 // Add some fields in addition to the header to aid in the selection
 // of the best chain.
 type BlockNode struct {
-	// Pointer to a node representing the block's parent.
-	Parent *BlockNode `fake:"skip"`
-
 	// The hash computed on this block.
 	Hash *BlockHash
 
@@ -248,9 +245,6 @@ func (nn *BlockNode) GetEncoderType() EncoderType {
 }
 
 func (nn *BlockNode) GetParent(blockIndex *BlockIndex) *BlockNode {
-	if nn.Parent != nil {
-		return nn.Parent
-	}
 	// If we don't have a parent, try to get it from the block index. We
 	// no longer have a guarantee that we have set the parent node since
 	// we no longer keep the entire block index in memory.
@@ -259,7 +253,6 @@ func (nn *BlockNode) GetParent(blockIndex *BlockIndex) *BlockNode {
 		return nil
 	}
 
-	nn.Parent = parentNode
 	return parentNode
 }
 
@@ -395,12 +388,7 @@ func ExtractBitcoinExchangeTransactionsFromBitcoinBlock(
 }
 
 func (nn *BlockNode) String() string {
-	var parentHash *BlockHash
-	if nn.Parent != nil {
-		parentHash = nn.Parent.Hash
-	} else {
-		parentHash = nn.Header.PrevBlockHash
-	}
+	parentHash := nn.Header.PrevBlockHash
 	tstamp := uint32(0)
 	if nn.Header != nil {
 		tstamp = uint32(nn.Header.GetTstampSecs())
@@ -414,7 +402,6 @@ func (nn *BlockNode) String() string {
 // have a committed status of COMMITTED.
 // TODO: Height not needed in this since it's in the header.
 func NewBlockNode(
-	parent *BlockNode,
 	hash *BlockHash,
 	height uint32,
 	difficultyTarget *BlockHash,
@@ -423,7 +410,6 @@ func NewBlockNode(
 	status BlockStatus) *BlockNode {
 
 	return &BlockNode{
-		Parent:           parent,
 		Hash:             hash,
 		Height:           height,
 		DifficultyTarget: difficultyTarget,
@@ -439,18 +425,11 @@ func (nn *BlockNode) Ancestor(height uint32, blockIndex *BlockIndex) *BlockNode 
 	}
 
 	node := nn
-	// NOTE: using .Parent here is okay b/c it explicitly set it
-	// if we don't already have it when we fetch the parent from
-	// the block index.
-	for ; node != nil && node.Height != height; node = node.Parent {
+	for ; node != nil && node.Height != height; node = node.GetParent(blockIndex) {
 		// Keep iterating node until the condition no longer holds.
-		if node.Parent == nil {
-			var exists bool
-			node.Parent, exists = blockIndex.GetBlockNodeByHashAndHeight(
-				node.Header.PrevBlockHash, uint64(node.Height-1))
-			if !exists {
-				return nil
-			}
+		parent := node.GetParent(blockIndex)
+		if parent == nil {
+			return nil
 		}
 	}
 
@@ -2211,7 +2190,6 @@ func (bc *Blockchain) processHeaderPoW(
 	newWork := BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:])
 	cumWork := newWork.Add(newWork, parentNode.CumWork)
 	newNode := NewBlockNode(
-		parentNode,
 		headerHash,
 		uint32(blockHeader.Height),
 		diffTarget,
