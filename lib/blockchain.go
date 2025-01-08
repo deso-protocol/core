@@ -1039,11 +1039,10 @@ func (bc *Blockchain) _initChain() error {
 			if !tipNodeExists {
 				return fmt.Errorf("_initChain: Best hash (%#v) not found in block index", bestBlockHash)
 			}
-			// @diamondhands - we could reduce this to just the last hour if we want.
-			// Walk back the last 24 hours of blocks.
+			// Walk back the last 6 hours of blocks.
 			currBlockCounter := 1
 			parentNode := tipNode.GetParent(bc.blockIndex)
-			for currBlockCounter < 3600*24 && parentNode != nil {
+			for currBlockCounter < 3600*6 && parentNode != nil {
 				parentNode = parentNode.GetParent(bc.blockIndex)
 				currBlockCounter++
 			}
