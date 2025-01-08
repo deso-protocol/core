@@ -1159,10 +1159,20 @@ var DeSoMainnetParams = DeSoParams{
 	//   value should equal the amount of work it takes to get from whatever start node you
 	//   choose and the tip. This is done by running once, letting it fail, and then rerunning
 	//   with the value it outputs.
-	BitcoinStartBlockNode: NewBlockNode(mustDecodeHexBlockHashBitcoin("000000000000000000092d577cc673bede24b6d7199ee69c67eeb46c18fc978c"), 653184, _difficultyBitsToHash(386798414), big.NewInt(0), &MsgDeSoHeader{
-		TstampNanoSecs: SecondsToNanoSeconds(1602950620),
-		Height:         0,
-	}, StatusBitcoinHeaderValidated),
+	BitcoinStartBlockNode: NewBlockNode(
+		mustDecodeHexBlockHashBitcoin("000000000000000000092d577cc673bede24b6d7199ee69c67eeb46c18fc978c"),
+		// Note the height is always one greater than the parent node.
+		653184,
+		_difficultyBitsToHash(386798414),
+		// CumWork shouldn't matter.
+		big.NewInt(0),
+		// We are bastardizing the DeSo header to store Bitcoin information here.
+		&MsgDeSoHeader{
+			TstampNanoSecs: SecondsToNanoSeconds(1602950620),
+			Height:         0,
+		},
+		StatusBitcoinHeaderValidated,
+	),
 
 	BitcoinExchangeFeeBasisPoints: 10,
 	BitcoinDoubleSpendWaitSeconds: 5.0,
@@ -1511,10 +1521,21 @@ var DeSoTestnetParams = DeSoParams{
 	DeSoNanosPurchasedAtGenesis:   uint64(6000000000000000),
 
 	// See comment in mainnet config.
-	BitcoinStartBlockNode: NewBlockNode(mustDecodeHexBlockHashBitcoin("000000000000003aae8fb976056413aa1d863eb5bee381ff16c9642283b1da1a"), 1897056, _difficultyBitsToHash(424073553), big.NewInt(0), &MsgDeSoHeader{
-		TstampNanoSecs: SecondsToNanoSeconds(1607659152),
-		Height:         0,
-	}, StatusBitcoinHeaderValidated),
+	BitcoinStartBlockNode: NewBlockNode(
+		mustDecodeHexBlockHashBitcoin("000000000000003aae8fb976056413aa1d863eb5bee381ff16c9642283b1da1a"),
+		1897056,
+		_difficultyBitsToHash(424073553),
+
+		// CumWork: We set the work of the start node such that, when added to all of the
+		// blocks that follow it, it hurdles the min chain work.
+		big.NewInt(0),
+		// We are bastardizing the DeSo header to store Bitcoin information here.
+		&MsgDeSoHeader{
+			TstampNanoSecs: SecondsToNanoSeconds(1607659152),
+			Height:         0,
+		},
+		StatusBitcoinHeaderValidated,
+	),
 
 	// ===================================================================================
 	// Testnet socket config

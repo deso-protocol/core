@@ -407,8 +407,7 @@ func NewBlockNode(
 	difficultyTarget *BlockHash,
 	cumWork *big.Int,
 	header *MsgDeSoHeader,
-	status BlockStatus,
-) *BlockNode {
+	status BlockStatus) *BlockNode {
 
 	return &BlockNode{
 		Hash:             hash,
@@ -2190,7 +2189,13 @@ func (bc *Blockchain) processHeaderPoW(
 	// and try to mine on top of it before revealing it to everyone.
 	newWork := BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:])
 	cumWork := newWork.Add(newWork, parentNode.CumWork)
-	newNode := NewBlockNode(headerHash, uint32(blockHeader.Height), diffTarget, cumWork, blockHeader, StatusHeaderValidated)
+	newNode := NewBlockNode(
+		headerHash,
+		uint32(blockHeader.Height),
+		diffTarget,
+		cumWork,
+		blockHeader,
+		StatusHeaderValidated)
 
 	// Note that we don't store a node for this header on the db until we have downloaded
 	// a corresponding block. This has the effect of preventing us against disk-fill
