@@ -2679,9 +2679,9 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		//   and worst case the peer will return an empty header bundle that will
 		//   result in us not sending anything back because there won’t be any new
 		//   blocks to request.
-		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
-		headerTip := pp.srv.blockchain.headerTip()
-		currentBlockTip := pp.srv.blockchain.blockTip()
+		locator, locatorHeights := srv.blockchain.LatestHeaderLocator()
+		headerTip := srv.blockchain.headerTip()
+		currentBlockTip := srv.blockchain.blockTip()
 		glog.V(0).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
 			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
