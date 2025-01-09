@@ -3282,11 +3282,10 @@ func (bc *Blockchain) GetSpendableUtxosForPublicKey(spendPublicKeyBytes []byte, 
 		//
 		// Note we add one to the current block height since it is presumed this
 		// transaction will at best be mined into the next block.
-		// We no longer need to worry about immature block rewards.
-		//blockHeight := bc.blockTip().Height + 1
-		//if _isEntryImmatureBlockReward(utxoEntry, blockHeight, bc.params) {
-		//	continue
-		//}
+		blockHeight := bc.blockTip().Height + 1
+		if _isEntryImmatureBlockReward(utxoEntry, blockHeight, bc.params) {
+			continue
+		}
 
 		// Don't consider utxos that are already consumed by the mempool.
 		if !isInterfaceValueNil(mempool) && mempool.CheckSpend(*utxoEntry.UtxoKey) != nil {
