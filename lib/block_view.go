@@ -5054,95 +5054,14 @@ func (bav *UtxoView) GetUnspentUtxoEntrysForPublicKey(pkBytes []byte) ([]*UtxoEn
 // but should be fixed soon.
 func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 	tipHeight uint32) (_spendableBalance uint64, _err error) {
-	// After the cut-over to Proof Of Stake, we no longer check for immature block rewards.
-	// All block rewards are immediately mature.
-	if tipHeight >= bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight {
-		balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
-		if err != nil {
-			return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
-		}
-		return balanceNanos, nil
-	}
-	// In order to get the spendable balance, we need to account for any immature block rewards.
-	// We get these by starting at the chain tip and iterating backwards until we have collected
-	// all the immature block rewards for this public key.
-	nextBlockHash := bav.TipHash
-	numImmatureBlocks := uint32(bav.Params.BlockRewardMaturity / bav.Params.TimeBetweenBlocks)
-	immatureBlockRewards := uint64(0)
-
-	if bav.Postgres != nil {
-		// Note: badger is only getting the block reward for the previous block, so we make postgres
-		// do the same thing. This is not ideal, but it is the simplest way to get the same behavior
-		// and we will address the issue soon.
-		// Filter out immature block rewards in postgres. UtxoType needs to be set correctly when importing blocks
-		var startHeight uint32
-		if tipHeight > 0 {
-			startHeight = tipHeight - 1
-		}
-		// This is a special case to support tests where the number of immature blocks is 0.
-		if numImmatureBlocks == 0 {
-			startHeight = tipHeight
-		}
-		outputs := bav.Postgres.GetBlockRewardsForPublicKey(NewPublicKey(pkBytes), startHeight, tipHeight)
-
-		var err error
-		for _, output := range outputs {
-			immatureBlockRewards, err = SafeUint64().Add(immatureBlockRewards, output.AmountNanos)
-			if err != nil {
-				return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem "+
-					"adding immature block rewards")
-			}
-		}
-	} else {
-		for ii := uint64(1); ii < uint64(numImmatureBlocks); ii++ {
-			// Don't look up the genesis block since it isn't in the DB.
-			if GenesisBlockHashHex == nextBlockHash.String() {
-				break
-			}
-
-			blockNode := GetHeightHashToNodeInfo(bav.Handle, bav.Snapshot, tipHeight, nextBlockHash, false)
-			if blockNode == nil {
-				return 0, fmt.Errorf(
-					"GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block for blockhash %s",
-					nextBlockHash.String())
-			}
-			blockRewardForPK, err := DbGetBlockRewardForPublicKeyBlockHash(bav.Handle, bav.Snapshot, pkBytes, nextBlockHash)
-			if err != nil {
-				return 0, errors.Wrapf(
-					err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem getting block reward for "+
-						"public key %s blockhash %s", PkToString(pkBytes, bav.Params), nextBlockHash.String())
-			}
-			immatureBlockRewards, err = SafeUint64().Add(immatureBlockRewards, blockRewardForPK)
-			if err != nil {
-				return 0, errors.Wrapf(err, "GetSpendableDeSoBalanceNanosForPublicKey: Problem adding "+
-					"block reward (%d) to immature block rewards (%d)", blockRewardForPK, immatureBlockRewards)
-			}
-			// TODO: This is the specific line that causes the bug. We should be using blockNode.Header.PrevBlockHash
-			// instead. We are not serializing the Parent attribute when the block node is put into the DB,
-			// but we do have the header. As a result, this condition always evaluates to false and thus
-			// we only process the block reward for the previous block instead of all immature block rewards
-			// as defined by the params.
-			// NOTE: we are not using .GetParent here as it changes the meaning of this code.
-			if blockNode.Header != nil {
-				nextBlockHash = blockNode.Header.PrevBlockHash
-			} else {
-				nextBlockHash = GenesisBlockHash
-			}
-		}
-	}
-
+	// This function used to look up immature block rewards and reduce the total balance
+	// by the immature block rewards to compute the spendable balance. However, this
+	// is no longer necessary since the move to PoS.
 	balanceNanos, err := bav.GetDeSoBalanceNanosForPublicKey(pkBytes)
-
 	if err != nil {
 		return 0, errors.Wrap(err, "GetSpendableDeSoBalanceNanosForPublicKey: ")
 	}
-	spendableBalanceNanos, err := SafeUint64().Sub(balanceNanos, immatureBlockRewards)
-	if err != nil {
-		return 0, errors.Wrapf(err,
-			"GetSpendableDeSoBalanceNanosForPublicKey: error subtract immature block rewards (%d) from "+
-				"balance nanos (%d)", immatureBlockRewards, balanceNanos)
-	}
-	return spendableBalanceNanos, nil
+	return balanceNanos, nil
 }
 
 func copyExtraData(extraData map[string][]byte) map[string][]byte {
