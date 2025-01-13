@@ -11165,6 +11165,7 @@ func DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
 	// Create a reverse iterator.
 	opts := badger.DefaultIteratorOptions
 	opts.Prefix = prefixKey
+	opts.PrefetchValues = false
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
