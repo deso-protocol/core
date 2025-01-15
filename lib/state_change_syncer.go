@@ -3,12 +3,14 @@ package lib
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/go-deadlock"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/golang/glog"
 	"github.com/google/uuid"
@@ -174,8 +176,11 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	ancestralRecord := stateChangeEntry.EncoderType.New()
 	if exist, err := DecodeFromBytes(ancestralRecord, rr); exist && err == nil {
 		stateChangeEntry.AncestralRecord = ancestralRecord
+		stateChangeEntry.AncestralRecordBytes = EncodeToBytes(blockHeight, ancestralRecord)
 	} else if err != nil {
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding ancestral record")
+	} else {
+		stateChangeEntry.AncestralRecordBytes = EncodeToBytes(blockHeight, nil)
 	}
 
 	// Decode the flush UUID.
@@ -415,7 +420,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 
 	if event.IsMempoolTxn {
 		// Set the flushId to the mempool flush ID.
-		//flushId = stateChangeSyncer.BlockSyncFlushI
+		//flushId = StateChangeSyncer.BlockSyncFlushI
 
 		// If the event flush ID is nil, then we need to use the global mempool flush ID.
 		if flushId == uuid.Nil {
@@ -445,6 +450,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		}
 
 		encoderType = encoder.GetEncoderType()
+
 	} else {
 		// If the value associated with the key is not an encoder, then we decode the encoder entirely from the key bytes.
 		// Examples of this are FollowEntry, LikeEntry, DeSoBalanceEntry, etc.
@@ -455,6 +461,16 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 		encoderType = keyEncoder.GetEncoderType()
 		stateChangeEntry.Encoder = keyEncoder
 		stateChangeEntry.EncoderBytes = nil
+
+		if stateChangeEntry.AncestralRecordBytes != nil && len(stateChangeEntry.AncestralRecordBytes) > 0 {
+			// Decode the ancestral record.
+			ancestralRecord, err := DecodeStateKey(stateChangeEntry.KeyBytes, stateChangeEntry.AncestralRecordBytes)
+			if err != nil {
+				glog.Fatalf("Server._handleStateSyncerOperation: Error decoding ancestral record: %v", err)
+			}
+			stateChangeEntry.AncestralRecord = ancestralRecord
+			stateChangeEntry.AncestralRecordBytes = nil
+		}
 	}
 
 	// Set the encoder type.
@@ -553,6 +569,8 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 						stateChangeSyncer.ResetMempool()
 						return
 					}
+
+					fmt.Printf("Reverting entry of type %d: %s: Flush key set size: %d\n", cachedSCE.EncoderType, hex.EncodeToString(cachedSCE.KeyBytes), len(stateChangeSyncer.MempoolFlushKeySet))
 
 					cachedSCE.IsReverted = true
 
@@ -807,12 +825,21 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	mempoolUtxoView.TipHash = server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Hash
 	server.blockchain.ChainLock.RUnlock()
 
+	// Print the length of the flush key set.
+	fmt.Printf("Flush key set size: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
+
 	// A new transaction is created so that we can simulate writes to the db without actually writing to the db.
 	// Using the transaction here rather than a stubbed badger db allows the process to query the db for any entries
 	// inserted during the flush process. This is necessary to get ancestral records for an entry that is being modified
 	// more than once in the mempool transactions.
 	txn := server.blockchain.db.NewTransaction(true)
 	defer txn.Discard()
+
+	// Create a read-only view of the badger DB prior to the mempool flush. This view will be used to get the ancestral
+	// records of entries that are being modified in the mempool.
+	mempoolEventManager.lastCommittedViewTxn = server.blockchain.db.NewTransaction(false)
+	defer mempoolEventManager.lastCommittedViewTxn.Discard()
+
 	glog.V(2).Infof("Time since mempool sync start: %v", time.Since(startTime))
 	startTime = time.Now()
 	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
@@ -901,76 +928,77 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	//Check to see if every txn hash in our cached txns is in the first n txns in the mempool.
 	//N represents the length of our cached txn map.
-	for ii, mempoolTx := range mempoolTxns {
-		if _, ok := stateChangeSyncer.MempoolCachedTxns[mempoolTx.Hash.String()]; !ok {
-			// If any of the transaction hashes in the first n transactions don't line up with our cache map, the mempool
-			// has changed since the last cache, and we need to reset it.
-			stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
-			stateChangeSyncer.MempoolCachedUtxoView = nil
-			glog.V(2).Info("Txn not in cache, resetting\n")
-			break
-		}
+	// for ii, mempoolTx := range mempoolTxns {
+	// 	if _, ok := stateChangeSyncer.MempoolCachedTxns[mempoolTx.Hash.String()]; !ok {
+	// 		// If any of the transaction hashes in the first n transactions don't line up with our cache map, the mempool
+	// 		// has changed since the last cache, and we need to reset it.
+	// 		stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
+	// 		stateChangeSyncer.MempoolCachedUtxoView = nil
+	// 		glog.V(2).Info("Txn not in cache, resetting\n")
+	// 		break
+	// 	}
 
-		// Once we're past the number of cached txns, we have confirmed that nothing in our cache is out of date and can break.
-		if ii >= len(stateChangeSyncer.MempoolCachedTxns)-1 {
-			if stateChangeSyncer.MempoolCachedUtxoView != nil {
-				// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
-				mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
-			}
-			glog.V(2).Infof("All txns match, continuing: %v\n", ii)
-			break
-		}
-	}
+	// 	// Once we're past the number of cached txns, we have confirmed that nothing in our cache is out of date and can break.
+	// 	if ii >= len(stateChangeSyncer.MempoolCachedTxns)-1 {
+	// 		if stateChangeSyncer.MempoolCachedUtxoView != nil {
+	// 			// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
+	// 			mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
+	// 		}
+	// 		glog.V(2).Infof("All txns match, continuing: %v\n", ii)
+	// 		break
+	// 	}
+	// }
 
 	currentTimestamp := time.Now().UnixNano()
 	for _, mempoolTx := range mempoolTxns {
 		var txnStateChangeEntry *StateChangeEntry
 		var utxoOpStateChangeEntry *StateChangeEntry
+
 		// Check if the transaction is already in the cache. If so, skip it.
-		txHash := mempoolTx.Hash.String()
-		if stateChangeEntries, ok := stateChangeSyncer.MempoolCachedTxns[txHash]; ok {
-			txnStateChangeEntry = stateChangeEntries[0]
-			utxoOpStateChangeEntry = stateChangeEntries[1]
-		} else {
-			if !mempoolTx.validated {
-				continue
-			}
-			utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
-				mempoolTx.Tx, mempoolTx.Hash, uint32(blockHeight+1), currentTimestamp, false, false /*ignoreUtxos*/)
-			if err != nil {
-				mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-					FlushId:        originalCommittedFlushId,
-					Succeeded:      false,
-					IsMempoolFlush: true,
-				})
-				stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
-				stateChangeSyncer.MempoolCachedUtxoView = nil
-				return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
-			}
-			txnStateChangeEntry = &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				KeyBytes:      TxnHashToTxnKey(mempoolTx.Hash),
-				EncoderBytes:  EncodeToBytes(blockHeight, mempoolTx.Tx, false),
-				IsReverted:    false,
-			}
-
-			// Capture the utxo ops for the transaction in a UTXOOp bundle.
-			utxoOpBundle := &UtxoOperationBundle{
-				UtxoOpBundle: [][]*UtxoOperation{},
-			}
-
-			utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
-
-			utxoOpStateChangeEntry = &StateChangeEntry{
-				OperationType: DbOperationTypeUpsert,
-				KeyBytes:      _DbKeyForTxnUtxoOps(mempoolTx.Hash),
-				EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
-				IsReverted:    false,
-			}
-
-			// Add both state change entries to the mempool sync map.
-			stateChangeSyncer.MempoolCachedTxns[txHash] = []*StateChangeEntry{txnStateChangeEntry, utxoOpStateChangeEntry}
+		// txHash := mempoolTx.Hash.String()
+		// if stateChangeEntries, ok := stateChangeSyncer.MempoolCachedTxns[txHash]; ok {
+		// 	txnStateChangeEntry = stateChangeEntries[0]
+		// 	utxoOpStateChangeEntry = stateChangeEntries[1]
+		// } else {
+		if !mempoolTx.validated {
+			continue
 		}
+		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
+			mempoolTx.Tx, mempoolTx.Hash, uint32(blockHeight+1), currentTimestamp, false, false /*ignoreUtxos*/)
+		if err != nil {
+			mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+				FlushId:        originalCommittedFlushId,
+				Succeeded:      false,
+				IsMempoolFlush: true,
+			})
+			stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
+			stateChangeSyncer.MempoolCachedUtxoView = nil
+			return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer ConnectTransaction: ")
+		}
+		txnStateChangeEntry = &StateChangeEntry{
+			OperationType: DbOperationTypeUpsert,
+			KeyBytes:      TxnHashToTxnKey(mempoolTx.Hash),
+			EncoderBytes:  EncodeToBytes(blockHeight, mempoolTx.Tx, false),
+			IsReverted:    false,
+		}
+
+		// Capture the utxo ops for the transaction in a UTXOOp bundle.
+		utxoOpBundle := &UtxoOperationBundle{
+			UtxoOpBundle: [][]*UtxoOperation{},
+		}
+
+		utxoOpBundle.UtxoOpBundle = append(utxoOpBundle.UtxoOpBundle, utxoOpsForTxn)
+
+		utxoOpStateChangeEntry = &StateChangeEntry{
+			OperationType: DbOperationTypeUpsert,
+			KeyBytes:      _DbKeyForTxnUtxoOps(mempoolTx.Hash),
+			EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
+			IsReverted:    false,
+		}
+
+		// 	// Add both state change entries to the mempool sync map.
+		// 	stateChangeSyncer.MempoolCachedTxns[txHash] = []*StateChangeEntry{txnStateChangeEntry, utxoOpStateChangeEntry}
+		// }
 
 		// Emit transaction state change.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
@@ -1033,6 +1061,7 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 			// Sleep for a short while to avoid a tight loop.
 			time.Sleep(100 * time.Millisecond)
 			var err error
+
 			// If the mempool is not empty, sync the mempool to the state syncer.
 			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
 			if err != nil {

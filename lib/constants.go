@@ -928,9 +928,10 @@ func (params *DeSoParams) EnableRegtest(isAcceleratedRegtest bool) {
 		params.DefaultEpochDurationNumBlocks = uint64(5)
 		params.DefaultBlockProductionIntervalMillisecondsPoS = 1000 // 1s
 		params.DefaultTimeoutIntervalMillisecondsPoS = 2000         // 2s
+		fmt.Println("Regtest mode enabled with accelerated regtest")
 		newSeedBalance := &DeSoOutput{
 			PublicKey:   MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"),
-			AmountNanos: 1e14,
+			AmountNanos: 1e18,
 		}
 
 		params.SeedBalances = append(params.SeedBalances, newSeedBalance)
