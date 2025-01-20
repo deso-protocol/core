@@ -1227,7 +1227,7 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 	currentHeight := heightLimit
 	maxNode, maxNodeExists, maxNodeError := bc.GetBlockFromBestChainByHeight(currentHeight, true)
 	if maxNodeError != nil {
-		glog.Errorf("GetBlockToFetch: Problem getting block by height: %v", maxNodeError)
+		glog.Errorf("GetBlockToFetch: Problem getting maxNode block by height: %v", maxNodeError)
 		return nil
 	}
 	if !maxNodeExists || maxNode == nil {
@@ -1241,7 +1241,8 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 		backtrackingNode, backtrackingNodeExists, backtrackingNodeError :=
 			bc.GetBlockFromBestChainByHashAndOptionalHeight(currentHash, &currentHeight, true)
 		if backtrackingNodeError != nil {
-			glog.Errorf("GetBlockToFetch: Problem getting block by height: %v", backtrackingNodeError)
+			glog.Errorf("GetBlockToFetch: Problem getting block by hash and height (%v, %v): %v",
+				currentHash, currentHeight, backtrackingNodeError)
 			return nil
 		}
 		if !backtrackingNodeExists || backtrackingNode == nil {
