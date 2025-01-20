@@ -2197,7 +2197,7 @@ func (srv *Server) _relayTransactions() {
 
 	for _, pp := range allPeers {
 		if !pp.canReceiveInvMessages {
-			glog.V(2).Infof("Skipping invs for peer %v because not ready "+
+			glog.V(3).Infof("Skipping invs for peer %v because not ready "+
 				"yet: %v", pp, pp.canReceiveInvMessages)
 			continue
 		}
