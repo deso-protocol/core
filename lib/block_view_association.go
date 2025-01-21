@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )

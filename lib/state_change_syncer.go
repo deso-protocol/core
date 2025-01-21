@@ -3,7 +3,6 @@ package lib
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -570,8 +569,6 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerFlush(event *State
 						return
 					}
 
-					fmt.Printf("Reverting entry of type %d: %s: Flush key set size: %d\n", cachedSCE.EncoderType, hex.EncodeToString(cachedSCE.KeyBytes), len(stateChangeSyncer.MempoolFlushKeySet))
-
 					cachedSCE.IsReverted = true
 
 					// Create a revert state change entry and add it to the queue. This will signal the state change
@@ -825,9 +822,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	mempoolUtxoView.TipHash = server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Hash
 	server.blockchain.ChainLock.RUnlock()
 
-	// Print the length of the flush key set.
-	fmt.Printf("Flush key set size: %d\n", len(stateChangeSyncer.MempoolFlushKeySet))
-
 	// A new transaction is created so that we can simulate writes to the db without actually writing to the db.
 	// Using the transaction here rather than a stubbed badger db allows the process to query the db for any entries
 	// inserted during the flush process. This is necessary to get ancestral records for an entry that is being modified
@@ -842,15 +836,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 
 	glog.V(2).Infof("Time since mempool sync start: %v", time.Since(startTime))
 	startTime = time.Now()
-	err = mempoolUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
-	if err != nil {
-		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-			FlushId:        originalCommittedFlushId,
-			Succeeded:      false,
-			IsMempoolFlush: true,
-		})
-		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: FlushToDbWithTxn: ")
-	}
 	glog.V(2).Infof("Time since db flush: %v", time.Since(startTime))
 	mempoolTxUtxoView := NewUtxoView(server.blockchain.db, server.blockchain.params, server.blockchain.postgres, nil, &mempoolEventManager)
 	glog.V(2).Infof("Time since utxo view: %v", time.Since(startTime))
@@ -1013,6 +998,47 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			FlushId:          originalCommittedFlushId,
 			IsMempoolTxn:     true,
 		})
+	}
+
+	// Create a copy of the event manager, assign it to this utxo view.
+	mempoolTxEventManager := *mempoolTxUtxoView.EventManager
+
+	// Reset event manager handlers
+	mempoolTxEventManager.stateSyncerOperationHandlers = nil
+	mempoolTxEventManager.stateSyncerFlushedHandlers = nil
+	mempoolTxEventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
+	mempoolTxEventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
+
+	mempoolTxEventManager.isMempoolManager = true
+	mempoolTxUtxoView.EventManager = &mempoolTxEventManager
+
+	// Kill the snapshot so that it doesn't affect the original snapshot.
+	mempoolTxUtxoView.Snapshot = nil
+
+	server.blockchain.ChainLock.RLock()
+	mempoolTxUtxoView.TipHash = server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Hash
+	server.blockchain.ChainLock.RUnlock()
+
+	// A new transaction is created so that we can simulate writes to the db without actually writing to the db.
+	// Using the transaction here rather than a stubbed badger db allows the process to query the db for any entries
+	// inserted during the flush process. This is necessary to get ancestral records for an entry that is being modified
+	// more than once in the mempool transactions.
+	txn2 := server.blockchain.db.NewTransaction(true)
+	defer txn2.Discard()
+
+	// Create a read-only view of the badger DB prior to the mempool flush. This view will be used to get the ancestral
+	// records of entries that are being modified in the mempool.
+	mempoolTxEventManager.lastCommittedViewTxn = server.blockchain.db.NewTransaction(false)
+	defer mempoolTxEventManager.lastCommittedViewTxn.Discard()
+
+	err = mempoolTxUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.bestChain[len(server.blockchain.bestChain)-1].Height))
+	if err != nil {
+		mempoolUtxoView.EventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
+			FlushId:        originalCommittedFlushId,
+			Succeeded:      false,
+			IsMempoolFlush: true,
+		})
+		return false, errors.Wrapf(err, "StateChangeSyncer.SyncMempoolToStateSyncer: FlushToDbWithTxn: ")
 	}
 	// Update the cached utxo view to represent the new cached state.
 	stateChangeSyncer.MempoolCachedUtxoView = mempoolTxUtxoView.CopyUtxoView()
