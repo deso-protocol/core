@@ -808,10 +808,22 @@ func (srv *Server) GetHeadersForLocatorAndStopHash(
 		}
 		return []*MsgDeSoHeader{stopNode.Header}, nil
 	}
-	startNode, startNodeExists, startNodeError := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(locator[0], nil, true)
-	if startNodeError != nil || !startNodeExists || startNode == nil {
-		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Start hash provided but no start node found")
+	var startNode *BlockNode
+	var startNodeExists bool
+	var startNodeError error
+	for _, blockNodeHash := range locator {
+		startNode, startNodeExists, startNodeError = srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(blockNodeHash, nil, true)
+		if startNodeError != nil || !startNodeExists || startNode == nil {
+			glog.Errorf("GetHeadersForLocatorAndStopHash: locator provided but no block node found at %v", blockNodeHash)
+		}
+		if startNodeExists && startNode != nil {
+			break
+		}
 	}
+	if startNode == nil {
+		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: No start node found after looping through locators")
+	}
+
 	var backtrackingNode *BlockNode
 	var backtrackingNodeExists bool
 	var backtrackingNodeError error
