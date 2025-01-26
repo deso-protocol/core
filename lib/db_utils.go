@@ -11188,6 +11188,8 @@ func DBGetAllLockedBalanceEntriesForHodlerPKIDWithTxn(
 
 	// Create a reverse iterator.
 	opts := badger.DefaultIteratorOptions
+	opts.Prefix = prefixKey
+	opts.PrefetchValues = false
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
@@ -11704,6 +11706,7 @@ func DBGetAllYieldCurvePointsByProfilePKIDWithTxn(txn *badger.Txn, snap *Snapsho
 	// Create an iterator.
 	opts := badger.DefaultIteratorOptions
 	opts.Prefix = validKey
+	opts.PrefetchValues = false
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
