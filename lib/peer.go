@@ -395,8 +395,8 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 func (pp *Peer) HandleInv(msg *MsgDeSoInv) {
 	// Ignore invs while we're still syncing and before we've requested
 	// all mempool transactions from one of our peers to bootstrap.
-	if pp.srv.blockchain.isSyncing() {
-		//if pp.srv.blockchain.chainState() != SyncStateFullyCurrent {
+	//if pp.srv.blockchain.isSyncing() {
+	if pp.srv.blockchain.chainState() != SyncStateFullyCurrent {
 		glog.V(1).Infof("Server._handleInv: Ignoring INV while syncing from Peer %v", pp)
 		return
 	}
