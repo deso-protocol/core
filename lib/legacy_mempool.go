@@ -501,6 +501,9 @@ func (mp *DeSoMempool) UpdateAfterConnectBlock(blk *MsgDeSoBlock) (_txnsAddedToM
 // But until then doing it this way significantly reduces complexity and should hold up
 // for a while.
 func (mp *DeSoMempool) UpdateAfterDisconnectBlock(blk *MsgDeSoBlock) {
+	if mp.bc.params.IsPoSBlockHeight(blk.Header.Height) {
+		return
+	}
 	// Protect concurrent access.
 	mp.mtx.Lock()
 	defer mp.mtx.Unlock()
