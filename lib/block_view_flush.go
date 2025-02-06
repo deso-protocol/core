@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/uint256"
 	"reflect"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -948,9 +949,12 @@ func (bav *UtxoView) _flushDAOCoinBalanceEntriesToDbWithTxn(txn *badger.Txn, blo
 				balanceKey, computedBalanceKey)
 		}
 
+		// Either a zero entry or an isDeleted annotation results in a deletion.
+		isDeleted := balanceEntry.BalanceNanos.Eq(uint256.NewInt(0)) || balanceEntry.isDeleted
+
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), true, bav.EventManager, balanceEntry.isDeleted); err != nil {
+		if err := DBDeleteBalanceEntryMappingsWithTxn(txn, bav.Snapshot, &(balanceKey.HODLerPKID), &(balanceKey.CreatorPKID), true, bav.EventManager, isDeleted); err != nil {
 
 			return errors.Wrapf(
 				err, "_flushDAOCoinBalanceEntriesToDbWithTxn: Problem deleting mappings "+
