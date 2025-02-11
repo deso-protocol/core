@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/go-deadlock"
 	"net"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/deso-protocol/core/collections"
@@ -166,6 +167,9 @@ type Server struct {
 	timer *Timer
 
 	stateChangeSyncer *StateChangeSyncer
+
+	stateAmqpPushDest string
+
 	// DbMutex protects the badger database from concurrent access when it's being closed & re-opened.
 	// This is necessary because the database is closed & re-opened when the node finishes hypersyncing in order
 	// to change the database options from Default options to Performance options.
@@ -426,6 +430,7 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
+	_stateAmqpPushDest string,
 	_hypersyncMaxQueueSize uint32,
 	_blsKeystore *BLSKeystore,
 	_mempoolBackupIntervalMillis uint64,
@@ -495,6 +500,14 @@ func NewServer(
 
 	if stateChangeSyncer != nil {
 		srv.stateChangeSyncer = stateChangeSyncer
+	}
+
+	//Enable amqp publisher if push destionation is set.
+	if _stateAmqpPushDest != "" {
+		srv.stateAmqpPushDest = _stateAmqpPushDest
+		//set amqp push enable via atomic flag
+		AmqpSetEnablePublisher()
+
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -3208,6 +3221,8 @@ func (srv *Server) tryTransitionToFastHotStuffConsensus() {
 	// to the FastHotStuffConsensus.
 
 	srv.fastHotStuffConsensus.Start()
+
+	srv.handleFullySyncedStateAMQP()
 }
 
 func (srv *Server) _startTransactionRelayer() {
@@ -3429,4 +3444,24 @@ func (srv *Server) GetLatestView() uint64 {
 		return 0
 	}
 	return srv.fastHotStuffConsensus.fastHotStuffEventLoop.GetCurrentView()
+}
+
+func (srv *Server) handleFullySyncedStateAMQP() {
+	// Check if AMQP publisher is enabled.
+	if atomic.LoadInt32(&amqpPublisherEnabled) == 1 {
+		// Enable AMQP publisher and set up state change event handler if configured.
+		if atomic.LoadInt32(&amqpPublisherStarted) == 0 {
+			if srv.stateAmqpPushDest != "" {
+
+				AmpqSetStartPublisher()
+				amqpDest := srv.stateAmqpPushDest
+				glog.Infof("AMQP publisher enabled. Node is fully synced.")
+				//add state change event handler
+				srv.eventManager.OnStateSyncerOperation(func(event *StateSyncerOperationEvent) {
+					//Run async
+					go PublishStateChangeEvent(event.StateChangeEntry, amqpDest)
+				})
+			}
+		}
+	}
 }
