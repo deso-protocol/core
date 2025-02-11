@@ -51,7 +51,7 @@ func getAMQPConnection(amqpDest string) (*amqp.Connection, error) {
 // It returns an error if the publish fails.
 func PublishStateChangeEvent(event *StateChangeEntry, amqpDest string) error {
 
-	glog.Infoln("AMQP publish event")
+	//glog.Infoln("AMQP publish event")
 	if amqpDest == "" {
 		// AMQP integration is not enabled.
 		return nil
@@ -68,6 +68,18 @@ func PublishStateChangeEvent(event *StateChangeEntry, amqpDest string) error {
 		glog.Infoln("Failed to get AMQP connection: %v", err)
 
 		return err
+	}
+
+	// --- Integrated encoder logic ---
+	if isEncoder, encoder := StateKeyToDeSoEncoder(event.KeyBytes); isEncoder && encoder != nil {
+		// Blocks are serialized in Badger as MsgDesoBlock.
+		// Convert these bytes to the appropriate format by appending metadata.
+		if encoder.GetEncoderType() == EncoderTypeBlock {
+			event.EncoderBytes = AddEncoderMetadataToMsgDeSoBlockBytes(event.EncoderBytes, event.BlockHeight)
+		}
+		if encoder.GetEncoderType() == EncoderTypeBlockNode {
+			event.EncoderBytes = AddEncoderMetadataToBlockNodeBytes(event.EncoderBytes, event.BlockHeight)
+		}
 	}
 
 	ch, err := conn.Channel()

@@ -3449,18 +3449,20 @@ func (srv *Server) GetLatestView() uint64 {
 func (srv *Server) handleFullySyncedStateAMQP() {
 	// Check if AMQP publisher is enabled.
 	if atomic.LoadInt32(&amqpPublisherEnabled) == 1 {
+		glog.Infof("AMQP publisher enabled. Node is fully synced.")
 		// Enable AMQP publisher and set up state change event handler if configured.
 		if atomic.LoadInt32(&amqpPublisherStarted) == 0 {
+			glog.Infof("AMQP publisher not started yet.")
 			if srv.stateAmqpPushDest != "" {
-
 				AmpqSetStartPublisher()
 				amqpDest := srv.stateAmqpPushDest
-				glog.Infof("AMQP publisher enabled. Node is fully synced.")
+				glog.Infof("AMQP publisher started set.")
 				//add state change event handler
 				srv.eventManager.OnStateSyncerOperation(func(event *StateSyncerOperationEvent) {
 					//Run async
 					go PublishStateChangeEvent(event.StateChangeEntry, amqpDest)
 				})
+				glog.Infof("AMQP publisher event handling set.")
 			}
 		}
 	}
