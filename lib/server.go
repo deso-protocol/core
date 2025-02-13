@@ -3458,10 +3458,13 @@ func (srv *Server) handleFullySyncedStateAMQP() {
 				amqpDest := srv.stateAmqpPushDest
 				glog.Infof("AMQP publisher started set.")
 				//add state change event handler
-				srv.eventManager.OnStateSyncerOperation(func(event *StateSyncerOperationEvent) {
-					//Run async
-					go PublishStateChangeEvent(event.StateChangeEntry, amqpDest)
+				srv.eventManager.OnBlockAccepted(func(event *BlockEvent) {
+					go PublishBlockEvent(event, amqpDest)
 				})
+				// srv.eventManager.OnStateSyncerOperation(func(event *StateSyncerOperationEvent) {
+				// 	//Run async
+				// 	go PublishStateChangeEvent(event.StateChangeEntry, amqpDest)
+				// })
 				glog.Infof("AMQP publisher event handling set.")
 			}
 		}
