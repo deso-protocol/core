@@ -90,6 +90,11 @@ func PublishBlockEvent(event *BlockEvent, amqpDest string) error {
 					}
 
 					if push {
+						body, err := txn.MarshalJSON()
+						if err != nil {
+							glog.Errorf("Failed to marshal tx to json %v", err)
+							return err
+						}
 
 						err = ch.Publish(
 							"",          // default exchange
@@ -98,7 +103,7 @@ func PublishBlockEvent(event *BlockEvent, amqpDest string) error {
 							false,       // immediate
 							amqp.Publishing{
 								ContentType: "application/json",
-								Body:        txn.MarshalJSON(),
+								Body:        body,
 								Timestamp:   time.Now(),
 							},
 						)
