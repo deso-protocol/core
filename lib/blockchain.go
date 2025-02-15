@@ -1201,7 +1201,7 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 	// Get the tip of the main block chain.
 	bestBlockTip, ok := bc.GetCommittedTip()
 	if !ok {
-		glog.Errorf("GetBlockToFetch: Problem getting best block tip")
+		glog.Errorf("GetBlockNodesToFetch: Problem getting best block tip")
 		return nil
 	}
 
@@ -1225,45 +1225,34 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 		heightLimit = bestBlockTip.Header.Height + uint64(numBlocks)
 	}
 	currentHeight := heightLimit
-	maxNode, maxNodeExists, maxNodeError := bc.GetBlockFromBestChainByHeight(currentHeight, true)
+	backtrackingNode, backtrackingNodeExists, maxNodeError := bc.GetBlockFromBestChainByHeight(currentHeight, true)
 	if maxNodeError != nil {
-		glog.Errorf("GetBlockToFetch: Problem getting maxNode block by height: %v", maxNodeError)
+		glog.Errorf("GetBlockNodesToFetch: Problem getting maxNode block by height: %v", maxNodeError)
 		return nil
 	}
-	if !maxNodeExists || maxNode == nil {
-		glog.Errorf("GetBlockToFetch: Block at height %d not found", heightLimit)
+	if !backtrackingNodeExists || backtrackingNode == nil {
+		glog.Errorf("GetBlockNodesToFetch: Block at height %d not found. Error finding max node.", heightLimit)
 		return nil
 	}
-	currentHash := maxNode.Hash
 	// Walk back from the maxNode to the bestBlockTip.
 	for len(blockNodesToFetch) < numBlocks &&
-		currentHeight >= uint64(bestBlockTip.Height) {
-		backtrackingNode, backtrackingNodeExists, backtrackingNodeError :=
-			bc.GetBlockFromBestChainByHashAndOptionalHeight(currentHash, &currentHeight, true)
-		if backtrackingNodeError != nil {
-			glog.Errorf("GetBlockToFetch: Problem getting block by hash and height (%v, %v): %v",
-				currentHash, currentHeight, backtrackingNodeError)
+		backtrackingNode.Height > bestBlockTip.Height {
+		// only include blocks we're not supposed to ignore and that are not already stored.
+		if _, exists := blocksToIgnore[*backtrackingNode.Hash]; !exists && !backtrackingNode.IsStored() {
+			blockNodesToFetch = append(blockNodesToFetch, backtrackingNode)
+		}
+		// Get these values before we try to update the back tracking node.
+		prevHeight := backtrackingNode.Height
+		prevHash := backtrackingNode.Hash
+		prevParentHash := backtrackingNode.Header.PrevBlockHash
+		backtrackingNode = backtrackingNode.GetParent(bc.blockIndex)
+		if backtrackingNode == nil {
+			glog.Errorf("GetBlockNodesToFetch: Parent of block (%v, %d) not found with back tracking. Parent hash %v",
+				prevHash,
+				prevHeight,
+				prevParentHash)
 			return nil
 		}
-		if !backtrackingNodeExists || backtrackingNode == nil {
-			glog.Errorf("GetBlockToFetch: Block at height %d not found", currentHeight)
-			return nil
-		}
-
-		currentHeight--
-		currentHash = backtrackingNode.Header.PrevBlockHash
-
-		// Exclude any blocks we're supposed to ignore.
-		if _, exists := blocksToIgnore[*backtrackingNode.Hash]; exists {
-			continue
-		}
-
-		// Skip any stored blocks as we already have them.
-		if backtrackingNode.IsStored() {
-			continue
-		}
-
-		blockNodesToFetch = append(blockNodesToFetch, backtrackingNode)
 	}
 
 	slices.Reverse(blockNodesToFetch)
