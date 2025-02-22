@@ -5525,7 +5525,7 @@ func DecodeExtraData(rr io.Reader) (map[string][]byte, error) {
 			}
 			_, err = io.ReadFull(rr, keyBytes)
 			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading key: %v", err)
 			}
 
 			// Convert the key to a string and check if it already exists in the map.
@@ -5623,7 +5623,7 @@ func DecodeMapStringUint64(rr *bytes.Reader) (map[string]uint64, error) {
 			}
 			_, err = io.ReadFull(rr, keyBytes)
 			if err != nil {
-				return nil, fmt.Errorf("DecodeExtraData: Problem reading key #{ii}")
+				return nil, fmt.Errorf("DecodeExtraData: Problem reading key %v", err)
 			}
 
 			// Convert the key to a string and check if it already exists in the map.
