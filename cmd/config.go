@@ -1,13 +1,14 @@
 package cmd
 
 import (
-	"github.com/deso-protocol/core/lib"
-	"github.com/golang/glog"
-	"github.com/spf13/viper"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/deso-protocol/core/lib"
+	"github.com/golang/glog"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
@@ -83,6 +84,9 @@ type Config struct {
 	// State Syncer
 	StateChangeDir                 string
 	StateSyncerMempoolTxnSyncLimit uint64
+
+	//Amqp Push Destination
+	AmqpPushDest string
 
 	// PoS Checkpoint Syncing
 	CheckpointSyncingProviders []string
@@ -196,6 +200,9 @@ func LoadConfig() *Config {
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")
 	config.StateSyncerMempoolTxnSyncLimit = viper.GetUint64("state-syncer-mempool-txn-sync-limit")
+
+	//AMQP Push Destination
+	config.AmqpPushDest = viper.GetString("amqp-push-dest")
 
 	// PoS Checkpoint Syncing
 	config.CheckpointSyncingProviders = GetStringSliceWorkaround("checkpoint-syncing-providers")

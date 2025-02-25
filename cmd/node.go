@@ -4,13 +4,14 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/deso-protocol/go-deadlock"
 	"net"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/btcsuite/btcd/addrmgr"
@@ -237,6 +238,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
 		node.Config.StateChangeDir,
+		node.Config.AmqpPushDest,
 		node.Config.HypersyncMaxQueueSize,
 		blsKeystore,
 		node.Config.MempoolBackupIntervalMillis,
