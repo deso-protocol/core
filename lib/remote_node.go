@@ -409,7 +409,7 @@ func (rn *RemoteNode) Disconnect(disconnectReason string) {
 
 func (rn *RemoteNode) SendMessage(desoMsg DeSoMessage) error {
 	rn.mtx.RLock()
-	rn.mtx.RUnlock()
+	defer rn.mtx.RUnlock()
 
 	if rn.connectionStatus != RemoteNodeStatus_HandshakeCompleted {
 		return fmt.Errorf("SendMessage: Remote node is not connected")

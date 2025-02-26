@@ -707,7 +707,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockA1.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockA1.Header, headerHash, false)
+		_, isMainChain, isOrphan, err := chain.ProcessHeader(blockA1.Header, headerHash, false)
 		require.NoError(err)
 		require.True(isMainChain)
 		require.False(isOrphan)
@@ -723,7 +723,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockA2.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockA2.Header, headerHash, false)
+		_, isMainChain, isOrphan, err := chain.ProcessHeader(blockA2.Header, headerHash, false)
 		require.NoError(err)
 		require.True(isMainChain)
 		require.False(isOrphan)
@@ -739,7 +739,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB1.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockB1.Header, headerHash, false)
+		_, isMainChain, isOrphan, err := chain.ProcessHeader(blockB1.Header, headerHash, false)
 		require.NoError(err)
 		// Should not be main chain yet
 		require.False(isMainChain)
@@ -756,7 +756,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB2.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockB2.Header, headerHash, false)
+		_, isMainChain, isOrphan, err := chain.ProcessHeader(blockB2.Header, headerHash, false)
 		require.NoError(err)
 		// Should not be main chain yet
 		require.False(isMainChain)
@@ -773,7 +773,7 @@ func TestProcessHeaderskReorgBlocks(t *testing.T) {
 		require.Equal(uint64(1), GetUtxoNumEntries(db, chain.snapshot))
 		headerHash, err := blockB3.Header.Hash()
 		require.NoError(err)
-		isMainChain, isOrphan, err := chain.ProcessHeader(blockB3.Header, headerHash, false)
+		_, isMainChain, isOrphan, err := chain.ProcessHeader(blockB3.Header, headerHash, false)
 		require.NoError(err)
 		// Should not be main chain yet
 		require.True(isMainChain)
@@ -1222,12 +1222,16 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1236,21 +1240,21 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1273,21 +1277,21 @@ func TestCalcNextDifficultyTargetHalvingDoublingHitLimit(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 30; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 4 second, which is 2x too slow.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1318,12 +1322,16 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1332,21 +1340,21 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1369,21 +1377,21 @@ func TestCalcNextDifficultyTargetHittingLimitsSlow(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 30; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 8 second, which is >2x too slow.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 4)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1414,12 +1422,16 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1428,21 +1440,21 @@ func TestCalcNextDifficultyTargetHittingLimitsFast(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating all at once.
 				TstampNanoSecs: SecondsToNanoSeconds(0),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1469,12 +1481,15 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    3,
 	}
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1483,21 +1498,21 @@ func TestCalcNextDifficultyTargetJustRight(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 2 second, which is under the limit.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii * 2)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1524,12 +1539,16 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	_ = assert
 	_ = require
 
+	bc, _, _ := NewTestBlockchain(t)
+
 	fakeParams := &DeSoParams{
 		MinDifficultyTargetHex:         hex.EncodeToString(BigintToHash(big.NewInt(100000))[:]),
 		TimeBetweenDifficultyRetargets: 6 * time.Second,
 		TimeBetweenBlocks:              2 * time.Second,
 		MaxDifficultyRetargetFactor:    2,
 	}
+
+	bc.params = fakeParams
 
 	nodes := []*BlockNode{}
 	diffsAsInts := []int64{}
@@ -1538,21 +1557,21 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 		if ii > 0 {
 			lastNode = nodes[ii-1]
 		}
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 1 second, which is 2x too fast.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii)),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
@@ -1575,21 +1594,21 @@ func TestCalcNextDifficultyTargetSlightlyOff(t *testing.T) {
 	diffsAsInts = []int64{}
 	for ii := 13; ii < 34; ii++ {
 		lastNode := nodes[ii-1]
-		nextDiff, err := CalcNextDifficultyTarget(lastNode, HeaderVersion0, fakeParams)
+		nextDiff, err := bc.CalcNextDifficultyTarget(lastNode, HeaderVersion0)
 		require.NoErrorf(err, "Block index: %d", ii)
 		nodes = append(nodes, NewBlockNode(
-			lastNode,
-			nil,
+			NewBlockHash(RandomBytes(32)),
 			uint32(ii),
 			nextDiff,
-			nil,
+			big.NewInt(1),
 			&MsgDeSoHeader{
 				// Blocks generating every 3 seconds, which is slow but under the limit.
 				TstampNanoSecs: SecondsToNanoSeconds(int64(ii) * 3),
 			},
-			StatusNone,
+			StatusHeaderValidated,
 		))
-
+		bc.blockIndex.setHeaderTip(nodes[len(nodes)-1])
+		require.NoError(PutHeightHashToNodeInfo(bc.db, nil, nodes[len(nodes)-1], false, nil))
 		diffsAsInts = append(diffsAsInts, HashToBigint(nextDiff).Int64())
 	}
 
