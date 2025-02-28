@@ -27,9 +27,9 @@ func (srv *Server) submitRegtestValidatorRegistrationTxns(block *MsgDeSoBlock) {
 		var domain string
 		if len(srv.GetConnectionManager().listeners) == 0 {
 			domain = "localhost:18000"
+		} else {
+			domain = srv.GetConnectionManager().listeners[0].Addr().String()
 		}
-		domain = srv.GetConnectionManager().listeners[0].Addr().String()
-
 		txnMeta := RegisterAsValidatorMetadata{
 			Domains:                             [][]byte{[]byte(domain)},
 			DisableDelegatedStake:               false,
