@@ -94,7 +94,8 @@ type Config struct {
 func GetStringSliceWorkaround(flagName string) []string {
 	value := viper.GetString(flagName)
 	if value == "" || value == " " {
-		return []string{}
+		// Backwards compatibility for n0 scripts.
+		return viper.GetStringSlice(flagName)
 	}
 	return strings.Split(value, ",")
 }

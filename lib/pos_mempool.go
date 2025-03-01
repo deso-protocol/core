@@ -2,13 +2,13 @@ package lib
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/decred/dcrd/container/lru"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/golang/glog"
@@ -183,11 +183,11 @@ type PosMempool struct {
 	// recentBlockTxnCache is an LRU KV cache used to track the transaction that have been included in blocks.
 	// This cache is used to power logic that waits for a transaction to either be validated in the mempool
 	// or be included in a block.
-	recentBlockTxnCache lru.Set[BlockHash]
+	recentBlockTxnCache *collections.LruSet[BlockHash]
 
 	// recentRejectedTxnCache is a cache to store the txns that were recently rejected so that we can return better
 	// errors for them.
-	recentRejectedTxnCache lru.Map[BlockHash, error]
+	recentRejectedTxnCache *collections.LruCache[BlockHash, error]
 }
 
 func NewPosMempool() *PosMempool {
@@ -234,8 +234,8 @@ func (mp *PosMempool) Init(
 	mp.mempoolBackupIntervalMillis = mempoolBackupIntervalMillis
 	mp.maxValidationViewConnects = maxValidationViewConnects
 	mp.transactionValidationRefreshIntervalMillis = transactionValidationRefreshIntervalMillis
-	mp.recentBlockTxnCache = *lru.NewSet[BlockHash](100000)           // cache 100K latest txns from blocks.
-	mp.recentRejectedTxnCache = *lru.NewMap[BlockHash, error](100000) // cache 100K rejected txns.
+	mp.recentBlockTxnCache, _ = collections.NewLruSet[BlockHash](100000)             // cache 100K latest txns from blocks.
+	mp.recentRejectedTxnCache, _ = collections.NewLruCache[BlockHash, error](100000) // cache 100K rejected txns.
 
 	// Recreate and initialize the transaction register and the nonce tracker.
 	mp.txnRegister = NewTransactionRegister()
@@ -684,6 +684,7 @@ func (mp *PosMempool) loadPersistedTransactions() error {
 	if err != nil {
 		return errors.Wrapf(err, "PosMempool.Start: Problem retrieving transactions from persister")
 	}
+	glog.V(0).Infof("PosMempool.loadPersistedTransactions: Retrieved %d transactions from persister", len(txns))
 	// We set the persistToDb flag to false so that persister doesn't try to save the transactions.
 	for _, txn := range txns {
 		if err := mp.addTransactionNoLock(txn, false); err != nil {
@@ -848,7 +849,12 @@ func (mp *PosMempool) validateTransactions() error {
 			// try to resubmit it.
 			txn.SetValidated(false)
 			mp.recentRejectedTxnCache.Put(*txn.Hash, err)
-
+			txnBytes, toBytesErr := txn.Tx.ToBytes(false)
+			if toBytesErr != nil {
+				glog.Errorf("PosMempool.validateTransactions: Problem converting txn to bytes: %v", toBytesErr)
+			}
+			glog.V(0).Infof("PosMempool.validateTransactions: Removing txn %v from mempool: %v\nTxn Hex: %v",
+				txn.Hash, err, hex.EncodeToString(txnBytes))
 			// Try to remove the transaction with a lock.
 			mp.removeTransaction(txn, true)
 

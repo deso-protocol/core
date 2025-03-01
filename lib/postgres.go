@@ -1296,8 +1296,11 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 	}
 
 	// The genesis block has a nil parent
-	if blockNode.Parent != nil {
-		block.ParentHash = blockNode.Parent.Hash
+	if blockNode.Header.PrevBlockHash != nil {
+		block.ParentHash = blockNode.Header.PrevBlockHash
+	} else if !blockNode.Header.PrevBlockHash.IsEqual(GenesisBlockHash) {
+		// TODO: LN - why did I need to add this?
+		block.ParentHash = blockNode.Header.PrevBlockHash
 	}
 
 	_, err := tx.Model(block).WherePK().OnConflict("(hash) DO UPDATE").Insert()
@@ -1305,16 +1308,16 @@ func (postgres *Postgres) UpsertBlockTx(tx *pg.Tx, blockNode *BlockNode) error {
 }
 
 // GetBlockIndex gets all the PGBlocks and creates a map of BlockHash to BlockNode as needed by blockchain.go
-func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash, *BlockNode], error) {
+func (postgres *Postgres) GetBlockIndex() (*collections.LruCache[BlockHash, *BlockNode], error) {
 	var blocks []PGBlock
 	err := postgres.db.Model(&blocks).Select()
 	if err != nil {
 		return nil, err
 	}
 
-	blockMap := collections.NewConcurrentMap[BlockHash, *BlockNode]()
+	blockMap, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)
 	for _, block := range blocks {
-		blockMap.Set(*block.Hash, &BlockNode{
+		blockMap.Put(*block.Hash, &BlockNode{
 			Hash:             block.Hash,
 			Height:           uint32(block.Height),
 			DifficultyTarget: block.DifficultyTarget,
@@ -1331,19 +1334,6 @@ func (postgres *Postgres) GetBlockIndex() (*collections.ConcurrentMap[BlockHash,
 			Status: block.Status,
 		})
 	}
-
-	// Setup parent pointers
-	blockMap.Iterate(func(key BlockHash, blockNode *BlockNode) {
-		// Genesis block has nil parent
-		parentHash := blockNode.Header.PrevBlockHash
-		if parentHash != nil {
-			parent, exists := blockMap.Get(*parentHash)
-			if !exists {
-				glog.Fatal("Parent block not found in block map")
-			}
-			blockNode.Parent = parent
-		}
-	})
 
 	return blockMap, nil
 }
@@ -4093,7 +4083,6 @@ func (postgres *Postgres) InitGenesisBlock(params *DeSoParams, db *badger.DB) er
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
 	genesisNode := NewBlockNode(
-		nil,
 		blockHash,
 		0,
 		diffTarget,
