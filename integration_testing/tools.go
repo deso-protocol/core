@@ -275,7 +275,7 @@ func GetChainDBFromNode(t *testing.T, node *cmd.Node) *badger.DB {
 	return db
 }
 
-// compareNodesByDB will look through all records in nodeA and nodeB txindex databases and will compare them.
+// compareNodesByTxIndex will look through all records in nodeA and nodeB txindex databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByTxIndex(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbose int) {
 	var prefixList [][]byte
@@ -289,7 +289,7 @@ func compareNodesByTxIndex(t *testing.T, nodeA *cmd.Node, nodeB *cmd.Node, verbo
 	compareNodesByStateWithPrefixList(t, nodeA.TXIndex.TXIndexChain.DB(), nodeB.TXIndex.TXIndexChain.DB(), prefixList, verbose)
 }
 
-// compareNodesByDB will look through all records in provided prefixList in nodeA and nodeB databases and will compare them.
+// compareNodesByStateWithPrefixList will look through all records in provided prefixList in nodeA and nodeB databases and will compare them.
 // The nodes pass this comparison iff they have identical states.
 func compareNodesByStateWithPrefixList(t *testing.T, dbA *badger.DB, dbB *badger.DB, prefixList [][]byte, verbose int) {
 	maxBytes := lib.SnapshotBatchSize
