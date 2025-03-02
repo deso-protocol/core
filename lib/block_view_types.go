@@ -6507,10 +6507,11 @@ type DeleteUserAssociationTxindexMetadata struct {
 }
 
 type CreatePostAssociationTxindexMetadata struct {
-	PostHashHex             string
-	AppPublicKeyBase58Check string
-	AssociationType         string
-	AssociationValue        string
+	PostHashHex                string
+	AppPublicKeyBase58Check    string
+	AssociationType            string
+	AssociationValue           string
+	PosterPublicKeyBase58Check string
 }
 
 type DeletePostAssociationTxindexMetadata struct {
@@ -6546,6 +6547,7 @@ func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawEncodeWit
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AppPublicKeyBase58Check))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationType))...)
 	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.AssociationValue))...)
+	data = append(data, EncodeByteArray([]byte(associationTxindexMeta.PosterPublicKeyBase58Check))...)
 	return data
 }
 
@@ -6658,6 +6660,13 @@ func (associationTxindexMeta *CreatePostAssociationTxindexMetadata) RawDecodeWit
 		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading AssociationValue: ")
 	}
 	associationTxindexMeta.AssociationValue = string(associationValueBytes)
+
+	// PosterPublicKeyBase58Check
+	posterPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CreatePostAssociationTxindexMetadata.Decode: Problem reading PosterPublicKeyBase58Check: ")
+	}
+	associationTxindexMeta.PosterPublicKeyBase58Check = string(posterPublicKeyBase58CheckBytes)
 
 	return nil
 }
