@@ -79,6 +79,7 @@ type Config struct {
 	LogDBSummarySnapshots bool
 	DatadogProfiler       bool
 	TimeEvents            bool
+	LogToStdErr           bool
 
 	// State Syncer
 	StateChangeDir                 string
@@ -192,6 +193,7 @@ func LoadConfig() *Config {
 	config.LogDBSummarySnapshots = viper.GetBool("log-db-summary-snapshots")
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
 	config.TimeEvents = viper.GetBool("time-events")
+	config.LogToStdErr = true
 
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")
