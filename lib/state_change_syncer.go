@@ -911,40 +911,11 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	startTime = time.Now()
 	glog.V(2).Infof("Mempool synced len after flush: %d", len(stateChangeSyncer.MempoolSyncedKeyValueMap))
 
-	//Check to see if every txn hash in our cached txns is in the first n txns in the mempool.
-	//N represents the length of our cached txn map.
-	// for ii, mempoolTx := range mempoolTxns {
-	// 	if _, ok := stateChangeSyncer.MempoolCachedTxns[mempoolTx.Hash.String()]; !ok {
-	// 		// If any of the transaction hashes in the first n transactions don't line up with our cache map, the mempool
-	// 		// has changed since the last cache, and we need to reset it.
-	// 		stateChangeSyncer.MempoolCachedTxns = make(map[string][]*StateChangeEntry)
-	// 		stateChangeSyncer.MempoolCachedUtxoView = nil
-	// 		glog.V(2).Info("Txn not in cache, resetting\n")
-	// 		break
-	// 	}
-
-	// 	// Once we're past the number of cached txns, we have confirmed that nothing in our cache is out of date and can break.
-	// 	if ii >= len(stateChangeSyncer.MempoolCachedTxns)-1 {
-	// 		if stateChangeSyncer.MempoolCachedUtxoView != nil {
-	// 			// If we know that all our transactions are good, set the state of the utxo view to the cached one, and exit.
-	// 			mempoolUtxoView = stateChangeSyncer.MempoolCachedUtxoView
-	// 		}
-	// 		glog.V(2).Infof("All txns match, continuing: %v\n", ii)
-	// 		break
-	// 	}
-	// }
-
 	currentTimestamp := time.Now().UnixNano()
 	for _, mempoolTx := range mempoolTxns {
 		var txnStateChangeEntry *StateChangeEntry
 		var utxoOpStateChangeEntry *StateChangeEntry
 
-		// Check if the transaction is already in the cache. If so, skip it.
-		// txHash := mempoolTx.Hash.String()
-		// if stateChangeEntries, ok := stateChangeSyncer.MempoolCachedTxns[txHash]; ok {
-		// 	txnStateChangeEntry = stateChangeEntries[0]
-		// 	utxoOpStateChangeEntry = stateChangeEntries[1]
-		// } else {
 		if !mempoolTx.validated {
 			continue
 		}
@@ -980,10 +951,6 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 			EncoderBytes:  EncodeToBytes(blockHeight, utxoOpBundle, false),
 			IsReverted:    false,
 		}
-
-		// 	// Add both state change entries to the mempool sync map.
-		// 	stateChangeSyncer.MempoolCachedTxns[txHash] = []*StateChangeEntry{txnStateChangeEntry, utxoOpStateChangeEntry}
-		// }
 
 		// Emit transaction state change.
 		mempoolUtxoView.EventManager.stateSyncerOperation(&StateSyncerOperationEvent{
