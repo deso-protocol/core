@@ -1191,20 +1191,21 @@ func (bc *Blockchain) LatestHeaderLocator() ([]*BlockHash, []uint32) {
 	defer bc.ChainLock.RUnlock()
 	headerTip := bc.headerTip()
 	committedTip, _ := bc.GetCommittedTip()
-	currNode := headerTip
-	hashes := []*BlockHash{headerTip.Hash}
-	heights := []uint32{headerTip.Height}
-	for !currNode.Hash.IsEqual(committedTip.Hash) {
-		currNode = currNode.GetParent(bc.blockIndex)
-		if currNode == nil {
-			glog.Errorf("LatestHeaderLocator: Block node not found for hash %v", currNode.Hash)
-			break
-		}
-		hashes = append(hashes, currNode.Hash)
-		heights = append(heights, currNode.Height)
-	}
-
-	return hashes, heights
+	return []*BlockHash{headerTip.Hash, committedTip.Hash}, []uint32{headerTip.Height, committedTip.Height}
+	//currNode := headerTip
+	//hashes := []*BlockHash{headerTip.Hash}
+	//heights := []uint32{headerTip.Height}
+	//for !currNode.Hash.IsEqual(committedTip.Hash) {
+	//	currNode = currNode.GetParent(bc.blockIndex)
+	//	if currNode == nil {
+	//		glog.Errorf("LatestHeaderLocator: Block node not found for hash %v", currNode.Hash)
+	//		break
+	//	}
+	//	hashes = append(hashes, currNode.Hash)
+	//	heights = append(heights, currNode.Height)
+	//}
+	//
+	//return hashes, heights
 }
 
 func (bc *Blockchain) GetBlockNodesToFetch(
