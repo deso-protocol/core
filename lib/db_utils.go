@@ -5587,6 +5587,12 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 			UtxoOps:  utxoOpsForBlock,
 		})
 	}
+	if err := handle.Update(func(txn *badger.Txn) error {
+		return PutUtxoOperationsForBlockWithTxn(txn, snap, 0, blockHash, utxoOpsForBlock, eventManager)
+	}); err != nil {
+		return fmt.Errorf(
+			"InitDbWithDeSoGenesisBlock: Error putting utxo operations for block: %v", err)
+	}
 	// Flush all the data in the view.
 	if err := utxoView.FlushToDb(0); err != nil {
 		return fmt.Errorf(
