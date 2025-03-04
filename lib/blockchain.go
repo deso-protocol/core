@@ -906,7 +906,7 @@ func (bc *Blockchain) IsFullyStored() bool {
 	// TODO: figure out how to iterate over best chain w/o having entire thing in memory.
 	chainState := bc.ChainState()
 	if chainState != SyncStateFullyCurrent && !(chainState == SyncStateNeedBlocksss &&
-		bc.headerTip().Height-bc.blockTip().Height >= 10) {
+		bc.headerTip().Height-bc.blockTip().Height <= 25) {
 		return false
 	}
 	// Get a sampling of blocks from the best chain and check if they are fully stored.
@@ -1191,8 +1191,20 @@ func (bc *Blockchain) LatestHeaderLocator() ([]*BlockHash, []uint32) {
 	defer bc.ChainLock.RUnlock()
 	headerTip := bc.headerTip()
 	committedTip, _ := bc.GetCommittedTip()
+	currNode := headerTip
+	hashes := []*BlockHash{headerTip.Hash}
+	heights := []uint32{headerTip.Height}
+	for !currNode.Hash.IsEqual(committedTip.Hash) {
+		currNode = currNode.GetParent(bc.blockIndex)
+		if currNode == nil {
+			glog.Errorf("LatestHeaderLocator: Block node not found for hash %v", currNode.Hash)
+			break
+		}
+		hashes = append(hashes, currNode.Hash)
+		heights = append(heights, currNode.Height)
+	}
 
-	return []*BlockHash{headerTip.Hash, committedTip.Hash}, []uint32{headerTip.Height, committedTip.Height}
+	return hashes, heights
 }
 
 func (bc *Blockchain) GetBlockNodesToFetch(

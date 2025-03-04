@@ -172,7 +172,8 @@ func (txi *TXIndex) Start() {
 				return
 			default:
 				chainState := txi.CoreChain.ChainState()
-				if chainState == SyncStateFullyCurrent || (chainState == SyncStateNeedBlocksss && txi.CoreChain.headerTip().Height-txi.CoreChain.blockTip().Height < 10) {
+				if chainState == SyncStateFullyCurrent || (chainState == SyncStateNeedBlocksss &&
+					txi.CoreChain.headerTip().Height-txi.CoreChain.blockTip().Height < 25) {
 					if !txi.CoreChain.IsFullyStored() {
 						glog.V(1).Infof("TXIndex: Waiting, blockchain is not fully stored")
 						break
