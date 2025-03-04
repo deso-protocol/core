@@ -9,7 +9,7 @@ on:
 jobs:
   go-fmt:
     name: go-fmt
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Install Go
@@ -26,7 +26,7 @@ jobs:
 
   go-test-postgres:
     name: go-test-postgres
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     env:
       # These dummy values are used for testing purposes only.
       POSTGRES_URI: postgresql://admin:admin@localhost:5432/admin
