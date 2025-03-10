@@ -381,9 +381,9 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 		headerTip := pp.srv.blockchain.headerTip()
 		blockTip := pp.srv.blockchain.blockTip()
 		glog.V(2).Infof("Server._handleInv: Sending GET_HEADERS message to peer %v\n"+
-			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+			"Block Locator Hashes & Heights: (%v, %v)\n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
-			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+			pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
 			blockTip.Hash, blockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},

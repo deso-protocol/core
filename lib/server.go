@@ -1524,14 +1524,23 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	lastHeight := msg.Headers[len(msg.Headers)-1].Height
 	headerTip := srv.blockchain.headerTip()
 	currentBlockTip := srv.blockchain.blockTip()
+	locator, locatorHeights, err := srv.blockchain.HeaderLocatorWithNodeHashAndHeight(lastHash, lastHeight)
+	if err != nil {
+		glog.Warningf("Server._handleHeaderBundle: Disconnecting peer %v because "+
+			"she indicated that she has more headers but the last hash %v in "+
+			"the header bundle does not correspond to a block in our index.",
+			pp, lastHash)
+		pp.Disconnect("Last hash in header bundle not in our index")
+		return
+	}
 	glog.V(2).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
 		"Block Locator Hashes & Heights: (%v, %v) \n"+
 		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
-		pp, lastHash, lastHeight, headerTip.Hash, headerTip.Height,
+		pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
 		currentBlockTip.Hash, currentBlockTip.Height)
 	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
-		BlockLocator: []*BlockHash{lastHash},
+		BlockLocator: locator,
 	}, false)
 	glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
 		"header tip %v out of %d from peer %v",
@@ -2050,9 +2059,9 @@ func (srv *Server) _startSync() {
 	headerTip := bestPeer.srv.blockchain.headerTip()
 	currentBlockTip := bestPeer.srv.blockchain.blockTip()
 	glog.V(2).Infof("Server._startSync: Sending GET_HEADERS message to peer %v\n"+
-		"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+		"Block Locator Hashes & Heights: (%v, %v)\n"+
 		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
-		bestPeer, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+		bestPeer, locator, locatorHeights, headerTip.Hash, headerTip.Height,
 		currentBlockTip.Hash, currentBlockTip.Height)
 	bestPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
@@ -2643,10 +2652,10 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
 		headerTip := pp.srv.blockchain.headerTip()
 		currentBlockTip := pp.srv.blockchain.blockTip()
-		glog.V(2).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
-			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+		glog.V(2).Infof("Server._handleBlock (chainState = SYNCING_HEADERS): Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v) \n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
-			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+			pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
 			currentBlockTip.Hash, currentBlockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
@@ -2694,10 +2703,10 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		locator, locatorHeights := srv.blockchain.LatestHeaderLocator()
 		headerTip := srv.blockchain.headerTip()
 		currentBlockTip := srv.blockchain.blockTip()
-		glog.V(2).Infof("Server._handleBlock: Sending GET_HEADERS message to peer %v\n"+
-			"Block Locator Hashes & Heights: (%v, %v) and (%v, %v)\n"+
+		glog.V(2).Infof("Server._handleBlock (chain state = NEEDS_BLOCKS): Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v)\n"+
 			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
-			pp, locator[0], locatorHeights[0], locator[1], locatorHeights[1], headerTip.Hash, headerTip.Height,
+			pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
 			currentBlockTip.Hash, currentBlockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},

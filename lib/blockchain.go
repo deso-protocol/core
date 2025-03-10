@@ -1181,17 +1181,103 @@ func NewBlockchain(
 	return bc, nil
 }
 
-// LatestHeaderLocator calls returns a block locator for the current tip of the
-// header chain.
-func (bc *Blockchain) LatestHeaderLocator() ([]*BlockHash, []uint32) {
-	// We can acquire the ChainLock here because all calls to this function happen in peer.go
-	// and server.go, which don't hold the lock.
-	// If we do not acquire the lock, we may hit a concurrent map read write error which causes panic.
-	bc.ChainLock.RLock()
-	defer bc.ChainLock.RUnlock()
-	headerTip := bc.headerTip()
+// LatestLocator returns a block locator for the passed block node. Holding a chain
+// lock isn't strictly necessary anymore.
+//
+// Leaving comment below as it provides context on the implementation of this
+// function prior to the changes that core codebase in which the representation
+// of the best chain and block index is not in memory.
+//
+// LatestLocator returns a block locator for the passed block node. The passed
+// node can be nil in which case the block locator for the current tip
+// associated with the view will be returned.
+//
+// BlockLocator is used to help locate a specific block.  The algorithm for
+// building the block locator is to add the hashes in reverse order until
+// the genesis block is reached.  In order to keep the list of locator hashes
+// to a reasonable number of entries, first the most recent previous 12 block
+// hashes are added, then the step is doubled each loop iteration to
+// exponentially decrease the number of hashes as a function of the distance
+// from the block being located.
+//
+// For example, assume a block chain with a side chain as depicted below:
+//
+//	genesis -> 1 -> 2 -> ... -> 15 -> 16  -> 17  -> 18
+//	                              \-> 16a -> 17a
+//
+// The block locator for block 17a would be the hashes of blocks:
+// [17a 16a 15 14 13 12 11 10 9 8 7 6 4 genesis]
+//
+// Caller is responsible for acquiring the ChainLock before calling this function.
+func (bc *Blockchain) LatestLocator(tip *BlockNode) ([]*BlockHash, []uint32) {
+	blockTip := bc.blockTip()
 	committedTip, _ := bc.GetCommittedTip()
-	return []*BlockHash{headerTip.Hash, committedTip.Hash}, []uint32{headerTip.Height, committedTip.Height}
+	locator := make([]*BlockHash, 0)
+	locatorHeights := make([]uint32, 0)
+	step := uint32(1)
+	for tip != nil {
+		locator = append(locator, tip.Hash)
+		locatorHeights = append(locatorHeights, tip.Height)
+		if tip.Height == 0 {
+			break
+		}
+
+		// Calculate height of previous node to include ensuring we
+		// include the block tip and the committed tip.
+		if step == 1 {
+			// We use .GetParent as it is likely faster.
+			prevHash := tip.Header.PrevBlockHash
+			tip = tip.GetParent(bc.blockIndex)
+			if tip == nil {
+				glog.Errorf("LatestLocator: Block node not found for hash %v", prevHash)
+				continue
+			}
+		} else {
+
+			var height uint32
+			if tip.Height < step {
+				height = 0
+			} else {
+				height = tip.Height - step
+			}
+			// Special cases to ensure we include the block tip, the committed tip,
+			// and the genesis block.
+
+			// If the current node's height is greater than the block tip's height and
+			// value the height variable is less than the block tip's height, we set the
+			// variable height to the block tip's height.
+			// If the current node's height is greater than the committed tip's height and
+			// value the height variable is less than the committed tip's height, we set the
+			// variable height to the committed tip's height.
+			if tip.Height > blockTip.Height && height < blockTip.Height {
+				height = blockTip.Height
+			} else if tip.Height > committedTip.Height && height < committedTip.Height {
+				height = committedTip.Height
+			}
+
+			var exists bool
+			var err error
+			tip, exists, err = bc.GetBlockFromBestChainByHeight(uint64(height), false)
+			if err != nil {
+				glog.Errorf("LatestLocator: Problem getting block from best chain by height: %v - continuing", err)
+				continue
+			}
+			if !exists {
+				glog.Errorf("LatestLocator: Block at height %d not found - continuing", height)
+				continue
+			}
+		}
+
+		// Once 11 entries have been included, start doubling the distance
+		// between included hashes.
+		if len(locator) > 11 {
+			step *= 2
+		}
+	}
+	return locator, locatorHeights
+	// OLD RETURN VALUE:
+	// return []*BlockHash{headerTip.Hash, committedTip.Hash}, []uint32{headerTip.Height, committedTip.Height}
+
 	//currNode := headerTip
 	//hashes := []*BlockHash{headerTip.Hash}
 	//heights := []uint32{headerTip.Height}
@@ -1206,6 +1292,33 @@ func (bc *Blockchain) LatestHeaderLocator() ([]*BlockHash, []uint32) {
 	//}
 	//
 	//return hashes, heights
+}
+
+func (bc *Blockchain) HeaderLocatorWithNodeHashAndHeight(
+	blockHash *BlockHash,
+	height uint64,
+) (
+	[]*BlockHash,
+	[]uint32,
+	error,
+) {
+	node, exists := bc.blockIndex.GetBlockNodeByHashAndHeight(blockHash, height)
+	if !exists {
+		return nil, nil, fmt.Errorf(
+			"Blockchain.HeaderLocatorWithNodeHashAndHeight: Node for hash %v and height %v is not in our block index",
+			blockHash,
+			height,
+		)
+	}
+	locator, locatorHeights := bc.LatestLocator(node)
+	return locator, locatorHeights, nil
+}
+
+// LatestHeaderLocator calls returns a block locator for the current tip of the
+// header chain.
+func (bc *Blockchain) LatestHeaderLocator() ([]*BlockHash, []uint32) {
+	headerTip := bc.headerTip()
+	return bc.LatestLocator(headerTip)
 }
 
 func (bc *Blockchain) GetBlockNodesToFetch(
