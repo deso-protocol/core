@@ -547,8 +547,7 @@ func (bav *UtxoView) CopyUtxoView() *UtxoView {
 	// Copy the Derived Key data
 	newView.DerivedKeyToDerivedEntry = make(map[DerivedKeyMapKey]*DerivedKeyEntry, len(bav.DerivedKeyToDerivedEntry))
 	for entryKey, entry := range bav.DerivedKeyToDerivedEntry {
-		newEntry := *entry
-		newView.DerivedKeyToDerivedEntry[entryKey] = &newEntry
+		newView.DerivedKeyToDerivedEntry[entryKey] = entry.Copy()
 	}
 
 	// Copy the DAO Coin Limit Order Entries
