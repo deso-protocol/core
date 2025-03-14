@@ -1108,11 +1108,9 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 	var ancestralValue []byte
 	var getError error
 
-	isCoreState := isCoreStateKey(key)
-
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
-	if isState || (isCoreState && eventManager != nil && eventManager.isMempoolManager) {
+	if isState || (eventManager != nil && eventManager.isMempoolManager && isCoreStateKey(key)) {
 
 		// When we are syncing state from the mempool, we need to read the last committed view txn.
 		// This is because we will be querying the badger DB, and during the flush loop, every entry that is
@@ -1215,11 +1213,9 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	var getError error
 	isState := snap != nil && snap.isState(key)
 
-	isCoreState := isCoreStateKey(key)
-
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
-	if isState || (isCoreState && eventManager != nil && eventManager.isMempoolManager) {
+	if isState || (eventManager != nil && eventManager.isMempoolManager && isCoreStateKey(key)) {
 		// When we are syncing state from the mempool, we need to read the last committed view txn.
 		// This is because we will be querying the badger DB, and during the flush loop, every entry that is
 		// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
@@ -1247,7 +1243,8 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 	if err != nil && err == badger.ErrKeyNotFound && eventManager != nil && eventManager.isMempoolManager {
 		// If the key doesn't exist then there is no point in deleting this entry.
 		return nil
-	} else if err != nil {
+	}
+	if err != nil {
 		return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record "+
 			"from DB with key: %v", key)
 	}
