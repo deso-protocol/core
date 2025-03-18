@@ -1351,14 +1351,21 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 		heightLimit = bestBlockTip.Header.Height + uint64(numBlocks)
 	}
 	currentHeight := heightLimit
-	backtrackingNode, backtrackingNodeExists, maxNodeError := bc.GetBlockFromBestChainByHeight(currentHeight, true)
-	if maxNodeError != nil {
-		glog.Errorf("GetBlockNodesToFetch: Problem getting maxNode block by height: %v", maxNodeError)
-		return nil
-	}
-	if !backtrackingNodeExists || backtrackingNode == nil {
-		glog.Errorf("GetBlockNodesToFetch: Block at height %d not found. Error finding max node.", heightLimit)
-		return nil
+	var backtrackingNode *BlockNode
+	if heightLimit == bc.blockIndex.GetHeaderTip().Header.Height {
+		backtrackingNode = bc.blockIndex.GetHeaderTip()
+	} else {
+		var backtrackingNodeExists bool
+		var backtrackingNodeErr error
+		backtrackingNode, backtrackingNodeExists, backtrackingNodeErr = bc.GetBlockFromBestChainByHeight(currentHeight, true)
+		if backtrackingNodeErr != nil {
+			glog.Errorf("GetBlockNodesToFetch: Problem getting maxNode block by height: %v", backtrackingNodeErr)
+			return nil
+		}
+		if !backtrackingNodeExists || backtrackingNode == nil {
+			glog.Errorf("GetBlockNodesToFetch: Block at height %d not found. Error finding max node.", heightLimit)
+			return nil
+		}
 	}
 	// Walk back from the maxNode to the bestBlockTip.
 	for len(blockNodesToFetch) < numBlocks &&
