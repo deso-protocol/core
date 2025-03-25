@@ -1154,10 +1154,10 @@ func (bc *Blockchain) CreateStakeTxn(
 		)
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateStakeTxn: spend amount is non-zero: %d", spendAmount,
+			"Blockchain.CreateStakeTxn: %v", err,
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
@@ -1226,10 +1226,10 @@ func (bc *Blockchain) CreateUnstakeTxn(
 		)
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateUnstakeTxn: spend amount is non-zero: %d", spendAmount,
+			"Blockchain.CreateUnstakeTxn: %v", err,
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
@@ -1298,10 +1298,10 @@ func (bc *Blockchain) CreateUnlockStakeTxn(
 		)
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateUnlockStakeTxn: spend amount is non-zero: %d", spendAmount,
+			"Blockchain.CreateUnlockStakeTxn: %v", err,
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
