@@ -2883,7 +2883,8 @@ func (bav *UtxoView) _flushLockedBalanceEntriesToDbWithTxn(txn *badger.Txn, bloc
 		// Delete the existing mappings in the db for this LockedBalanceEntry.
 		// They will be re-added if the corresponding entry in memory has isDeleted=false.
 		if err := DbDeleteLockedBalanceEntryWithTxn(txn, bav.Snapshot, *lockedBalanceEntry,
-			bav.EventManager, lockedBalanceEntry.isDeleted); err != nil {
+			bav.EventManager, lockedBalanceEntry.isDeleted || lockedBalanceEntry.BalanceBaseUnits.IsZero(),
+		); err != nil {
 			return errors.Wrapf(
 				err, "_flushLockedBalanceEntriesToDbWithTxn: Problem deleting mappings "+
 					"for LockedBalanceEntry: %v", &lockedBalanceEntryKey)
