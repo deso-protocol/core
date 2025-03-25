@@ -1060,10 +1060,10 @@ func (bc *Blockchain) CreateRegisterAsValidatorTxn(
 		)
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateRegisterAsValidatorTxn: spend amount is non-zero: %d", spendAmount,
+			"Blockchain.CreateRegisterAsValidatorTxn: %v", err,
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
@@ -1132,10 +1132,10 @@ func (bc *Blockchain) CreateUnregisterAsValidatorTxn(
 		)
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateUnregisterAsValidatorTxn: spend amount is non-zero: %d", spendAmount,
+			"Blockchain.CreateUnregisterAsValidatorTxn: %v", err,
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
@@ -1204,10 +1204,10 @@ func (bc *Blockchain) CreateUnjailValidatorTxn(
 		)
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf(
-			"Blockchain.CreateUnjailValidatorTxn: spend amount is non-zero: %d", spendAmount,
+			"Blockchain.CreateUnjailValidatorTxn: %v", err,
 		)
 	}
 	return txn, totalInput, changeAmount, fees, nil
