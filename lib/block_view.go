@@ -547,8 +547,7 @@ func (bav *UtxoView) CopyUtxoView() *UtxoView {
 	// Copy the Derived Key data
 	newView.DerivedKeyToDerivedEntry = make(map[DerivedKeyMapKey]*DerivedKeyEntry, len(bav.DerivedKeyToDerivedEntry))
 	for entryKey, entry := range bav.DerivedKeyToDerivedEntry {
-		newEntry := *entry
-		newView.DerivedKeyToDerivedEntry[entryKey] = &newEntry
+		newView.DerivedKeyToDerivedEntry[entryKey] = entry.Copy()
 	}
 
 	// Copy the DAO Coin Limit Order Entries
@@ -4348,7 +4347,7 @@ func (bav *UtxoView) ConnectBlock(
 	}
 
 	blockHeader := desoBlock.Header
-	var blockRewardOutputPublicKey *btcec.PublicKey
+	var blockRewardOutputPublicKey *PublicKey
 	// If the block height is greater than or equal to the block reward patch height,
 	// we will verify that there is only one block reward output and we'll parse
 	// that public key
@@ -4365,11 +4364,12 @@ func (bav *UtxoView) ConnectBlock(
 		if len(desoBlock.Txns[0].TxOutputs) != 1 {
 			return nil, errors.Wrap(RuleErrorBlockRewardTxnMustHaveOneOutput, "ConnectBlock: Block reward transaction must have exactly one output")
 		}
-		var err error
-		blockRewardOutputPublicKey, err =
-			btcec.ParsePubKey(desoBlock.Txns[0].TxOutputs[0].PublicKey)
-		if err != nil {
-			return nil, fmt.Errorf("ConnectBlock: Problem parsing block reward public key: %v", err)
+		blockRewardOutputPublicKey =
+			NewPublicKey(desoBlock.Txns[0].TxOutputs[0].PublicKey)
+		if blockRewardOutputPublicKey == nil {
+			return nil, fmt.Errorf(
+				"ConnectBlock: Problem parsing block reward public key: incorrect number of bytes in public key: %v",
+				desoBlock.Txns[0].TxOutputs[0].PublicKey)
 		}
 	}
 
@@ -4407,18 +4407,17 @@ func (bav *UtxoView) ConnectBlock(
 		if blockHeight >= uint64(bav.Params.ForkHeights.BlockRewardPatchBlockHeight) &&
 			txn.TxnMeta.GetTxnType() != TxnTypeBlockReward &&
 			txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-			transactorPubKey, err := btcec.ParsePubKey(txn.PublicKey)
-			if err != nil {
-				return nil, fmt.Errorf("ConnectBlock: Problem parsing transactor public key: %v", err)
+			transactorPubKey := NewPublicKey(txn.PublicKey)
+			if transactorPubKey == nil {
+				return nil, fmt.Errorf(
+					"ConnectBlock: Problem parsing transactor public key: incorrect number of bytes in txn.PublicKey: %v",
+					txn.PublicKey)
 			}
-			includeFeesInBlockReward = !transactorPubKey.IsEqual(blockRewardOutputPublicKey)
+			includeFeesInBlockReward = !transactorPubKey.Equal(*blockRewardOutputPublicKey)
 		}
 
 		if includeFeesInBlockReward {
 			if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-				// Compute the BMF given the current fees paid in the block.
-				_, utilityFee = computeBMF(currentFees)
-
 				// Add the fees from this txn to the total fees. If any overflow occurs
 				// mark the block as invalid and return a rule error. Note that block reward
 				// txns should count as having zero fees.
@@ -4426,14 +4425,19 @@ func (bav *UtxoView) ConnectBlock(
 					return nil, RuleErrorTxnOutputWithInvalidAmount
 				}
 				totalFees += currentFees
+				// Only compute BMF if we're passed the PoS cutover.
+				if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+					// Compute the BMF given the current fees paid in the block.
+					_, utilityFee = computeBMF(currentFees)
 
-				// For PoS, the maximum block reward is based on the maximum utility fee.
-				// Add the utility fees to the max utility fees. If any overflow
-				// occurs mark the block as invalid and return a rule error.
-				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-				if err != nil {
-					return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
-						"ConnectBlock: error computing maxUtilityFee: %v", err)
+					// For PoS, the maximum block reward is based on the maximum utility fee.
+					// Add the utility fees to the max utility fees. If any overflow
+					// occurs mark the block as invalid and return a rule error.
+					maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+					if err != nil {
+						return nil, errors.Wrapf(RuleErrorPoSBlockRewardWithInvalidAmount,
+							"ConnectBlock: error computing maxUtilityFee: %v", err)
+					}
 				}
 			} else {
 				txnMeta, ok := txn.TxnMeta.(*AtomicTxnsWrapperMetadata)
@@ -4450,11 +4454,14 @@ func (bav *UtxoView) ConnectBlock(
 					return nil, errors.Wrap(
 						err, "ConnectBlock: error adding non-block-reward recipient fees from atomic transaction")
 				}
-				_, utilityFee = computeBMF(nonBlockRewardRecipientFees)
-				maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
-				if err != nil {
-					return nil, errors.Wrap(err,
-						"ConnectBlock: error computing maxUtilityFee: %v")
+				// Only compute BMF if we're passed the PoS cutover.
+				if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+					_, utilityFee = computeBMF(nonBlockRewardRecipientFees)
+					maxUtilityFee, err = SafeUint64().Add(maxUtilityFee, utilityFee)
+					if err != nil {
+						return nil, errors.Wrap(err,
+							"ConnectBlock: error computing maxUtilityFee: %v")
+					}
 				}
 			}
 		}
@@ -5114,11 +5121,14 @@ func (bav *UtxoView) GetSpendableDeSoBalanceNanosForPublicKey(pkBytes []byte,
 			// but we do have the header. As a result, this condition always evaluates to false and thus
 			// we only process the block reward for the previous block instead of all immature block rewards
 			// as defined by the params.
-			if blockNode.Parent != nil {
-				nextBlockHash = blockNode.Parent.Hash
-			} else {
-				nextBlockHash = GenesisBlockHash
-			}
+			// NOTE: we are not using .GetParent here as it changes the meaning of this code.
+			// In order to minimize code changes, we just jump back to the genesis block as the code did previously
+			// since the Parent attribute was removed from the BlockNode struct.
+			//if blockNode.Header != nil {
+			//	nextBlockHash = blockNode.Header.PrevBlockHash
+			//} else {
+			nextBlockHash = GenesisBlockHash
+			//}
 		}
 	}
 

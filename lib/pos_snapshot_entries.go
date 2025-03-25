@@ -1335,7 +1335,7 @@ func DBSeekSnapshotLeaderSchedule(
 	snapshotAtEpochNumber uint64,
 ) (map[uint16]*PKID, error) {
 	seekKey := DBSSeekKeyForSnapshotLeaderSchedule(snapshotAtEpochNumber)
-	keysFound, valsFound := EnumerateKeysForPrefix(handle, seekKey, false)
+	keysFound, valsFound := EnumerateKeysForPrefix(handle, seekKey, false, false)
 	leaderIdxToPKID := make(map[uint16]*PKID)
 	for idx, keyFound := range keysFound {
 		// TODO: Make sure this decode is correct

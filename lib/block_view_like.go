@@ -77,7 +77,7 @@ func (bav *UtxoView) GetLikesForPostHash(postHash *BlockHash) (_likerPubKeys [][
 		handle := bav.Handle
 		dbPrefix := append([]byte{}, Prefixes.PrefixLikedPostHashToLikerPubKey...)
 		dbPrefix = append(dbPrefix, postHash[:]...)
-		keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix, true)
+		keysFound, _ := EnumerateKeysForPrefix(handle, dbPrefix, true, false)
 
 		// Iterate over all the db keys & values and load them into the view.
 		expectedKeyLength := 1 + HashSizeBytes + btcec.PubKeyBytesLenCompressed
