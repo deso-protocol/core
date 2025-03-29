@@ -1110,10 +1110,19 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
-	if isState {
-		// We check if we've already read this key and stored it in the cache.
-		// Otherwise, we fetch the current value of this record from the DB.
-		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+	if isState || (eventManager != nil && eventManager.isMempoolManager && isCoreStateKey(key)) {
+
+		// When we are syncing state from the mempool, we need to read the last committed view txn.
+		// This is because we will be querying the badger DB, and during the flush loop, every entry that is
+		// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
+		// initiated before the flush loop started.
+		if eventManager != nil && eventManager.isMempoolManager && eventManager.lastCommittedViewTxn != nil {
+			ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, nil, key)
+		} else {
+			// We check if we've already read this key and stored it in the cache.
+			// Otherwise, we fetch the current value of this record from the DB.
+			ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+		}
 
 		// If there is some error with the DB read, other than non-existent key, we return.
 		if getError != nil && getError != badger.ErrKeyNotFound {
@@ -1206,23 +1215,35 @@ func DBDeleteWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, eventManager *
 
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
-	if isState {
-		// We check if we've already read this key and stored it in the cache.
-		// Otherwise, we fetch the current value of this record from the DB.
-		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
-		// If the key doesn't exist then there is no point in deleting this entry.
-		if getError == badger.ErrKeyNotFound {
-			return nil
+	if isState || (eventManager != nil && eventManager.isMempoolManager && isCoreStateKey(key)) {
+		// When we are syncing state from the mempool, we need to read the last committed view txn.
+		// This is because we will be querying the badger DB, and during the flush loop, every entry that is
+		// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
+		// initiated before the flush loop started.
+		if eventManager != nil && eventManager.isMempoolManager && eventManager.lastCommittedViewTxn != nil {
+			ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, snap, key)
+		} else {
+			// We check if we've already read this key and stored it in the cache.
+			// Otherwise, we fetch the current value of this record from the DB.
+			ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+			// If the key doesn't exist then there is no point in deleting this entry.
+			if getError == badger.ErrKeyNotFound {
+				return nil
+			}
 		}
 
 		// If there is some error with the DB read, other than non-existent key, we return.
-		if getError != nil {
+		if getError != nil && getError != badger.ErrKeyNotFound {
 			return errors.Wrapf(getError, "DBDeleteWithTxn: problem checking for DB record "+
 				"with key: %v", key)
 		}
 	}
 
 	err := txn.Delete(key)
+	if err != nil && err == badger.ErrKeyNotFound && eventManager != nil && eventManager.isMempoolManager {
+		// If the key doesn't exist then there is no point in deleting this entry.
+		return nil
+	}
 	if err != nil {
 		return errors.Wrapf(err, "DBDeleteWithTxn: Problem deleting record "+
 			"from DB with key: %v", key)
