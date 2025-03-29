@@ -925,9 +925,10 @@ func (params *DeSoParams) EnableRegtest(isAcceleratedRegtest bool) {
 	params.ForkHeights = RegtestForkHeights
 	if isAcceleratedRegtest {
 		params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight = 30
+		params.FastHotStuffConsensusTransitionCheckDuration = 100 * time.Millisecond
 		params.DefaultEpochDurationNumBlocks = uint64(5)
-		params.DefaultBlockProductionIntervalMillisecondsPoS = 1000 // 1s
-		params.DefaultTimeoutIntervalMillisecondsPoS = 2000         // 2s
+		params.DefaultBlockProductionIntervalMillisecondsPoS = 100 // 100ms
+		params.DefaultTimeoutIntervalMillisecondsPoS = 500         // 500ms
 		newSeedBalance := &DeSoOutput{
 			PublicKey:   MustBase58CheckDecode("tBCKVERmG9nZpHTk2AVPqknWc1Mw9HHAnqrTpW1RnXpXMQ4PsQgnmV"),
 			AmountNanos: 1e14,

@@ -3418,7 +3418,7 @@ func (bc *Blockchain) CreatePrivateMessageTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreatePrivateMessageTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spendAmount is zero.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreatePrivateMessageTxn: %v", err)
 	}
@@ -3451,7 +3451,7 @@ func (bc *Blockchain) CreateLikeTxn(
 			err, "CreateLikeTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spendAmount is zero.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateLikeTxn: %v", err)
 	}
@@ -3484,7 +3484,7 @@ func (bc *Blockchain) CreateFollowTxn(
 			err, "CreateFollowTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spendAmount is zero.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateFollowTxn: %v", err)
 	}
@@ -3546,7 +3546,7 @@ func (bc *Blockchain) CreateUpdateGlobalParamsTxn(updaterPublicKey []byte,
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateGlobalParamsTxn: Problem adding inputs: ")
 	}
 
-	// The spend amount should be zero for these txns.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateGlobalParamsTxn %v", err)
 	}
@@ -3581,7 +3581,7 @@ func (bc *Blockchain) CreateUpdateBitcoinUSDExchangeRateTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateBitcoinUSDExchangeRateTxn: Problem adding inputs: ")
 	}
 
-	// The spend amount should be zero for these txns.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateBitcoinUSDExchangeRateTxn: %v", err)
 	}
@@ -3650,7 +3650,7 @@ func (bc *Blockchain) CreateSubmitPostTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateSubmitPostTxn: Problem adding inputs: ")
 	}
 
-	// The spend amount should be zero for post submissions.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateSubmitPostTxn: %v", err)
 	}
@@ -3737,7 +3737,7 @@ func (bc *Blockchain) CreateSwapIdentityTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateSwapIdentityTxn: Problem adding inputs: ")
 	}
 
-	// The spend amount should be zero for SwapIdentity txns.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
 	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("CreateSwapIdentityTxn: %v", err)
 	}
@@ -3826,7 +3826,6 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreatorCoinTransferTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -3834,6 +3833,13 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxn(
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreatorCoinTransferTxn: CreatorCoinTransfer txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateCreatorCoinTransferTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -3864,7 +3870,6 @@ func (bc *Blockchain) CreateDAOCoinTxn(
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateDAOCoinTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -3872,6 +3877,13 @@ func (bc *Blockchain) CreateDAOCoinTxn(
 		return nil, 0, 0, 0, fmt.Errorf("CreateDAOCoinTxn: DAOCoin txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateDAOCoinTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -3900,7 +3912,6 @@ func (bc *Blockchain) CreateDAOCoinTransferTxn(
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateDAOCoinTransferTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -3908,6 +3919,13 @@ func (bc *Blockchain) CreateDAOCoinTransferTxn(
 		return nil, 0, 0, 0, fmt.Errorf("CreateDAOCoinTransferTxn: DAOCoinTransfer txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateDAOCoinTransferTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4181,7 +4199,7 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 	}
 
 	// We directly call AddInputsAndChangeToTransactionWithSubsidy so we can pass through the NFT fee.
-	totalInput, _, changeAmount, fees, err :=
+	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransactionWithSubsidy(txn, minFeeRateNanosPerKB, 0, mempool, NFTFee)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateCreateNFTTxn: Problem adding inputs: ")
@@ -4195,6 +4213,13 @@ func (bc *Blockchain) CreateCreateNFTTxn(
 		return nil, 0, 0, 0, fmt.Errorf("CreateCreateNFTTxn: CreateNFT txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount-NFTFee, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateCreateNFTTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4332,7 +4357,7 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
-	totalInput, _, changeAmount, fees, err :=
+	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNFTTransferTxn: Problem adding inputs: ")
@@ -4343,6 +4368,13 @@ func (bc *Blockchain) CreateNFTTransferTxn(
 	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateNFTTransferTxn: NFTTransfer txn must have " +
 			"at least one input but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateNFTTransferTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4369,7 +4401,7 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
-	totalInput, _, changeAmount, fees, err :=
+	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err,
@@ -4384,6 +4416,13 @@ func (bc *Blockchain) CreateAcceptNFTTransferTxn(
 		return nil, 0, 0, 0, fmt.Errorf(
 			"CreateAcceptNFTTransferTxn: AcceptNFTTransfer txn must have at least one input" +
 				" but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateAcceptNFTTransferTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4410,7 +4449,7 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
-	totalInput, _, changeAmount, fees, err :=
+	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateBurnNFTTxn: Problem adding inputs: ")
@@ -4421,6 +4460,13 @@ func (bc *Blockchain) CreateBurnNFTTxn(
 	if len(txn.TxInputs) == 0 && bc.blockTip().Height+1 < bc.params.ForkHeights.BalanceModelBlockHeight {
 		return nil, 0, 0, 0, fmt.Errorf("CreateBurnNFTTxn: BurnNFT txn must have at least " +
 			"one input but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateBurnNFTTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4487,7 +4533,7 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 	}
 
 	// Add inputs and change for a standard pay per KB transaction.
-	totalInput, _, changeAmount, fees, err :=
+	totalInput, spendAmount, changeAmount, fees, err :=
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAcceptNFTBidTxn: Problem adding inputs: ")
@@ -4501,6 +4547,13 @@ func (bc *Blockchain) CreateAcceptNFTBidTxn(
 		return nil, 0, 0, 0, fmt.Errorf("CreateAcceptNFTBidTxn: AcceptNFTBid txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateAcceptNFTBidTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4545,7 +4598,6 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 	if err != nil {
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateUpdateNFTTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -4555,6 +4607,13 @@ func (bc *Blockchain) CreateUpdateNFTTxn(
 		return nil, 0, 0, 0, fmt.Errorf("CreateUpdateNFTTxn: CreateUpdateNFT txn " +
 			"must have at least one input but had zero inputs " +
 			"instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateUpdateNFTTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4588,9 +4647,11 @@ func (bc *Blockchain) CreateAccessGroupTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spend amount is non-zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupTxn: Spend amount is zero")
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateAccessGroupTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4624,9 +4685,11 @@ func (bc *Blockchain) CreateAccessGroupMembersTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAccessGroupMembersTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spend amount is non-zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateAccessGroupMembersTxn: Spend amount is zero")
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateAccessGroupMembersTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4669,9 +4732,11 @@ func (bc *Blockchain) CreateNewMessageTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateNewMessageTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spend amount is non-zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateNewMessageTxn: Spend amount is zero")
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateNewMessageTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4797,7 +4862,6 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 		return nil, 0, 0, 0, errors.Wrapf(
 			err, "CreateCreatorCoinTransferTxnWithDiamonds: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// We want our transaction to have at least one input, even if it all
 	// goes to change. This ensures that the transaction will not be "replayable."
@@ -4807,6 +4871,13 @@ func (bc *Blockchain) CreateCreatorCoinTransferTxnWithDiamonds(
 		return nil, 0, 0, 0, fmt.Errorf(
 			"CreateCreatorCoinTransferTxnWithDiamonds: CreatorCoinTransfer txn must have at" +
 				" least one input but had zero inputs instead. Try increasing the fee rate.")
+	}
+
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateCreatorCoinTransferTxnWithDiamonds: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4912,10 +4983,11 @@ func (bc *Blockchain) CreateAuthorizeDerivedKeyTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "CreateAuthorizeDerivedKeyTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("CreateAuthorizeDerivedKeyTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateAuthorizeDerivedKeyTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -4952,10 +5024,11 @@ func (bc *Blockchain) CreateMessagingKeyTxn(
 		return nil, 0, 0, 0, errors.Wrapf(err, "Blockchain.CreateMessagingKeyTxn: Problem adding inputs: ")
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("Blockchain.CreateMessagingKeyTxn: Spend amount "+
-			"should be zero but was %d instead: ", spendAmount)
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"Blockchain.CreateMessagingKeyTxn: %v", err,
+		)
 	}
 
 	return txn, totalInput, changeAmount, fees, nil
@@ -5596,6 +5669,7 @@ func (bc *Blockchain) _createAssociationTxn(
 	_fees uint64,
 	_err error,
 ) {
+	additionalOutputs := txn.TxOutputs
 	// Create a new UtxoView. If we have access to a mempool object, use
 	// it to get an augmented view that factors in pending transactions.
 	utxoView := NewUtxoView(bc.db, bc.params, bc.postgres, bc.snapshot, bc.eventManager)
@@ -5645,11 +5719,9 @@ func (bc *Blockchain) _createAssociationTxn(
 		)
 	}
 
-	// Sanity-check that the spendAmount is zero.
-	if spendAmount != 0 {
-		return nil, 0, 0, 0, fmt.Errorf(
-			"%s: spend amount is non-zero: %d", callingFuncName, spendAmount,
-		)
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, err
 	}
 	return txn, totalInput, changeAmount, fees, nil
 }
@@ -5704,11 +5776,16 @@ func (bc *Blockchain) CreateCoinLockupTxn(
 		return nil, 0, 0, 0,
 			errors.Wrapf(err, "CreateCoinLockupTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
 	//       This is assumed to be no longer necessary given the requirement of
 	//       lockup transactions to be after the transition to balance model.
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateCoinLockupTxn: %v", err,
+		)
+	}
 
 	return txn, totalInput, 0, fees, nil
 }
@@ -5755,12 +5832,17 @@ func (bc *Blockchain) CreateCoinLockupTransferTxn(
 		return nil, 0, 0, 0,
 			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
 	//       This is assumed to be no longer necessary given the requirement of
 	//       lockup transactions to be after the transition to balance model.
 
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateCoinLockupTransferTxn: %v", err,
+		)
+	}
 	return txn, totalInput, 0, fees, nil
 }
 
@@ -5806,14 +5888,19 @@ func (bc *Blockchain) CreateUpdateCoinLockupParamsTxn(
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0,
-			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
+			errors.Wrapf(err, "CreateUpdateCoinLockupParamsTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
 	//       This is assumed to be no longer necessary given the requirement of
 	//       lockup transactions to be after the transition to balance model.
 
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateUpdateCoinLockupParamsTxn: %v", err,
+		)
+	}
 	return txn, totalInput, 0, fees, nil
 }
 
@@ -5849,14 +5936,19 @@ func (bc *Blockchain) CreateCoinUnlockTxn(
 		bc.AddInputsAndChangeToTransaction(txn, minFeeRateNanosPerKB, mempool)
 	if err != nil {
 		return nil, 0, 0, 0,
-			errors.Wrapf(err, "CreateCoinLockupTransferTxn: Problem adding inputs: ")
+			errors.Wrapf(err, "CreateCoinUnlockTxn: Problem adding inputs: ")
 	}
-	_ = spendAmount
 
 	// NOTE: Normally by convention here we check for the transaction to have at least one input in TxInputs.
 	//       This is assumed to be no longer necessary given the requirement of
 	//       lockup transactions to be after the transition to balance model.
 
+	// Sanity-check that the spendAmount equals the sum of the additional outputs.
+	if err = amountEqualsAdditionalOutputs(spendAmount, additionalOutputs); err != nil {
+		return nil, 0, 0, 0, fmt.Errorf(
+			"CreateCoinUnlockTxn: %v", err,
+		)
+	}
 	return txn, totalInput, 0, fees, nil
 }
 

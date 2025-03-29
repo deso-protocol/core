@@ -726,7 +726,7 @@ func NewServer(
 		} else {
 			glog.Errorf(CLog(Red, "NewServer: Forcing a rollback to the last snapshot epoch because node was not closed "+
 				"properly last time"))
-			return nil, errors.Wrapf(err, "NewServer: Restart required"), true
+			return srv, errors.Wrapf(err, "NewServer: Restart required"), true
 		}
 	}
 
