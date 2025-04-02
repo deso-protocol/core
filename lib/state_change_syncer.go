@@ -179,6 +179,7 @@ func (stateChangeEntry *StateChangeEntry) RawDecodeWithoutMetadata(blockHeight u
 	} else if err != nil {
 		return errors.Wrapf(err, "StateChangeEntry.RawDecodeWithoutMetadata: error decoding ancestral record")
 	} else {
+		// Encode a blank ancestral record, so that we can still decode the state change entry.
 		stateChangeEntry.AncestralRecordBytes = EncodeToBytes(blockHeight, nil)
 	}
 
@@ -468,6 +469,7 @@ func (stateChangeSyncer *StateChangeSyncer) _handleStateSyncerOperation(event *S
 				glog.Fatalf("Server._handleStateSyncerOperation: Error decoding ancestral record: %v", err)
 			}
 			stateChangeEntry.AncestralRecord = ancestralRecord
+			// Remove the ancestral record bytes - when this entry is decoded, we want the decoder to use the AncestralRecord field.
 			stateChangeEntry.AncestralRecordBytes = nil
 		}
 	}
