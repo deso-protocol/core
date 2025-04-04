@@ -1,13 +1,14 @@
 package cmd
 
 import (
-	"github.com/deso-protocol/core/lib"
-	"github.com/golang/glog"
-	"github.com/spf13/viper"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/deso-protocol/core/lib"
+	"github.com/golang/glog"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
@@ -79,6 +80,7 @@ type Config struct {
 	LogDBSummarySnapshots bool
 	DatadogProfiler       bool
 	TimeEvents            bool
+	NoLogToStdErr         bool
 
 	// State Syncer
 	StateChangeDir                 string
@@ -192,6 +194,7 @@ func LoadConfig() *Config {
 	config.LogDBSummarySnapshots = viper.GetBool("log-db-summary-snapshots")
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
 	config.TimeEvents = viper.GetBool("time-events")
+	config.NoLogToStdErr = false
 
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")
