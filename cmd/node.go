@@ -4,13 +4,14 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
-	"github.com/deso-protocol/go-deadlock"
 	"net"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/deso-protocol/go-deadlock"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/btcsuite/btcd/addrmgr"
@@ -66,7 +67,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	flag.Set("log_dir", node.Config.LogDirectory)
 	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
 	flag.Set("vmodule", node.Config.GlogVmodule)
-	flag.Set("alsologtostderr", "true")
+	flag.Set("alsologtostderr", fmt.Sprintf("%t", !node.Config.NoLogToStdErr))
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 	node.runningMutex.Lock()
