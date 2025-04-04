@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/go-deadlock"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"reflect"
 	"runtime"
@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/cloudflare/circl/group"
-	"github.com/decred/dcrd/container/lru"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/fatih/color"
 	"github.com/golang/glog"
@@ -313,7 +313,7 @@ type Snapshot struct {
 	// DatabaseCache is used to store most recent DB records that we've read/written.
 	// This is a low-level optimization for ancestral records that
 	// saves us read time when we're writing to the DB during UtxoView flush.
-	DatabaseCache lru.Map[string, []byte]
+	DatabaseCache *collections.LruCache[string, []byte]
 
 	// AncestralFlushCounter is used to offset ancestral records flush to occur only after x blocks.
 	AncestralFlushCounter uint64
@@ -483,11 +483,14 @@ func NewSnapshot(
 			"This may lead to unexpected behavior.")
 	}
 
+	databaseCache, _ := collections.NewLruCache[string, []byte](int(DatabaseCacheSize))
+
 	// Set the snapshot.
 	snap := &Snapshot{
-		mainDb:                       mainDb,
-		SnapshotDbMutex:              &snapshotDbMutex,
-		DatabaseCache:                *lru.NewMap[string, []byte](DatabaseCacheSize),
+		mainDb:          mainDb,
+		SnapshotDbMutex: &snapshotDbMutex,
+		DatabaseCache:   databaseCache,
+
 		AncestralFlushCounter:        uint64(0),
 		snapshotBlockHeightPeriod:    snapshotBlockHeightPeriod,
 		OperationChannel:             operationChannel,
@@ -1406,7 +1409,7 @@ type StateChecksum struct {
 	ctx context.Context
 
 	// hashToCurveCache is a cache of computed hashToCurve mappings
-	hashToCurveCache lru.Map[string, group.Element]
+	hashToCurveCache *collections.LruCache[string, group.Element]
 
 	// When we want to add a database record to the state checksum, we will first have to
 	// map the record to the Ristretto255 curve using the hash_to_curve. We will then add the
@@ -1434,7 +1437,7 @@ func (sc *StateChecksum) Initialize(mainDb *badger.DB, snapshotDbMutex *sync.Mut
 	sc.maxWorkers = int64(runtime.GOMAXPROCS(0))
 
 	// Set the hashToCurveCache
-	sc.hashToCurveCache = *lru.NewMap[string, group.Element](HashToCurveCache)
+	sc.hashToCurveCache, _ = collections.NewLruCache[string, group.Element](int(HashToCurveCache))
 
 	// Set the worker pool semaphore and context.
 	sc.semaphore = semaphore.NewWeighted(sc.maxWorkers)

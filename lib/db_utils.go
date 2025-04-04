@@ -2,18 +2,21 @@ package lib
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/core/collections"
+	"github.com/dgraph-io/ristretto/z"
 	"io"
 	"log"
 	"math"
 	"math/big"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -604,7 +607,15 @@ type DBPrefixes struct {
 	// When reading and writing data to this prefixes, please acquire the snapshotDbMutex in the snapshot.
 	PrefixHypersyncSnapshotDBPrefix []byte `prefix_id:"[97]"`
 
-	// NEXT_TAG: 98
+	// PrefixHashToHeight is used to store the height of a block given its hash.
+	// This helps us map a block hash to its height so we can look up the full info
+	// in PrefixHeightHashToNodeInfo. Note that the block index migration will run
+	// to populate this index when upgrading the node to the new version that
+	// introduces this index. Before the introduction of this index, the only way
+	// to find a block node given its hash was to do a full scan of
+	// PrefixHeightHashToNodeInfo.
+	PrefixHashToHeight []byte `prefix_id:"[98]"`
+	// NEXT_TAG: 99
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -1540,18 +1551,98 @@ func DBDeletePKIDMappingsWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []by
 	return nil
 }
 
-func EnumerateKeysForPrefix(db *badger.DB, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte) {
-	return _enumerateKeysForPrefix(db, dbPrefix, keysOnly)
+// _enumerateKeysForPrefixWithStream demonstrates scanning keys (and optional values)
+// that share a prefix via the Badger Stream API.
+func _enumerateKeysForPrefixWithStream(db *badger.DB, dbPrefix []byte, keysOnly bool) ([][]byte, [][]byte, error) {
+	keysFound := [][]byte{}
+	valsFound := [][]byte{}
+
+	// Create a new stream on the DB.
+	stream := db.NewStream()
+	stream.NumGo = runtime.NumCPU() // use all cores
+
+	// Restrict the stream to process only keys that match this prefix.
+	// The Stream API will fetch items in key order, parallelizing internally.
+	stream.Prefix = dbPrefix
+
+	type StreamEntry struct {
+		key   []byte
+		value []byte
+	}
+
+	streamEntries := []StreamEntry{}
+
+	// The Send callback receives batches of KVs.
+	stream.Send = func(buf *z.Buffer) error {
+		list, err := badger.BufferToKVList(buf)
+		if err != nil {
+			return err
+		}
+		for _, kv := range list.Kv {
+			// Double-check the prefix if you want a safeguard:
+			if !bytes.HasPrefix(kv.Key, dbPrefix) {
+				continue
+			}
+
+			// Copy the key so it doesn't get overwritten by subsequent batches.
+			keyCopy := make([]byte, len(kv.Key))
+			copy(keyCopy, kv.Key)
+			streamEntry := StreamEntry{
+				key: keyCopy,
+			}
+
+			// If we aren't in keysOnly mode, retrieve the value.
+			if !keysOnly {
+				// If KeyOnly = true above, kv.Value is empty.
+				// If KeyOnly = false, we can copy the value here.
+				valCopy := make([]byte, len(kv.Value))
+				copy(valCopy, kv.Value)
+				//valsFound = append(valsFound, valCopy)
+				streamEntry.value = valCopy
+			}
+			streamEntries = append(streamEntries, streamEntry)
+		}
+		return nil
+	}
+
+	// Execute the stream scan.
+	err := stream.Orchestrate(context.Background())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	for _, streamEntry := range streamEntries {
+		keysFound = append(keysFound, streamEntry.key)
+		if !keysOnly {
+			valsFound = append(valsFound, streamEntry.value)
+		}
+	}
+
+	return keysFound, valsFound, nil
+}
+
+func EnumerateKeysForPrefix(
+	db *badger.DB,
+	dbPrefix []byte,
+	keysOnly bool,
+	skipPrefetch bool,
+) (_keysFound [][]byte, _valsFound [][]byte) {
+	return _enumerateKeysForPrefix(db, dbPrefix, keysOnly, skipPrefetch)
 }
 
 // A helper function to enumerate all of the values for a particular prefix.
-func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte) {
+func _enumerateKeysForPrefix(
+	db *badger.DB,
+	dbPrefix []byte,
+	keysOnly bool,
+	skipPrefetch bool,
+) (_keysFound [][]byte, _valsFound [][]byte) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
 	dbErr := db.View(func(txn *badger.Txn) error {
 		var err error
-		keysFound, valsFound, err = _enumerateKeysForPrefixWithTxn(txn, dbPrefix, keysOnly)
+		keysFound, valsFound, err = _enumerateKeysForPrefixWithTxn(txn, dbPrefix, keysOnly, skipPrefetch)
 		if err != nil {
 			return err
 		}
@@ -1565,12 +1656,12 @@ func _enumerateKeysForPrefix(db *badger.DB, dbPrefix []byte, keysOnly bool) (_ke
 	return keysFound, valsFound
 }
 
-func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, keysOnly bool) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
+func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, keysOnly bool, skipPrefetch bool) (_keysFound [][]byte, _valsFound [][]byte, _err error) {
 	keysFound := [][]byte{}
 	valsFound := [][]byte{}
 
 	opts := badger.DefaultIteratorOptions
-	if keysOnly {
+	if keysOnly || skipPrefetch {
 		opts.PrefetchValues = false
 	}
 	opts.Prefix = dbPrefix
@@ -1596,6 +1687,20 @@ func _enumerateKeysForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte, keysOnly b
 
 func _enumerateKeysOnlyForPrefixWithTxn(txn *badger.Txn, dbPrefix []byte) (_keysFound [][]byte) {
 	return _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, dbPrefix, dbPrefix, math.MaxUint32)
+}
+
+func EnumeratePaginatedLimitedKeysForPrefix(
+	db *badger.DB,
+	dbPrefix []byte,
+	startKey []byte,
+	limit uint32,
+) (_keysFound [][]byte) {
+	var keysFound [][]byte
+	_ = db.View(func(txn *badger.Txn) error {
+		keysFound = _enumeratePaginatedLimitedKeysForPrefixWithTxn(txn, dbPrefix, startKey, limit)
+		return nil
+	})
+	return keysFound
 }
 
 // _enumeratePaginatedLimitedKeysForPrefixWithTxn will look for keys in the db that are GREATER OR EQUAL to the startKey
@@ -1917,7 +2022,7 @@ func DBGetMessageEntriesForPublicKey(handle *badger.DB, publicKey []byte) (
 
 	// Goes backwards to get messages in time sorted order.
 	// Limit the number of keys to speed up load times.
-	_, valuesFound := _enumerateKeysForPrefix(handle, prefix, false)
+	_, valuesFound := _enumerateKeysForPrefix(handle, prefix, false, false)
 
 	privateMessages := []*MessageEntry{}
 	for _, valBytes := range valuesFound {
@@ -2138,7 +2243,7 @@ func DBGetMessagingGroupEntriesForOwnerWithTxn(txn *badger.Txn, ownerPublicKey *
 	// Setting the prefix to owner's public key will allow us to fetch all messaging keys
 	// for the user. We enumerate this prefix.
 	prefix := _dbSeekPrefixForMessagingGroupEntry(ownerPublicKey)
-	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false, false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetMessagingGroupEntriesForOwnerWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
@@ -3361,7 +3466,7 @@ func DBGetAllMessagingGroupEntriesForMemberWithTxn(txn *badger.Txn, ownerPublicK
 	// This function is used to fetch all messaging
 	var messagingGroupEntries []*MessagingGroupEntry
 	prefix := _dbSeekPrefixForMessagingGroupMember(ownerPublicKey)
-	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false)
+	_, valuesFound, err := _enumerateKeysForPrefixWithTxn(txn, prefix, false, false)
 	if err != nil {
 		return nil, errors.Wrapf(err, "DBGetAllMessagingGroupEntriesForMemberWithTxn: "+
 			"problem enumerating messaging key entries for prefix (%v)", prefix)
@@ -3627,7 +3732,7 @@ func DbGetPostHashesYouLike(handle *badger.DB, yourPublicKey []byte) (
 	_postHashes []*BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouLike(yourPublicKey)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true, false)
 
 	postHashesYouLike := []*BlockHash{}
 	for _, keyBytes := range keysFound {
@@ -3644,7 +3749,7 @@ func DbGetLikerPubKeysLikingAPostHash(handle *badger.DB, likedPostHash BlockHash
 	_pubKeys [][]byte, _err error) {
 
 	prefix := _dbSeekPrefixForLikerPubKeysLikingAPostHash(likedPostHash)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true, false)
 
 	userPubKeys := [][]byte{}
 	for _, keyBytes := range keysFound {
@@ -3757,7 +3862,7 @@ func DbGetReposterPubKeyRepostedPostHashToRepostEntryWithTxn(txn *badger.Txn,
 	snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash) *RepostEntry {
 
 	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true, false)
 	if err != nil {
 		return nil
 	}
@@ -3805,7 +3910,7 @@ func DbDeleteRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, repostEntry 
 func DbDeleteAllRepostMappingsWithTxn(txn *badger.Txn, snap *Snapshot, userPubKey []byte, repostedPostHash BlockHash, eventManager *EventManager, entryIsDeleted bool) error {
 
 	key := _dbSeekKeyForReposterPubKeyRepostedPostHashToRepostPostHash(userPubKey, repostedPostHash)
-	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true)
+	keysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, key, true, false)
 	if err != nil {
 		return nil
 	}
@@ -3822,7 +3927,7 @@ func DbGetPostHashesYouRepost(handle *badger.DB, yourPublicKey []byte) (
 	_postHashes []*BlockHash, _err error) {
 
 	prefix := _dbSeekPrefixForPostHashesYouRepost(yourPublicKey)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true, false)
 
 	postHashesYouRepost := []*BlockHash{}
 	for _, keyBytes := range keysFound {
@@ -3985,7 +4090,7 @@ func DbGetPKIDsYouFollow(handle *badger.DB, yourPKID *PKID) (
 	_pkids []*PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsYouFollow(yourPKID)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true, false)
 
 	pkidsYouFollow := []*PKID{}
 	for _, keyBytes := range keysFound {
@@ -4003,7 +4108,7 @@ func DbGetPKIDsFollowingYou(handle *badger.DB, yourPKID *PKID) (
 	_pkids []*PKID, _err error) {
 
 	prefix := _dbSeekPrefixForPKIDsFollowingYou(yourPKID)
-	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true)
+	keysFound, _ := _enumerateKeysForPrefix(handle, prefix, true, false)
 
 	pkidsFollowingYou := []*PKID{}
 	for _, keyBytes := range keysFound {
@@ -4262,7 +4367,7 @@ func DbGetPKIDsThatDiamondedYouMap(handle *badger.DB, yourPKID *PKID, fetchYouDi
 		diamondReceiverStartIdx = 1 + btcec.PubKeyBytesLenCompressed
 		diamondReceiverEndIdx = 1 + 2*btcec.PubKeyBytesLenCompressed
 	}
-	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
+	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false, false)
 
 	pkidsToDiamondEntryMap := make(map[PKID][]*DiamondEntry)
 	for ii, keyBytes := range keysFound {
@@ -4336,7 +4441,7 @@ func DbGetDiamondEntriesForSenderToReceiver(handle *badger.DB, receiverPKID *PKI
 	_diamondEntries []*DiamondEntry, _err error) {
 
 	prefix := _dbSeekPrefixForReceiverPKIDAndSenderPKID(receiverPKID, senderPKID)
-	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
+	keysFound, valsFound := _enumerateKeysForPrefix(handle, prefix, false, false)
 	var diamondEntries []*DiamondEntry
 	for ii, keyBytes := range keysFound {
 		// The DiamondEntry found must not be nil.
@@ -4426,7 +4531,7 @@ func DbDeleteBitcoinBurnTxIDWithTxn(txn *badger.Txn, snap *Snapshot, bitcoinBurn
 }
 
 func DbGetAllBitcoinBurnTxIDs(handle *badger.DB) (_bitcoinBurnTxIDs []*BlockHash) {
-	keysFound, _ := _enumerateKeysForPrefix(handle, Prefixes.PrefixBitcoinBurnTxIDs, true)
+	keysFound, _ := _enumerateKeysForPrefix(handle, Prefixes.PrefixBitcoinBurnTxIDs, true, false)
 	bitcoinBurnTxIDs := []*BlockHash{}
 	for _, key := range keysFound {
 		bbtxid := &BlockHash{}
@@ -4892,7 +4997,6 @@ func SerializeBlockNode(blockNode *BlockNode) ([]byte, error) {
 
 func DeserializeBlockNode(data []byte) (*BlockNode, error) {
 	blockNode := NewBlockNode(
-		nil,          // Parent
 		&BlockHash{}, // Hash
 		0,            // Height
 		&BlockHash{}, // DifficultyTarget
@@ -5209,6 +5313,15 @@ func _heightHashToNodeIndexPrefix(bitcoinNodes bool) []byte {
 	return prefix
 }
 
+// _heightHashToNodePrefixByHeight returns the prefix for the height hash to node index
+// for a given height. This is useful to find all blocks at a given height.
+func _heightHashToNodePrefixByHeight(height uint32, bitcoinNodes bool) []byte {
+	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
+	heightBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(heightBytes[:], height)
+	return append(prefix, heightBytes[:]...)
+}
+
 func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool) []byte {
 	prefix := _heightHashToNodeIndexPrefix(bitcoinNodes)
 
@@ -5217,6 +5330,13 @@ func _heightHashToNodeIndexKey(height uint32, hash *BlockHash, bitcoinNodes bool
 	key := append(prefix, heightBytes[:]...)
 	key = append(key, hash[:]...)
 
+	return key
+}
+
+// _hashToHeightIndexKey returns the key for the hash to height index.
+func _hashToHeightIndexKey(hash *BlockHash) []byte {
+	key := append([]byte{}, Prefixes.PrefixHashToHeight...)
+	key = append(key, hash[:]...)
 	return key
 }
 
@@ -5256,10 +5376,50 @@ func PutHeightHashToNodeInfoWithTxn(txn *badger.Txn, snap *Snapshot,
 		return errors.Wrapf(err, "PutHeightHashToNodeInfoWithTxn: Problem serializing node")
 	}
 
+	// Store the full block node in the hash height to block node index.
 	if err := DBSetWithTxn(txn, snap, key, serializedNode, eventManager); err != nil {
 		return err
 	}
+
+	// Also store the height to hash mapping.
+	hashToHeightKey := _hashToHeightIndexKey(node.Hash)
+	if err = DBSetWithTxn(txn, snap, hashToHeightKey, UintToBuf(uint64(node.Height)), eventManager); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// PutHashToHeightBatch puts a map of block hashes to heights in the db in the hash to height index.
+// This is only used for the block index migration.
+func PutHashToHeightBatch(handle *badger.DB, snap *Snapshot, hashToHeight map[BlockHash]uint32, eventManager *EventManager) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		for hash, height := range hashToHeight {
+			key := _hashToHeightIndexKey(&hash)
+			if err := DBSetWithTxn(txn, snap, key, UintToBuf(uint64(height)), eventManager); err != nil {
+				return errors.Wrap(err, "PutHashToHeightBatch: Problem setting hash to height")
+			}
+		}
+		return nil
+	})
+}
+
+// GetHeightForHash returns the height for a given block hash by using the hash to height index.
+func GetHeightForHash(db *badger.DB, snap *Snapshot, hash *BlockHash) (uint64, error) {
+	var height uint64
+	err := db.View(func(txn *badger.Txn) error {
+		key := _hashToHeightIndexKey(hash)
+		heightBytes, err := DBGetWithTxn(txn, snap, key)
+		if err != nil {
+			return err
+		}
+		height, _ = Uvarint(heightBytes)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return height, nil
 }
 
 func PutHeightHashToNodeInfoBatch(handle *badger.DB, snap *Snapshot,
@@ -5311,7 +5471,7 @@ func DbBulkDeleteHeightHashToNodeInfo(handle *badger.DB, snap *Snapshot, nodes [
 	return nil
 }
 
-// InitDbWithGenesisBlock initializes the database to contain only the genesis
+// InitDbWithDeSoGenesisBlock initializes the database to contain only the genesis
 // block.
 func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	eventManager *EventManager, snap *Snapshot, postgres *Postgres) error {
@@ -5323,13 +5483,12 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 	diffTarget := MustDecodeHexBlockHash(params.MinDifficultyTargetHex)
 	blockHash := MustDecodeHexBlockHash(params.GenesisBlockHashHex)
 	genesisNode := NewBlockNode(
-		nil, // Parent
 		blockHash,
 		0, // Height
 		diffTarget,
 		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
 		genesisBlock.Header, // Header
-		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated, // Status
+		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated|StatusBlockCommitted, // Status
 	)
 
 	// Set the fields in the db to reflect the current state of our chain.
@@ -5548,10 +5707,7 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 			if blockNode.Height == 0 || (*blockNode.Header.PrevBlockHash == BlockHash{}) {
 				continue
 			}
-			if parent, ok := blockIndex.Get(*blockNode.Header.PrevBlockHash); ok {
-				// We found the parent node so connect it.
-				blockNode.Parent = parent
-			} else {
+			if _, ok := blockIndex.Get(*blockNode.Header.PrevBlockHash); !ok {
 				// If we're syncing a DeSo node and we hit a PoS block, we expect there to
 				// be orphan blocks in the block index. In this case, we don't throw an error.
 				if bitcoinNodes == false && params.IsPoSBlockHeight(uint64(blockNode.Height)) {
@@ -5571,9 +5727,172 @@ func GetBlockIndex(handle *badger.DB, bitcoinNodes bool, params *DeSoParams) (
 	return blockIndex, nil
 }
 
-func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
+// RunBlockIndexMigration runs a migration to populate the hash to height index from the height hash to
+// block node index. We can't use the encoder migrations to handle this situation since it's a new index
+// and not a modification of the existing entry type stored. This migration simply iterates over the keys in the
+// height hash to block node index, extracts the height and hash, and puts a key of the hash and a value of the
+// height in the hash to height prefix.
+func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager *EventManager, params *DeSoParams) error {
+	// @diamondhands - if we want to migrate from a uint32 -> uint64 for height in the height hash to node index,
+	// this would be a good time to do it. It's not necessary, but it's a bit annoying that we use uint64 in some
+	// places and uint32 in others. Specifically, we don't always validate that we have a uint32 when we go to get
+	// the block from teh DB.
+	return handle.Update(func(txn *badger.Txn) error {
+		// Get the prefix for the height hash to node index.
+		prefix := _heightHashToNodeIndexPrefix(false)
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		// We don't need values for this migration since the height and hash are in the key.
+		opts.PrefetchValues = false
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+		// Initialize a map to store the hash to height mappings.
+		hashToHeightMap := make(map[BlockHash]uint32)
+		// Just in case we need it, get the height of the best hash.
+		bestHash := DbGetBestHash(handle, snapshot, ChainTypeDeSoBlock)
+		var bestHashHeight uint32
+		// Iterate over all the keys in the height hash to node index, extract the height and hash,
+		// and batch write every 10k entries to the hash to height index.
+		startTime := time.Now()
+		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			item := nodeIterator.Item().Key()
+
+			// Parse the key to get the height and hash.
+			height := binary.BigEndian.Uint32(item[1:5])
+			hash := BlockHash{}
+			copy(hash[:], item[5:])
+			hashToHeightMap[hash] = height
+			// If we have a best hash, we want to store the height of the best hash.
+			if bestHash != nil && bestHash.IsEqual(&hash) {
+				bestHashHeight = height
+			}
+			if height%100000 == 0 {
+				glog.V(0).Infof("Time to run block index migration to height %v: %v", height, time.Since(startTime))
+			}
+			// If we have fewer than 10K entries, continue.
+			if len(hashToHeightMap) < 10000 {
+				continue
+			}
+			// If we have more than 10K entries, batch write the entries to the hash to height index
+			// and reset the map.
+			innerErr := PutHashToHeightBatch(handle, snapshot, hashToHeightMap, eventManager)
+			if innerErr != nil {
+				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
+			}
+			hashToHeightMap = make(map[BlockHash]uint32)
+		}
+		// If we have any entries left in the map, batch write them to the hash to height index.
+		if len(hashToHeightMap) > 0 {
+			innerErr := PutHashToHeightBatch(handle, snapshot, hashToHeightMap, eventManager)
+			if innerErr != nil {
+				return errors.Wrap(innerErr, "RunBlockIndexMigration: Problem putting hash to height")
+			}
+		}
+		glog.V(0).Infof("Time to run block index migration: %v", time.Since(startTime))
+		// If we don't have a best hash, then we certainly haven't hit the first pos block height.
+		if bestHash == nil {
+			return nil
+		}
+
+		glog.V(0).Infof("Running PoW block committed migration...")
+
+		// We want to mark all PoW blocks as committed, so we'll get the first pos block
+		// and iterate backwards marking all blocks as committed. If the PoS cutover hasn't
+		// happened yet, then we'll just the current best hash from the DB to determine the
+		// current tip to iterate back from. This allows us to track the best chain even if
+		// we have multiple proof-of-work blocks at the same height in the DB. Before the
+		// change to not keep the entire best chain in memory, we would know if a block was
+		// in the best chain by looking it up in the best chain map. Now that we no longer
+		// have this, we rely on the IsCommitted function to determine if blocks are in the
+		// best chain. Without this, nodes upgrading to this code that have been running for
+		// a long time and experienced PoW forks will have issues determining which blocks
+		// are in the best chain for PoW block heights.
+		firstPoSBlockHeight := params.GetFirstPoSBlockHeight()
+		// Look up blocks at cutover height.
+		prefixKey := _heightHashToNodePrefixByHeight(uint32(firstPoSBlockHeight), false)
+		_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, prefixKey, false, true)
+		if err != nil {
+			return errors.Wrap(err, "RunBlockIndexMigration: Problem enumerating keys for prefix")
+		}
+		// There should be 0 or 1 blocks at the cutover height.
+		if len(valsFound) > 1 {
+			return fmt.Errorf("RunBlockIndexMigration: More than one block found at PoS cutover height")
+		}
+		var blockNode *BlockNode
+		// In this case we have not reached the cutover, we need to find pull the best hash
+		// from the DB and iterate backwards.
+		if len(valsFound) == 0 {
+			glog.V(0).Infof("Found multiple blocks at PoS cutover height: %v num blocks", len(valsFound))
+			blockNode = GetHeightHashToNodeInfoWithTxn(txn, snapshot, bestHashHeight, bestHash, false)
+			if blockNode == nil {
+				return fmt.Errorf("RunBlockIndexMigration: block with Best hash (%v) and height (%v) not found", bestHash, bestHashHeight)
+			}
+		} else {
+			// If we have one or more blocks at the cutover height, we need to find the block that is committed.
+			for _, val := range valsFound {
+				blockNode, err = DeserializeBlockNode(val)
+				if err != nil {
+					return errors.Wrap(err, "RunBlockIndexMigration: Problem deserializing block node")
+				}
+				// If we found the committed block, break out.
+				if blockNode.IsCommitted() {
+					break
+				}
+			}
+			if !blockNode.IsCommitted() {
+				return fmt.Errorf("RunBlockIndexMigration: No committed block found at PoS cutover height")
+			}
+		}
+		startHeight := blockNode.Height
+		startTime = time.Now()
+		var blockNodeBatch []*BlockNode
+		for blockNode != nil {
+			// If the block is not committed, mark it as committed.
+			if !blockNode.IsCommitted() {
+				blockNode.Status |= StatusBlockCommitted
+				// Add it to the batch.
+				blockNodeBatch = append(blockNodeBatch, blockNode)
+			}
+			// Find the parent of this block.
+			parentBlockNode := GetHeightHashToNodeInfoWithTxn(
+				txn, snapshot, blockNode.Height-1, blockNode.Header.PrevBlockHash, false /*bitcoinNodes*/)
+			if blockNode.Height > 0 && parentBlockNode == nil {
+				return errors.New("RunBlockIndexMigration: Parent block node not found")
+			}
+			if blockNode.Height%10000 == 0 {
+				glog.V(0).Infof("Time to run PoW block committed migration from start height %v to height %v: %v",
+					startHeight, blockNode.Height, time.Since(startTime))
+			}
+			// Jump up to the parent block node.
+			blockNode = parentBlockNode
+			// If we have fewer than 10K entries, continue.
+			if len(blockNodeBatch) < 10000 {
+				continue
+			}
+			// If we have more than 10K entries, write the batch and reset the slice.
+			err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+			}
+			blockNodeBatch = []*BlockNode{}
+		}
+		// If any entries are left in the batch, write them to the DB.
+		if len(blockNodeBatch) > 0 {
+			err = PutHeightHashToNodeInfoBatch(handle, snapshot, blockNodeBatch, false /*bitcoinNodes*/, eventManager)
+			if err != nil {
+				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
+			}
+		}
+		return nil
+	})
+}
+
+// TODO: refactor to actually get the whole best chain if that's
+// what someone wants. It'll take a while and a lot of memory.
+func GetBestChain(tipNode *BlockNode, blockIndex *BlockIndex) ([]*BlockNode, error) {
 	reversedBestChain := []*BlockNode{}
-	for tipNode != nil {
+	maxBestChainInitLength := 3600 * 100 // Cache up to 100 hours of blocks.
+	for tipNode != nil && len(reversedBestChain) < maxBestChainInitLength {
 		if (tipNode.Status&StatusBlockValidated) == 0 &&
 			(tipNode.Status&StatusBitcoinHeaderValidated) == 0 {
 
@@ -5581,7 +5900,7 @@ func GetBestChain(tipNode *BlockNode) ([]*BlockNode, error) {
 		}
 
 		reversedBestChain = append(reversedBestChain, tipNode)
-		tipNode = tipNode.Parent
+		tipNode = tipNode.GetParent(blockIndex)
 	}
 
 	bestChain := make([]*BlockNode, len(reversedBestChain))
@@ -5690,7 +6009,7 @@ func DbTxindexPublicKeyIndexToTxnKey(publicKey []byte, index uint32) []byte {
 
 func DbGetTxindexTxnsForPublicKeyWithTxn(txn *badger.Txn, publicKey []byte) []*BlockHash {
 	txIDs := []*BlockHash{}
-	_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, DbTxindexPublicKeyPrefix(publicKey), false)
+	_, valsFound, err := _enumerateKeysForPrefixWithTxn(txn, DbTxindexPublicKeyPrefix(publicKey), false, false)
 	if err != nil {
 		return txIDs
 	}
@@ -8392,7 +8711,7 @@ func DBGetNFTEntriesForPostHash(handle *badger.DB, nftPostHash *BlockHash) (_nft
 	nftEntries := []*NFTEntry{}
 	prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, nftPostHash[:]...)
-	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false, false)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
 		rr := bytes.NewReader(byteString)
@@ -8439,7 +8758,7 @@ func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*
 	var nftEntries []*NFTEntry
 	prefix := append([]byte{}, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
-	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
+	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false, false)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
 		rr := bytes.NewReader(byteString)
@@ -8681,7 +9000,7 @@ func DBGetNFTBidEntriesForPKID(handle *badger.DB, bidderPKID *PKID) (_nftBidEntr
 	{
 		prefix := append([]byte{}, Prefixes.PrefixBidderPKIDPostHashSerialNumberToBidNanos...)
 		keyPrefix := append(prefix, bidderPKID[:]...)
-		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix, false)
+		keysFound, valuesFound := _enumerateKeysForPrefix(handle, keyPrefix, false, false)
 		bidderPKIDLength := len(bidderPKID[:])
 		for ii, keyFound := range keysFound {
 
@@ -8718,7 +9037,7 @@ func DBGetNFTBidEntries(handle *badger.DB, nftPostHash *BlockHash, serialNumber 
 		prefix := append([]byte{}, Prefixes.PrefixPostHashSerialNumberBidNanosBidderPKID...)
 		keyPrefix := append(prefix, nftPostHash[:]...)
 		keyPrefix = append(keyPrefix, EncodeUint64(serialNumber)...)
-		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix, true)
+		keysFound, _ := _enumerateKeysForPrefix(handle, keyPrefix, true, false)
 		for _, keyFound := range keysFound {
 			bidAmountStartIdx := 1 + HashSizeBytes + 8 // The length of prefix + the post hash + the serial #.
 			bidAmountEndIdx := bidAmountStartIdx + 8   // Add the length of the bid amount (uint64).
@@ -8886,7 +9205,7 @@ func DBGetAllOwnerToDerivedKeyMappings(handle *badger.DB, ownerPublicKey PublicK
 	_entries []*DerivedKeyEntry, _err error) {
 
 	prefix := _dbSeekPrefixForDerivedKeyMappings(ownerPublicKey)
-	_, valsFound := _enumerateKeysForPrefix(handle, prefix, false)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefix, false, false)
 
 	var derivedEntries []*DerivedKeyEntry
 	for _, keyBytes := range valsFound {
@@ -9354,7 +9673,7 @@ func DbGetBalanceEntriesYouHold(db *badger.DB, snap *Snapshot, pkid *PKID, filte
 	{
 		prefix := _dbGetPrefixForHODLerPKIDCreatorPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false, false)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			rr := bytes.NewReader(byteString)
@@ -9376,7 +9695,7 @@ func DbGetBalanceEntriesHodlingYou(db *badger.DB, snap *Snapshot, pkid *PKID, fi
 	{
 		prefix := _dbGetPrefixForCreatorPKIDHODLerPKIDToBalanceEntry(isDAOCoin)
 		keyPrefix := append(prefix, pkid[:]...)
-		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false)
+		_, entryByteStringsFound := _enumerateKeysForPrefix(db, keyPrefix, false, false)
 		for _, byteString := range entryByteStringsFound {
 			currentEntry := &BalanceEntry{}
 			rr := bytes.NewReader(byteString)
@@ -9897,7 +10216,7 @@ func DBGetAllDAOCoinLimitOrdersForThisTransactor(
 
 func _DBGetAllDAOCoinLimitOrdersByPrefix(handle *badger.DB, prefixKey []byte) ([]*DAOCoinLimitOrderEntry, error) {
 	// Get all DAO coin limit orders containing this prefix.
-	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey, false)
+	_, valsFound := _enumerateKeysForPrefix(handle, prefixKey, false, false)
 	orders := []*DAOCoinLimitOrderEntry{}
 
 	// Cast resulting values from bytes to order entries.
@@ -10029,7 +10348,7 @@ func DbGetMempoolTxn(db *badger.DB, snap *Snapshot, mempoolTx *MempoolTx) *MsgDe
 }
 
 func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*MsgDeSoTxn, _error error) {
-	_, valuesFound := _enumerateKeysForPrefix(handle, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, false)
+	_, valuesFound := _enumerateKeysForPrefix(handle, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, false, false)
 
 	mempoolTxns := []*MsgDeSoTxn{}
 	for _, mempoolTxnBytes := range valuesFound {
@@ -10048,7 +10367,7 @@ func DbGetAllMempoolTxnsSortedByTimeAdded(handle *badger.DB) (_mempoolTxns []*Ms
 }
 
 func DbDeleteAllMempoolTxnsWithTxn(txn *badger.Txn, snap *Snapshot, eventManager *EventManager, entryIsDeleted bool) error {
-	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, true)
+	txnKeysFound, _, err := _enumerateKeysForPrefixWithTxn(txn, Prefixes.PrefixMempoolTxnHashToMsgDeSoTxn, true, false)
 	if err != nil {
 		return errors.Wrapf(err, "DbDeleteAllMempoolTxnsWithTxn: ")
 	}
@@ -10131,7 +10450,7 @@ func DbDeleteMempoolTxnKeyWithTxn(txn *badger.Txn, snap *Snapshot, txnKey []byte
 func LogDBSummarySnapshot(db *badger.DB) {
 	keyCountMap := make(map[byte]int)
 	for prefixByte := byte(0); prefixByte < byte(40); prefixByte++ {
-		keysForPrefix, _ := EnumerateKeysForPrefix(db, []byte{prefixByte}, true)
+		keysForPrefix, _ := EnumerateKeysForPrefix(db, []byte{prefixByte}, true, false)
 		keyCountMap[prefixByte] = len(keysForPrefix)
 	}
 	glog.Info(spew.Printf("LogDBSummarySnapshot: Current DB summary snapshot: %v", keyCountMap))
@@ -11888,7 +12207,7 @@ func DbGetTransactorNonceEntriesToExpireAtBlockHeightWithTxn(txn *badger.Txn, bl
 }
 
 func DbGetAllTransactorNonceEntries(handle *badger.DB) []*TransactorNonceEntry {
-	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex, true)
+	keys, _ := EnumerateKeysForPrefix(handle, Prefixes.PrefixNoncePKIDIndex, true, false)
 	nonceEntries := []*TransactorNonceEntry{}
 	for _, key := range keys {
 		// Convert key to nonce entry.

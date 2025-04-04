@@ -2999,6 +2999,7 @@ func (bav *UtxoView) _checkStakeTxnSpendingLimitAndUpdateDerivedKey(
 	for _, validatorPKID := range []*PKID{validatorEntry.ValidatorPKID, &ZeroPKID} {
 		// Retrieve DerivedKeyEntry.TransactionSpendingLimit.
 		stakeLimitKey := MakeStakeLimitKey(validatorPKID)
+		// TODO: check that StakeLimitMap is not nil.
 		spendingLimit, exists := derivedKeyEntry.TransactionSpendingLimitTracker.StakeLimitMap[stakeLimitKey]
 		if !exists {
 			continue
