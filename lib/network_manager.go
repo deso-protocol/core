@@ -1288,7 +1288,7 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 	if remoteNode.IsInbound() {
 		_, ok := nm.GetValidatorInboundIndex().Get(validatorPk.Serialize())
 		if ok {
-			return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Inbound RemoteNode with duplicate validator public key")
+			return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Inbound RemoteNode with duplicate validator public key: %v", validatorPk.ToString())
 		}
 		return nil
 	}
