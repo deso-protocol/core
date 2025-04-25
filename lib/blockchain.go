@@ -1257,7 +1257,7 @@ func (bc *Blockchain) LatestLocator(tip *BlockNode) ([]*BlockHash, []uint32) {
 
 			var exists bool
 			var err error
-			tip, exists, err = bc.GetBlockFromBestChainByHeight(uint64(height), false)
+			tip, exists, err = bc.GetBlockFromBestChainByHeight(uint64(height), true)
 			if err != nil {
 				glog.Errorf("LatestLocator: Problem getting block from best chain by height: %v - continuing", err)
 				continue
