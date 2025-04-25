@@ -1138,7 +1138,7 @@ func (mp *DeSoMempool) tryAcceptTransaction(
 			totalInput, totalOutput, txHash, hex.EncodeToString(txBytes))
 		glog.Error(errRet)
 		mp.rebuildBackupView()
-		return nil, nil, errors.Wrapf(TxErrorInsufficientFeeMinFee, errRet.Error())
+		return nil, nil, errors.Wrap(TxErrorInsufficientFeeMinFee, errRet.Error())
 	}
 
 	// If the transaction is bigger than half the maximum allowable size,
