@@ -2,14 +2,13 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/go-deadlock"
 	"net"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/hashicorp/golang-lru/v2"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/golang/glog"
@@ -111,7 +110,7 @@ type Peer struct {
 
 	// Inventory stuff.
 	// The inventory that we know the peer already has.
-	knownInventory *lru.Cache[InvVect, struct{}]
+	knownInventory *collections.LruSet[InvVect]
 
 	// Whether the peer is ready to receive INV messages. For a peer that
 	// still needs a mempool download, this is false.
@@ -292,7 +291,7 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 
 	for _, invVect := range msg.InvList {
 		// No matter what, add the inv to the peer's known inventory.
-		pp.knownInventory.Add(*invVect, struct{}{})
+		pp.knownInventory.Put(*invVect)
 
 		// If this is a hash we are currently processing, no need to do anything.
 		// This check serves to fill the gap between the time when we've decided
@@ -330,7 +329,12 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 		} else if invVect.Type == InvTypeBlock {
 			// For blocks, we check that the hash isn't known to us either in our
 			// main header chain or in side chains.
-			if pp.srv.blockchain.HasHeader(&currentHash) {
+			exists, err := pp.srv.blockchain.HasHeader(&currentHash)
+			if exists {
+				continue
+			}
+			if err != nil {
+				glog.Errorf("Server._handleInv: Error checking if block exists: %v", err)
 				continue
 			}
 
@@ -373,7 +377,14 @@ func (pp *Peer) HelpHandleInv(msg *MsgDeSoInv) {
 	// - When the blocks come in, we process them by adding them to the chain
 	//   one-by-one.
 	if len(blockHashList) > 0 {
-		locator := pp.srv.blockchain.LatestHeaderLocator()
+		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
+		headerTip := pp.srv.blockchain.headerTip()
+		blockTip := pp.srv.blockchain.blockTip()
+		glog.V(2).Infof("Server._handleInv: Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v)\n"+
+			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+			pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
+			blockTip.Hash, blockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
@@ -640,7 +651,7 @@ func NewPeer(_id uint64, _conn net.Conn, _isOutbound bool, _netAddr *wire.NetAdd
 	_syncType NodeSyncType,
 	peerDisconnectedChan chan *Peer) *Peer {
 
-	knownInventoryCache, _ := lru.New[InvVect, struct{}](maxKnownInventory)
+	knownInventoryCache, _ := collections.NewLruSet[InvVect](maxKnownInventory)
 
 	pp := Peer{
 		ID:                     _id,
@@ -980,7 +991,7 @@ out:
 
 				// Add the new inventory to the peer's knownInventory.
 				for _, invVect := range invMsg.InvList {
-					pp.knownInventory.Add(*invVect, struct{}{})
+					pp.knownInventory.Put(*invVect)
 				}
 			}
 

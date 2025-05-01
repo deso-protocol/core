@@ -2757,6 +2757,11 @@ func (msg *MsgDeSoHeader) String() string {
 	return fmt.Sprintf("< %d, %s, %v >", msg.Height, hash, msg.Version)
 }
 
+func (msg *MsgDeSoHeader) ShortString() string {
+	hash, _ := msg.Hash()
+	return fmt.Sprintf("< %d, %s >", msg.Height, hash)
+}
+
 // ==================================================================
 // BLOCK Message
 // ==================================================================

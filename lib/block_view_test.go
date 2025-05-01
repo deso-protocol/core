@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	_ "net/http/pprof"
 	"reflect"
@@ -13,7 +14,6 @@ import (
 	"github.com/deso-protocol/core/bls"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/decred/dcrd/container/lru"
 	"github.com/dgraph-io/badger/v3"
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	"github.com/golang/glog"
@@ -702,8 +702,8 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	require.NoError(err)
 	// sanity-check that the last block hash is the same as the last header hash.
 	require.Equal(true, bytes.Equal(
-		tm.chain.bestChain[len(tm.chain.bestChain)-1].Hash.ToBytes(),
-		tm.chain.bestHeaderChain[len(tm.chain.bestHeaderChain)-1].Hash.ToBytes()))
+		tm.chain.blockIndex.GetTip().Hash.ToBytes(),
+		tm.chain.blockIndex.GetHeaderTip().Hash.ToBytes()))
 	// Last block shouldn't be nil, and the number of expectedTxns should be the same as in the testVectorBlock + 1,
 	// because of the additional block reward.
 	require.NotNil(lastBlock)
@@ -791,15 +791,14 @@ func (tes *transactionTestSuite) testDisconnectBlock(tm *transactionTestMeta, te
 	// TODO: if ever needed we can call tm.chain.eventManager.blockDisconnected() here.
 
 	// Update the block and header metadata chains.
-	tm.chain.bestChain = tm.chain.bestChain[:len(tm.chain.bestChain)-1]
-	tm.chain.bestHeaderChain = tm.chain.bestHeaderChain[:len(tm.chain.bestHeaderChain)-1]
-	delete(tm.chain.bestChainMap, *lastBlockHash)
-	delete(tm.chain.bestHeaderChainMap, *lastBlockHash)
+	tm.chain.blockIndex.setTip(tm.chain.BlockTip().GetParent(tm.chain.blockIndex))
+	tm.chain.blockIndex.setHeaderTip(tm.chain.HeaderTip().GetParent(tm.chain.blockIndex))
 
 	// We don't pass the chain's snapshot above to prevent certain concurrency issues. As a
 	// result, we need to reset the snapshot's db cache to get rid of stale data.
 	if tm.chain.snapshot != nil {
-		tm.chain.snapshot.DatabaseCache = *lru.NewMap[string, []byte](DatabaseCacheSize)
+		tm.chain.snapshot.DatabaseCache, err = collections.NewLruCache[string, []byte](int(DatabaseCacheSize))
+		require.NoError(err)
 	}
 
 	// Note that unlike connecting test vectors, when disconnecting, we don't need to verify db entries.

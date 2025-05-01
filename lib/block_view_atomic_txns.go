@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/pkg/errors"
 )
 
@@ -445,18 +444,21 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 	return nil
 }
 
-func filterOutBlockRewardRecipientFees(txns []*MsgDeSoTxn, publicRewardPublicKey *btcec.PublicKey) (uint64, error) {
+func filterOutBlockRewardRecipientFees(txns []*MsgDeSoTxn, publicRewardPublicKey *PublicKey) (uint64, error) {
 	var nonBlockRewardRecipientFees uint64
 	for _, txn := range txns {
 		// If the transaction is performed by any public key other than block reward recipient transaction,
 		// add the fees to the total.
-		transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey)
-		if err != nil {
-			return 0, errors.Wrap(err, "filterBlockRewardRecipientFees: failed to parse public key")
+		transactorPublicKey := NewPublicKey(txn.PublicKey)
+		if transactorPublicKey == nil {
+			return 0, fmt.Errorf(
+				"filterBlockRewardRecipientFees: failed to parse public key: incorrect number of bytes: %v",
+				txn.PublicKey)
 		}
-		if transactorPublicKey.IsEqual(publicRewardPublicKey) {
+		if transactorPublicKey.Equal(*publicRewardPublicKey) {
 			continue
 		}
+		var err error
 		nonBlockRewardRecipientFees, err = SafeUint64().Add(nonBlockRewardRecipientFees, txn.TxnFeeNanos)
 		if err != nil {
 			return 0, errors.Wrap(err, "filterBlockRewardRecipientFees: failed to add fees")

@@ -11,7 +11,6 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/container/lru"
 	"github.com/deso-protocol/core/bls"
 	"github.com/deso-protocol/core/collections"
 	"github.com/deso-protocol/core/consensus"
@@ -69,7 +68,7 @@ type NetworkManager struct {
 	NonValidatorInboundIndex  *collections.ConcurrentMap[RemoteNodeId, *RemoteNode]
 
 	// Cache of nonces used during handshake.
-	usedNonces lru.Set[uint64]
+	usedNonces *collections.LruSet[uint64]
 
 	// The address manager keeps track of peer addresses we're aware of. When
 	// we need to connect to a new outbound peer, it chooses one of the addresses
@@ -121,7 +120,7 @@ func NewNetworkManager(
 	minTxFeeRateNanosPerKB uint64,
 	nodeServices ServiceFlag,
 ) *NetworkManager {
-
+	usedNoncesCache, _ := collections.NewLruSet[uint64](1000)
 	return &NetworkManager{
 		params:                                params,
 		srv:                                   srv,
@@ -136,7 +135,7 @@ func NewNetworkManager(
 		ValidatorOutboundIndex:                collections.NewConcurrentMap[bls.SerializedPublicKey, *RemoteNode](),
 		NonValidatorOutboundIndex:             collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
 		NonValidatorInboundIndex:              collections.NewConcurrentMap[RemoteNodeId, *RemoteNode](),
-		usedNonces:                            *lru.NewSet[uint64](1000),
+		usedNonces:                            usedNoncesCache,
 		connectIps:                            connectIps,
 		persistentIpToRemoteNodeIdsMap:        collections.NewConcurrentMap[string, RemoteNodeId](),
 		activeValidatorsMap:                   collections.NewConcurrentMap[bls.SerializedPublicKey, consensus.Validator](),
@@ -1289,7 +1288,7 @@ func (nm *NetworkManager) handleHandshakeCompletePoSMessage(remoteNode *RemoteNo
 	if remoteNode.IsInbound() {
 		_, ok := nm.GetValidatorInboundIndex().Get(validatorPk.Serialize())
 		if ok {
-			return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Inbound RemoteNode with duplicate validator public key")
+			return fmt.Errorf("NetworkManager.handleHandshakeCompletePoSMessage: Inbound RemoteNode with duplicate validator public key: %v", validatorPk.ToString())
 		}
 		return nil
 	}

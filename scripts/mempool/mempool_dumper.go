@@ -56,7 +56,7 @@ func main() {
 	}
 
 	netAddr2 := net.TCPAddr{
-		IP:   netAddrss.IP,
+		IP:   netAddrss.ToLegacy().IP,
 		Port: int(netAddrss.Port),
 	}
 	conn, err := net.DialTimeout(netAddr2.Network(), netAddr2.String(), lib.DeSoMainnetParams.DialTimeout)
@@ -69,9 +69,7 @@ func main() {
 		10000, 0, &lib.DeSoMainnetParams,
 		messagesFromPeer, nil, nil, lib.NodeSyncTypeAny, nil)
 	time.Sleep(1 * time.Second)
-	if err := peer.NegotiateVersion(lib.DeSoMainnetParams.VersionNegotiationTimeout); err != nil {
-		panic(err)
-	}
+	peer.Start()
 
 	// As a test, send a GetHeaders request and see if we get it back
 	if *flagCommand == "get_headers" {

@@ -238,6 +238,7 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 	event *consensus.FastHotStuffEvent,
 	expectedEventType consensus.FastHotStuffEventType,
 ) error {
+	glog.V(3).Infof("FastHotStuffConsensus.handleBlockProposalEvent: %s", event.ToString())
 	// Validate that the event's type is the expected proposal event type
 	if !isValidBlockProposalEvent(event, expectedEventType) {
 		return errors.Errorf("Unexpected event type: %v vs %v", event.EventType, expectedEventType)
@@ -250,7 +251,10 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 
 	// Fetch the parent block
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
-	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash.Get(*parentBlockHash)
+	parentBlock, parentBlockExists, err := fc.blockchain.blockIndex.GetBlockNodeByHashOnly(parentBlockHash)
+	if err != nil {
+		return errors.Errorf("Error fetching parent block: %v", parentBlockHash)
+	}
 	if !parentBlockExists {
 		return errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}
@@ -487,7 +491,8 @@ func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHo
 	tipBlockHash := BlockHashFromConsensusInterface(event.TipBlockHash)
 
 	// Fetch the HighQC from the Blockchain struct
-	tipBlockNode, tipBlockExists := fc.blockchain.blockIndexByHash.Get(*tipBlockHash)
+	// TODO: validate that TipHeight is a uint32
+	tipBlockNode, tipBlockExists := fc.blockchain.blockIndex.GetBlockNodeByHashAndHeight(tipBlockHash, event.TipBlockHeight)
 	if !tipBlockExists {
 		return errors.Errorf("FastHotStuffConsensus.HandleLocalTimeoutEvent: Error fetching tip block: %v", tipBlockHash)
 	}
@@ -558,13 +563,17 @@ func (fc *FastHotStuffConsensus) HandleValidatorTimeout(pp *Peer, msg *MsgDeSoVa
 	// If we don't have the highQC's block on hand, then we need to request it from the peer. We do
 	// that first before storing the timeout message locally in the FastHotStuffEventLoop. This
 	// prevents spamming of timeout messages by peers.
-	if !fc.blockchain.HasBlockInBlockIndex(msg.HighQC.BlockHash) {
-		err := errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Missing highQC's block: %v", msg.HighQC.BlockHash)
+	hasBlockInBlockIndex, err := fc.blockchain.HasBlockInBlockIndex(msg.HighQC.BlockHash)
+	if err != nil {
+		return nil, errors.Wrapf(err, "FastHotStuffConsensus.HandleValidatorTimeout: Error fetching block: ")
+	}
+	if !hasBlockInBlockIndex {
+		err = errors.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Missing highQC's block: %v", msg.HighQC.BlockHash)
 		return []*BlockHash{msg.HighQC.BlockHash}, err
 	}
 
 	// Process the timeout message locally in the FastHotStuffEventLoop
-	if err := fc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
+	if err = fc.fastHotStuffEventLoop.ProcessValidatorTimeout(msg); err != nil {
 		// If we can't process the timeout locally, then it must somehow be malformed, stale,
 		// or a duplicate vote/timeout for the same view.
 		glog.Errorf("FastHotStuffConsensus.HandleValidatorTimeout: Error processing timeout msg: %v", err)
@@ -693,7 +702,7 @@ func (fc *FastHotStuffConsensus) tryProcessBlockAsNewTip(block *MsgDeSoBlock) ([
 		return nil, errors.Errorf("Error hashing tip block: %v", err)
 	}
 
-	utxoViewAndUtxoOps, err := fc.blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(*tipBlockHash)
+	utxoViewAndUtxoOps, err := fc.blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(*tipBlockHash, tipBlock.Height)
 	if err != nil {
 		return nil, errors.Errorf("Error fetching UtxoView for tip block: %v", err)
 	}
@@ -733,13 +742,16 @@ func (fc *FastHotStuffConsensus) produceUnsignedBlockForBlockProposalEvent(
 	parentBlockHash := BlockHashFromConsensusInterface(event.QC.GetBlockHash())
 
 	// Fetch the parent block
-	parentBlock, parentBlockExists := fc.blockchain.blockIndexByHash.Get(*parentBlockHash)
+	parentBlock, parentBlockExists, err := fc.blockchain.blockIndex.GetBlockNodeByHashOnly(parentBlockHash)
+	if err != nil {
+		return nil, errors.Errorf("Error fetching parent block: %v", parentBlockHash)
+	}
 	if !parentBlockExists {
 		return nil, errors.Errorf("Error fetching parent block: %v", parentBlockHash)
 	}
 
 	// Build a UtxoView at the parent block
-	parentUtxoViewAndUtxoOps, err := fc.blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(*parentBlockHash)
+	parentUtxoViewAndUtxoOps, err := fc.blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(*parentBlockHash, uint64(parentBlock.Height))
 	if err != nil {
 		// This should never happen as long as the parent block is a descendant of the committed tip.
 		return nil, errors.Errorf("Error fetching UtxoView for parent block: %v", parentBlockHash)

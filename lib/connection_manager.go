@@ -2,6 +2,7 @@ package lib
 
 import (
 	"fmt"
+	"github.com/deso-protocol/core/collections"
 	"math"
 	"net"
 	"sync"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/btcsuite/btcd/addrmgr"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/decred/dcrd/container/lru"
 	"github.com/golang/glog"
 )
 
@@ -53,7 +53,7 @@ type ConnectionManager struct {
 	// TODO: seems like we don't use this.
 	// Keep track of the nonces we've sent in our version messages so
 	// we can prevent connections to ourselves.
-	sentNonces lru.Set[any]
+	sentNonces *collections.LruSet[uint64]
 
 	// This section defines the data structures for storing all the
 	// peers we're aware of.
@@ -126,13 +126,14 @@ func NewConnectionManager(
 
 	ValidateHyperSyncFlags(_hyperSync, _syncType)
 
+	sentNoncesCache, _ := collections.NewLruSet[uint64](1000)
 	return &ConnectionManager{
 		srv:       _srv,
 		params:    _params,
 		listeners: _listeners,
 		// We keep track of the last N nonces we've sent in order to detect
 		// self connections.
-		sentNonces: *lru.NewSet[any](1000),
+		sentNonces: sentNoncesCache,
 		//newestBlock: _newestBlock,
 
 		// Initialize the peer data structures.

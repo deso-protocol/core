@@ -50,7 +50,6 @@ func GetTestParamsCopy(
 	paramsCopy := *paramss
 	headerHash := (BlockHash)(startHeader.BlockHash())
 	paramsCopy.BitcoinStartBlockNode = NewBlockNode(
-		nil,         /*ParentNode*/
 		&headerHash, /*Hash*/
 		startHeight,
 		_difficultyBitsToHash(startHeader.Bits),

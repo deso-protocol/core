@@ -4,26 +4,23 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/go-deadlock"
+	"github.com/dgraph-io/badger/v3"
 	"net"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
-	"github.com/deso-protocol/core/collections"
-	"github.com/deso-protocol/core/consensus"
-
-	"github.com/decred/dcrd/container/lru"
-
 	"github.com/DataDog/datadog-go/v5/statsd"
-
 	"github.com/btcsuite/btcd/addrmgr"
 	chainlib "github.com/btcsuite/btcd/blockchain"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/consensus"
+	"github.com/deso-protocol/go-deadlock"
 	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
@@ -90,7 +87,8 @@ type Server struct {
 	// adding it to this map and checking this map before replying will make it
 	// so that we only send a reply to the first peer that sent us the inv, which
 	// is more efficient.
-	inventoryBeingProcessed lru.Set[InvVect]
+	inventoryBeingProcessed *collections.LruSet[InvVect]
+
 	// hasRequestedSync indicates whether we've bootstrapped our mempool
 	// by requesting all mempool transactions from a
 	// peer. It's initially false
@@ -361,6 +359,27 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 		syncType == NodeSyncTypeHyperSyncArchival {
 		glog.Fatal("Cannot set --sync-type=hypersync-archival without also setting --hypersync=true")
 	}
+}
+
+// RunBlockIndexMigrationOnce runs the block index migration once and saves a file to
+// indicate that it has been run.
+func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
+	blockIndexMigrationFileName := filepath.Join(db.Opts().Dir, BlockIndexMigrationFileName)
+	glog.V(2).Info("FileName: ", blockIndexMigrationFileName)
+	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
+	if err == nil && hasRunMigration {
+		glog.V(2).Info("Block index migration has already been run")
+		return nil
+	}
+	glog.V(0).Info("Running block index migration")
+	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
+		return errors.Wrapf(err, "Problem running block index migration")
+	}
+	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
+		return errors.Wrapf(err, "Problem saving block index migration file")
+	}
+	glog.V(2).Info("Block index migration complete")
+	return nil
 }
 
 // NewServer initializes all of the internal data structures. Right now this basically
@@ -687,7 +706,8 @@ func NewServer(
 	srv.blockProducer = _blockProducer
 	srv.incomingMessages = _incomingMessages
 	// Make this hold a multiple of what we hold for individual peers.
-	srv.inventoryBeingProcessed = *lru.NewSet[InvVect](maxKnownInventory)
+	srv.inventoryBeingProcessed, _ = collections.NewLruSet[InvVect](maxKnownInventory)
+
 	srv.requestTimeoutSeconds = 10
 
 	srv.statsdClient = statsd
@@ -753,7 +773,11 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	if pp.NegotiatedProtocolVersion >= ProtocolVersion2 {
 		maxHeadersPerMsg = MaxHeadersPerMsgPos
 	}
-	headers := srv.blockchain.LocateBestBlockChainHeaders(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
+
+	headers, err := srv.GetHeadersForLocatorAndStopHash(msg.BlockLocator, msg.StopHash, maxHeadersPerMsg)
+	if err != nil {
+		glog.Errorf("Server._handleGetHeadersMessage: Error getting headers: %v", err)
+	}
 
 	// Send found headers to the requesting peer.
 	blockTip := srv.blockchain.blockTip()
@@ -765,6 +789,88 @@ func (srv *Server) _handleGetHeaders(pp *Peer, msg *MsgDeSoGetHeaders) {
 	glog.V(2).Infof("Server._handleGetHeadersMessage: Replied to GetHeaders request "+
 		"with response headers: (%v), tip hash (%v), tip height (%d) from Peer %v",
 		headers, blockTip.Hash, blockTip.Height, pp)
+}
+
+// GetHeadersForLocatorAndStopHash returns a list of headers given a list of locator block hashes
+// and a stop hash. Note that this may be slow if the block nodes requested are not in the cache.
+func (srv *Server) GetHeadersForLocatorAndStopHash(
+	locator []*BlockHash,
+	stopHash *BlockHash,
+	maxHeadersPerMsg uint32,
+) ([]*MsgDeSoHeader, error) {
+	var headers []*MsgDeSoHeader
+
+	stopNode, stopNodeExists, stopNodeError := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(stopHash, nil, true)
+	// Special case when there is no block locator provided but only a stop hash.
+	if len(locator) == 0 {
+		if stopNodeError != nil || !stopNodeExists || stopNode == nil {
+			return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Stop hash provided but no stop node found")
+		}
+		return []*MsgDeSoHeader{stopNode.Header}, nil
+	}
+	var startNode *BlockNode
+	var startNodeExists bool
+	var startNodeError error
+	for _, blockNodeHash := range locator {
+		startNode, startNodeExists, startNodeError = srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(blockNodeHash, nil, true)
+		if startNodeError != nil || !startNodeExists || startNode == nil {
+			glog.Errorf("GetHeadersForLocatorAndStopHash: locator provided but no block node found at %v", blockNodeHash)
+		}
+		if startNodeExists && startNode != nil {
+			break
+		}
+	}
+	if startNode == nil {
+		return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: No start node found after looping through locators")
+	}
+
+	var backtrackingNode *BlockNode
+	var backtrackingNodeExists bool
+	var backtrackingNodeError error
+	// If the stop node isn't provided and the max header msgs would put us past the header tip,
+	// we use the header tip to start back tracking.
+	if stopNode == nil && srv.blockchain.HeaderTip().Height < startNode.Height+maxHeadersPerMsg {
+		backtrackingNode = srv.blockchain.HeaderTip()
+		backtrackingNodeExists = true
+	} else if stopNode == nil || stopNode.Height > startNode.Height+maxHeadersPerMsg {
+		// If the stop node isn't provided or the stop node is more than maxHeadersPerMsg away
+		// from the start node, we compute the height of the last header expected and start
+		// back tracking from there.
+		backtrackingNode, backtrackingNodeExists, backtrackingNodeError = srv.blockchain.GetBlockFromBestChainByHeight(
+			uint64(startNode.Height+maxHeadersPerMsg), true)
+		if backtrackingNodeError != nil {
+			return nil, fmt.Errorf("GetHeadersForLocatorAndStopHash: Error getting backtracking node by height: %v", backtrackingNodeError)
+		}
+		if !backtrackingNodeExists || backtrackingNode == nil {
+			return nil, errors.New("GetHeadersForLocatorAndStopHash: Backtracking node not found")
+		}
+	} else {
+		// Otherwise, the stop node is provided and we start back tracking from the stop node.
+		backtrackingNode = stopNode
+	}
+	for ii := uint32(0); ii < maxHeadersPerMsg; ii++ {
+		// If we've back tracked all the way to the start node, exit.
+		if backtrackingNode.Hash.IsEqual(startNode.Hash) {
+			break
+		}
+		headers = append(headers, backtrackingNode.Header)
+		// Avoid underflow.
+		if backtrackingNode.Height < 1 {
+			break
+		}
+		prevNodeHeight := backtrackingNode.Header.Height - 1
+		backtrackingNode, backtrackingNodeExists, backtrackingNodeError = srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(
+			backtrackingNode.Header.PrevBlockHash,
+			&prevNodeHeight, true)
+		if backtrackingNodeError != nil {
+			glog.Errorf("Server._handleGetHeadersMessage: Error getting prev node by height: %v", backtrackingNodeError)
+			break
+		}
+		if !backtrackingNodeExists || backtrackingNode == nil {
+			break
+		}
+	}
+	return collections.Reverse(headers), nil
 }
 
 // GetSnapshot is used for sending MsgDeSoGetSnapshot messages to peers. We will
@@ -862,7 +968,17 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 	}
 
 	// Go through the block nodes in the blockchain and download the blocks if they're not stored.
-	for _, blockNode := range srv.blockchain.bestChain {
+	for ii := uint32(srv.blockchain.lowestBlockNotStored); ii <= srv.blockchain.blockTip().Height; ii++ {
+		// TODO: this may be really slow.
+		blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(uint64(ii), true)
+		if err != nil {
+			glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
+			return
+		}
+		if !exists {
+			glog.Errorf("GetBlocksToStore: Block at height %v not found in best chain", ii)
+			return
+		}
 		// We find the first block that's not stored and get ready to download blocks starting from this block onwards.
 		if blockNode.Status&StatusBlockStored == 0 {
 			maxBlocksInFlight := MaxBlocksInFlight
@@ -872,28 +988,37 @@ func (srv *Server) GetBlocksToStore(pp *Peer) {
 
 				maxBlocksInFlight = MaxBlocksInFlightPoS
 			}
+			srv.blockchain.lowestBlockNotStored = uint64(blockNode.Height)
 			numBlocksToFetch := maxBlocksInFlight - len(pp.requestedBlocks)
-			currentHeight := int(blockNode.Height)
+			currentHeight := uint64(blockNode.Height)
 			blockNodesToFetch := []*BlockNode{}
 			// In case there are blocks at tip that are already stored (which shouldn't really happen), we'll not download them.
-			var heightLimit int
-			for heightLimit = len(srv.blockchain.bestChain) - 1; heightLimit >= 0; heightLimit-- {
-				if !srv.blockchain.bestChain[heightLimit].Status.IsFullyProcessed() {
+			// We filter those out in the loop below by checking IsFullyProcessed.
+			// Find the blocks that we should download.
+			for len(blockNodesToFetch) < numBlocksToFetch {
+				if currentHeight > uint64(srv.blockchain.blockTip().Height) {
 					break
 				}
-			}
-
-			// Find the blocks that we should download.
-			for currentHeight <= heightLimit &&
-				len(blockNodesToFetch) < numBlocksToFetch {
-
 				// Get the current hash and increment the height. Genesis has height 0, so currentHeight corresponds to
 				// the array index.
-				currentNode := srv.blockchain.bestChain[currentHeight]
+				// TODO: this may be really slow.
+				currentNode, currNodeExists, err := srv.blockchain.GetBlockFromBestChainByHeight(currentHeight, true)
+				if err != nil {
+					glog.Errorf("GetBlocksToStore: Error getting block from best chain by height: %v", err)
+					return
+				}
+				if !currNodeExists {
+					glog.Errorf("GetBlocksToStore: Block at height %v not found in best chain", currentHeight)
+					return
+				}
 				currentHeight++
+				// If this node is already fully processed, then we don't need to download it.
+				if currentNode.Status.IsFullyProcessed() {
+					break
+				}
 
 				// If we've already requested this block then we don't request it again.
-				if _, exists := pp.requestedBlocks[*currentNode.Hash]; exists {
+				if _, exists = pp.requestedBlocks[*currentNode.Hash]; exists {
 					continue
 				}
 
@@ -928,6 +1053,8 @@ func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
 		numBlocksToFetch, maxHeight, pp.requestedBlocks,
 	)
 	if len(blockNodesToFetch) == 0 {
+		glog.V(1).Infof("RequestBlocksUpToHeight: No blocks to fetch from peer %v: maxBlocksInFlight: %d, peer requested blocks: %d",
+			pp, srv.getMaxBlocksInFlight(pp), len(pp.requestedBlocks))
 		// This can happen if, for example, we're already requesting the maximum
 		// number of blocks we can. Just return in this case.
 		return
@@ -942,7 +1069,7 @@ func (srv *Server) RequestBlocksUpToHeight(pp *Peer, maxHeight int) {
 
 	pp.AddDeSoMessage(&MsgDeSoGetBlocks{HashList: hashList}, false)
 
-	glog.V(1).Infof("GetBlocks: Downloading %d blocks from header %v to header %v from peer %v",
+	glog.V(1).Infof("RequestBlocksUpToHeight: Downloading %d blocks from header %v to header %v from peer %v",
 		len(blockNodesToFetch),
 		blockNodesToFetch[0].Header,
 		blockNodesToFetch[len(blockNodesToFetch)-1].Header,
@@ -1013,14 +1140,17 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 	if checkpointBlockInfo == nil {
 		return true, false
 	}
-	var hasSeenCheckpointBlockHash bool
-	var checkpointBlockNode *BlockNode
+	// If the current header has a height below the checkpoint block height, we should skip signature verification
+	// even if we've seen the checkpoint block hash.
+	if header.Height < checkpointBlockInfo.Height {
+		return false, false
+	}
 	srv.blockchain.ChainLock.RLock()
 	defer srv.blockchain.ChainLock.RUnlock()
-	if isHeaderChain {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
-	} else {
-		checkpointBlockNode, hasSeenCheckpointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+	checkpointBlockNode, hasSeenCheckpointBlockHash, err := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(
+		checkpointBlockInfo.Hash, &checkpointBlockInfo.Height, isHeaderChain)
+	if err != nil {
+		glog.Fatalf("shouldVerifySignatures: Problem getting checkpoint block node from best chain: %v", err)
 	}
 	// If we haven't seen the checkpoint block hash yet, we skip signature verification.
 	if !hasSeenCheckpointBlockHash {
@@ -1029,11 +1159,6 @@ func (srv *Server) shouldVerifySignatures(header *MsgDeSoHeader, isHeaderChain b
 		if header.Height > checkpointBlockInfo.Height {
 			return true, true
 		}
-		return false, false
-	}
-	// If the current header has a height below the checkpoint block height, we should skip signature verification
-	// even if we've seen the checkpoint block hash.
-	if header.Height < checkpointBlockInfo.Height {
 		return false, false
 	}
 	// Make sure that the header in the best chain map has the correct height, otherwise we need to disconnect this peer.
@@ -1048,13 +1173,11 @@ func (srv *Server) getCheckpointSyncingStatus(isHeaders bool) string {
 	if checkpointBlockInfo == nil {
 		return "<No checkpoint block info>"
 	}
-	hasSeenCheckPointBlockHash := false
-	srv.blockchain.ChainLock.RLock()
-	defer srv.blockchain.ChainLock.RUnlock()
-	if isHeaders {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestHeaderChainMap[*checkpointBlockInfo.Hash]
-	} else {
-		_, hasSeenCheckPointBlockHash = srv.blockchain.bestChainMap[*checkpointBlockInfo.Hash]
+	_, hasSeenCheckPointBlockHash, err := srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(
+		checkpointBlockInfo.Hash, &checkpointBlockInfo.Height, isHeaders)
+
+	if err != nil {
+		glog.Fatalf("getCheckpointSyncingStatus: Problem getting checkpoint block node from best chain: %v", err)
 	}
 	if !hasSeenCheckPointBlockHash {
 		return fmt.Sprintf("<Checkpoint block %v not seen yet>", checkpointBlockInfo.String())
@@ -1072,6 +1195,15 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		len(msg.Headers), srv.blockchain.chainState(), pp,
 		srv.blockchain.headerTip().Header.Height, printHeight, srv.getCheckpointSyncingStatus(true))))
 
+	if glog.V(2) {
+		headerStrings := collections.Transform(msg.Headers, func(header *MsgDeSoHeader) string { return header.ShortString() })
+		if len(msg.Headers) < 50 {
+			glog.V(2).Infof("Received headers <Height, Hash>:\n %v", strings.Join(headerStrings, "\n"))
+		} else {
+			glog.V(2).Infof("Received headers <Height, Hash>:\n %v", strings.Join(
+				append(headerStrings[:10], headerStrings[len(headerStrings)-10:]...), "\n"))
+		}
+	}
 	// If we get here, it means that the node is not currently running a Fast-HotStuff
 	// validator or that the node is syncing. In either case, we sync headers according
 	// to the blocksync rules.
@@ -1079,6 +1211,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// Start by processing all the headers given to us. They should start
 	// right after the tip of our header chain ideally. While going through them
 	// tally up the number that we actually process.
+	var blockNodeBatch []*BlockNode
 	for ii, headerReceived := range msg.Headers {
 		// If we've set a maximum height for node sync and we've reached it,
 		// then we will not process any more headers.
@@ -1091,25 +1224,26 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		// have this issue. Hitting duplicates after we're done syncing is
 		// fine and can happen in certain cases.
 		headerHash, _ := headerReceived.Hash()
-		if srv.blockchain.HasHeader(headerHash) {
-			if srv.blockchain.isSyncing() {
+		hasHeader := srv.blockchain.HasHeaderByHashAndHeight(headerHash, headerReceived.Height)
+		if hasHeader {
+			//if srv.blockchain.isSyncing() {
+			// Always log a warning if we get a duplicate header. This is useful for debugging.
+			glog.Warningf("Server._handleHeaderBundle: Duplicate header %v received from peer %v "+
+				"in state %s. Local header tip height %d "+
+				"hash %s with duplicate %v",
+				headerHash,
+				pp, srv.blockchain.chainState(), srv.blockchain.headerTip().Height,
+				hex.EncodeToString(srv.blockchain.headerTip().Hash[:]), headerHash)
 
-				glog.Warningf("Server._handleHeaderBundle: Duplicate header %v received from peer %v "+
-					"in state %s. Local header tip height %d "+
-					"hash %s with duplicate %v",
-					headerHash,
-					pp, srv.blockchain.chainState(), srv.blockchain.headerTip().Height,
-					hex.EncodeToString(srv.blockchain.headerTip().Hash[:]), headerHash)
-
-				// TODO: This logic should really be commented back in, but there was a bug that
-				// arises when a program is killed forcefully whereby a partial write leads to this
-				// logic causing the sync to stall. As such, it's more trouble than it's worth
-				// at the moment but we should consider being more strict about it in the future.
-				/*
-					pp.Disconnect()
-					return
-				*/
-			}
+			// TODO: This logic should really be commented back in, but there was a bug that
+			// arises when a program is killed forcefully whereby a partial write leads to this
+			// logic causing the sync to stall. As such, it's more trouble than it's worth
+			// at the moment but we should consider being more strict about it in the future.
+			/*
+				pp.Disconnect()
+				return
+			*/
+			//}
 
 			// Don't process duplicate headers.
 			continue
@@ -1129,7 +1263,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 
 		// Process the header, as we haven't seen it before, set verifySignatures to false
 		// if we're in the process of syncing.
-		_, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, verifySignatures)
+		blockNode, _, isOrphan, err := srv.blockchain.ProcessHeader(headerReceived, headerHash, verifySignatures)
 
 		numLogHeaders := 2000
 		if ii%numLogHeaders == 0 {
@@ -1149,8 +1283,32 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				pp, srv.blockchain.chainState(), err, isOrphan)
 
 			pp.Disconnect("Error processing header")
+			// Just to be safe, we flush all the headers we just got even tho we have a header.
+			currTime := time.Now()
+			if err = PutHeightHashToNodeInfoBatch(
+				srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager); err != nil {
+				glog.Errorf("Server._handleHeaderBundle: Problem writing block nodes to db, error: (%v)", err)
+				return
+			}
+			glog.V(0).Info("Server._handleHeaderBundle: PutHeightHashToNodeInfoBatch took: ", time.Since(currTime))
 			return
 		}
+
+		// Append the block node to the block node batch.
+		if blockNode != nil {
+			blockNodeBatch = append(blockNodeBatch, blockNode)
+		}
+	}
+	currTime := time.Now()
+	if err := PutHeightHashToNodeInfoBatch(
+		srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager); err != nil {
+		glog.Errorf("Server._handleHeaderBundle: Problem writing block nodes to db, error: (%v)", err)
+		return
+	}
+	if len(blockNodeBatch) > 0 {
+		glog.V(0).Info("Server._handleHeaderBundle: PutHeightHashToNodeInfoBatch took: ", time.Since(currTime))
+	} else {
+		glog.V(0).Info("Server._handleHeaderBundle: No block nodes to write to db")
 	}
 
 	// After processing all the headers this will check to see if we are fully current
@@ -1233,11 +1391,21 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 				// expected height at which the snapshot should be taking place. We do this to make sure that the
 				// snapshot we receive from the peer is up-to-date.
 				// TODO: error handle if the hash doesn't exist for some reason.
+				expectedSnapshotHeightBlock, expectedSnapshotHeightblockExists, err :=
+					srv.blockchain.GetBlockFromBestChainByHeight(expectedSnapshotHeight, true)
+				if err != nil {
+					glog.Errorf("Server._handleHeaderBundle: Problem getting expected snapshot height block, error (%v)", err)
+					return
+				}
+				if !expectedSnapshotHeightblockExists || expectedSnapshotHeightBlock == nil {
+					glog.Errorf("Server._handleHeaderBundle: Expected snapshot height block doesn't exist.")
+					return
+				}
 				srv.HyperSyncProgress.SnapshotMetadata = &SnapshotEpochMetadata{
 					SnapshotBlockHeight:       expectedSnapshotHeight,
 					FirstSnapshotBlockHeight:  expectedSnapshotHeight,
 					CurrentEpochChecksumBytes: []byte{},
-					CurrentEpochBlockHash:     srv.blockchain.bestHeaderChain[expectedSnapshotHeight].Hash,
+					CurrentEpochBlockHash:     expectedSnapshotHeightBlock.Hash,
 				}
 				srv.HyperSyncProgress.PrefixProgress = []*SyncPrefixProgress{}
 				srv.HyperSyncProgress.Completed = false
@@ -1314,8 +1482,9 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// we're either not aware of or that we don't think is the best chain.
 			// Doing things this way makes it so that when we request blocks we
 			// are 100% positive the peer has them.
-			if !srv.blockchain.HasHeader(msg.TipHash) {
-				glog.V(1).Infof("Server._handleHeaderBundle: Peer's tip is not in our "+
+			hasHeader := srv.blockchain.HasHeaderByHashAndHeight(msg.TipHash, uint64(msg.TipHeight))
+			if !hasHeader {
+				glog.V(0).Infof("Server._handleHeaderBundle: Peer's tip is not in our "+
 					"blockchain so not requesting anything else from them. Our block "+
 					"tip %v, their tip %v:%d, peer: %v",
 					srv.blockchain.blockTip().Header, msg.TipHash, msg.TipHeight, pp)
@@ -1327,7 +1496,7 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 			// them should be available as long as they don't exceed the peer's
 			// tip height.
 			blockTip := srv.blockchain.blockTip()
-			glog.V(1).Infof("Server._handleHeaderBundle: *Downloading* blocks starting at "+
+			glog.V(0).Infof("Server._handleHeaderBundle: *Downloading* blocks starting at "+
 				"block tip %v out of %d from peer %v",
 				blockTip.Header, msg.TipHeight, pp)
 			srv.RequestBlocksUpToHeight(pp, int(msg.TipHeight))
@@ -1352,7 +1521,10 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 	// even if the peer has a long fork with more work than our current header
 	// chain.
 	lastHash, _ := msg.Headers[len(msg.Headers)-1].Hash()
-	locator, err := srv.blockchain.HeaderLocatorWithNodeHash(lastHash)
+	lastHeight := msg.Headers[len(msg.Headers)-1].Height
+	headerTip := srv.blockchain.headerTip()
+	currentBlockTip := srv.blockchain.blockTip()
+	locator, locatorHeights, err := srv.blockchain.HeaderLocatorWithNodeHashAndHeight(lastHash, lastHeight)
 	if err != nil {
 		glog.Warningf("Server._handleHeaderBundle: Disconnecting peer %v because "+
 			"she indicated that she has more headers but the last hash %v in "+
@@ -1361,14 +1533,20 @@ func (srv *Server) _handleHeaderBundle(pp *Peer, msg *MsgDeSoHeaderBundle) {
 		pp.Disconnect("Last hash in header bundle not in our index")
 		return
 	}
+	glog.V(2).Infof("Server._handleHeaderBundle: Sending GET_HEADERS message to peer %v\n"+
+		"Block Locator Hashes & Heights: (%v, %v) \n"+
+		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+		pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
+		currentBlockTip.Hash, currentBlockTip.Height)
 	pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
 		BlockLocator: locator,
 	}, false)
-	headerTip := srv.blockchain.headerTip()
 	glog.V(1).Infof("Server._handleHeaderBundle: *Syncing* headers for blocks starting at "+
 		"header tip %v out of %d from peer %v",
 		headerTip.Header, msg.TipHeight, pp)
+	glog.V(0).Infof("Server._handleHeaderBundle: Num Headers in header chain: (header tip height: %v) ",
+		srv.blockchain.blockIndex.GetHeaderTip())
 }
 
 func (srv *Server) _handleGetBlocks(pp *Peer, msg *MsgDeSoGetBlocks) {
@@ -1651,10 +1829,18 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	srv.snapshot.PrintChecksum("Finished hyper sync. Checksum is:")
 	glog.Infof(CLog(Magenta, fmt.Sprintf("Metadata checksum: (%v)",
 		srv.HyperSyncProgress.SnapshotMetadata.CurrentEpochChecksumBytes)))
-
-	glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
-		srv.blockchain.bestHeaderChain[msg.SnapshotMetadata.SnapshotBlockHeight], srv.blockchain.bestChain)))
-
+	blockNode, exists, err := srv.blockchain.GetBlockFromBestChainByHeight(msg.SnapshotMetadata.SnapshotBlockHeight, true)
+	if err != nil {
+		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error (%v)", err)
+		return
+	}
+	if !exists {
+		glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist: (%v)", msg.SnapshotMetadata.SnapshotBlockHeight)
+		return
+	} else {
+		glog.Infof(CLog(Yellow, fmt.Sprintf("Best header chain %v best block chain %v",
+			blockNode, srv.blockchain.blockIndex.GetTip())))
+	}
 	// Verify that the state checksum matches the one in HyperSyncProgress snapshot metadata.
 	// If the checksums don't match, it means that we've been interacting with a peer that was misbehaving.
 	checksumBytes, err := srv.snapshot.Checksum.ToBytes()
@@ -1696,19 +1882,46 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	// being too large and possibly causing an error in badger.
 	glog.V(0).Infof("Server._handleSnapshot: Updating snapshot block nodes in the database")
 	var blockNodeBatch []*BlockNode
+	flushBlockNodeStartTime := time.Now()
+	// Disable deadlock detection, as the process of flushing entries to file can take a long time and
+	// if it takes longer than the deadlock detection timeout interval, it will cause an error to be thrown.
+	deadlock.Opts.Disable = true
+	defer func() {
+		deadlock.Opts.Disable = false
+	}()
 	// acquire the chain lock while we update the best chain and best chain map.
 	srv.blockchain.ChainLock.Lock()
-	for ii := uint64(1); ii <= srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight; ii++ {
-		currentNode := srv.blockchain.bestHeaderChain[ii]
+	currentNode := blockNode
+	currentNodeExists := true
+	// Set the block tip to the snapshot height block node.
+	srv.blockchain.blockIndex.setTip(currentNode)
+	for currentNode.Height > 0 {
 		// Do not set the StatusBlockStored flag, because we still need to download the past blocks.
 		currentNode.Status |= StatusBlockProcessed
 		currentNode.Status |= StatusBlockValidated
 		currentNode.Status |= StatusBlockCommitted
 		srv.blockchain.addNewBlockNodeToBlockIndex(currentNode)
-		srv.blockchain.bestChainMap[*currentNode.Hash] = currentNode
-		srv.blockchain.bestChain = append(srv.blockchain.bestChain, currentNode)
 		blockNodeBatch = append(blockNodeBatch, currentNode)
-		if len(blockNodeBatch) < 10000 {
+		if (srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight-uint64(currentNode.Height))%100000 == 0 {
+			glog.V(0).Infof("Time to process %v of %v block nodes in %v",
+				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight-uint64(currentNode.Height),
+				srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight,
+				time.Since(flushBlockNodeStartTime),
+			)
+		}
+
+		prevNodeHeight := uint64(currentNode.Height) - 1
+		currentNode, currentNodeExists, err = srv.blockchain.GetBlockFromBestChainByHashAndOptionalHeight(currentNode.Header.PrevBlockHash, &prevNodeHeight, true)
+		if err != nil {
+			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, error: (%v)", err)
+			break
+		}
+		if !currentNodeExists {
+			glog.Errorf("Server._handleSnapshot: Problem getting block node by height, block node does not exist")
+			break
+		}
+		// TODO: should we adjust this value for batch sizes?
+		if len(blockNodeBatch) < 25000 {
 			continue
 		}
 		err = PutHeightHashToNodeInfoBatch(srv.blockchain.db, srv.snapshot, blockNodeBatch, false /*bitcoinNodes*/, srv.eventManager)
@@ -1724,6 +1937,8 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 			glog.Errorf("Server._handleSnapshot: Problem updating snapshot block nodes, error: (%v)", err)
 		}
 	}
+	glog.V(0).Infof("Time to store %v block nodes in the database: %v",
+		srv.HyperSyncProgress.SnapshotMetadata.SnapshotBlockHeight, time.Since(flushBlockNodeStartTime))
 
 	err = PutBestHash(srv.blockchain.db, srv.snapshot, msg.SnapshotMetadata.CurrentEpochBlockHash, ChainTypeDeSoBlock, srv.eventManager)
 	if err != nil {
@@ -1731,7 +1946,7 @@ func (srv *Server) _handleSnapshot(pp *Peer, msg *MsgDeSoSnapshotData) {
 	}
 	// We also reset the in-memory snapshot cache, because it is populated with stale records after
 	// we've initialized the chain with seed transactions.
-	srv.snapshot.DatabaseCache = *lru.NewMap[string, []byte](DatabaseCacheSize)
+	srv.snapshot.DatabaseCache, _ = collections.NewLruCache[string, []byte](int(DatabaseCacheSize))
 
 	// If we got here then we finished the snapshot sync so set appropriate flags.
 	srv.blockchain.syncingState = false
@@ -1840,7 +2055,14 @@ func (srv *Server) _startSync() {
 	// Send a GetHeaders message to the Peer to start the headers sync.
 	// Note that we include an empty BlockHash as the stopHash to indicate we want as
 	// many headers as the Peer can give us.
-	locator := srv.blockchain.LatestHeaderLocator()
+	locator, locatorHeights := bestPeer.srv.blockchain.LatestHeaderLocator()
+	headerTip := bestPeer.srv.blockchain.headerTip()
+	currentBlockTip := bestPeer.srv.blockchain.blockTip()
+	glog.V(2).Infof("Server._startSync: Sending GET_HEADERS message to peer %v\n"+
+		"Block Locator Hashes & Heights: (%v, %v)\n"+
+		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+		bestPeer, locator, locatorHeights, headerTip.Hash, headerTip.Height,
+		currentBlockTip.Hash, currentBlockTip.Height)
 	bestPeer.AddDeSoMessage(&MsgDeSoGetHeaders{
 		StopHash:     &BlockHash{},
 		BlockLocator: locator,
@@ -1996,7 +2218,7 @@ func (srv *Server) _relayTransactions() {
 
 	for _, pp := range allPeers {
 		if !pp.canReceiveInvMessages {
-			glog.V(1).Infof("Skipping invs for peer %v because not ready "+
+			glog.V(3).Infof("Skipping invs for peer %v because not ready "+
 				"yet: %v", pp, pp.canReceiveInvMessages)
 			continue
 		}
@@ -2020,8 +2242,8 @@ func (srv *Server) _relayTransactions() {
 
 			// Add the transaction to the peer's known inventory. We do
 			// it here when we enqueue the message to the peers outgoing
-			// message queue so that we don't have remember to do it later.
-			pp.knownInventory.Add(*invVect, struct{}{})
+			// message queue so that we don't have to remember to do it later.
+			pp.knownInventory.Put(*invVect)
 			invMsg.InvList = append(invMsg.InvList, invVect)
 		}
 		if len(invMsg.InvList) > 0 {
@@ -2427,7 +2649,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		glog.Warningf("Server._handleBlock: Received block while syncing headers: %v", blk)
 		glog.Infof("Requesting headers: %v", pp)
 
-		locator := srv.blockchain.LatestHeaderLocator()
+		locator, locatorHeights := pp.srv.blockchain.LatestHeaderLocator()
+		headerTip := pp.srv.blockchain.headerTip()
+		currentBlockTip := pp.srv.blockchain.blockTip()
+		glog.V(2).Infof("Server._handleBlock (chainState = SYNCING_HEADERS): Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v) \n"+
+			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+			pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
+			currentBlockTip.Hash, currentBlockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
@@ -2471,7 +2700,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		//   and worst case the peer will return an empty header bundle that will
 		//   result in us not sending anything back because there won’t be any new
 		//   blocks to request.
-		locator := srv.blockchain.LatestHeaderLocator()
+		locator, locatorHeights := srv.blockchain.LatestHeaderLocator()
+		headerTip := srv.blockchain.headerTip()
+		currentBlockTip := srv.blockchain.blockTip()
+		glog.V(2).Infof("Server._handleBlock (chain state = NEEDS_BLOCKS): Sending GET_HEADERS message to peer %v\n"+
+			"Block Locator Hashes & Heights: (%v, %v)\n"+
+			"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",
+			pp, locator, locatorHeights, headerTip.Hash, headerTip.Height,
+			currentBlockTip.Hash, currentBlockTip.Height)
 		pp.AddDeSoMessage(&MsgDeSoGetHeaders{
 			StopHash:     &BlockHash{},
 			BlockLocator: locator,
@@ -2510,7 +2746,7 @@ func (srv *Server) _handleBlockBundle(pp *Peer, bundle *MsgDeSoBlockBundle) {
 	// TODO: We should fetch the next batch of blocks while we process this batch.
 	// This requires us to modify GetBlocks to take a start hash and a count
 	// of the number of blocks we want. Or we could make the existing GetBlocks
-	// take a start hash and the other node can just return as many blcoks as it
+	// take a start hash and the other node can just return as many blocks as it
 	// can.
 
 	// Process each block in the bundle. Record our blocks per second.

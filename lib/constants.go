@@ -1161,7 +1161,6 @@ var DeSoMainnetParams = DeSoParams{
 	//   choose and the tip. This is done by running once, letting it fail, and then rerunning
 	//   with the value it outputs.
 	BitcoinStartBlockNode: NewBlockNode(
-		nil,
 		mustDecodeHexBlockHashBitcoin("000000000000000000092d577cc673bede24b6d7199ee69c67eeb46c18fc978c"),
 		// Note the height is always one greater than the parent node.
 		653184,
@@ -1524,7 +1523,6 @@ var DeSoTestnetParams = DeSoParams{
 
 	// See comment in mainnet config.
 	BitcoinStartBlockNode: NewBlockNode(
-		nil,
 		mustDecodeHexBlockHashBitcoin("000000000000003aae8fb976056413aa1d863eb5bee381ff16c9642283b1da1a"),
 		1897056,
 		_difficultyBitsToHash(424073553),
@@ -1957,5 +1955,10 @@ const DefaultTestnetCheckpointProvider = "https://test.deso.org"
 
 const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
 
-// Constants that was removed from newer version of Btcec
+// BlockIndexMigrationFileName is the name of the file that contains a boolean value
+// that indicates whether the block index migration has been run. See RunBlockIndexMigrationOnce
+// for more information.
+const BlockIndexMigrationFileName = "block_index_migration.txt"
+
+// BtcecPubKeyBytesLenUncompressed is a constant that was removed from newer version of Btcec
 const BtcecPubKeyBytesLenUncompressed = 65

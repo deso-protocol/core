@@ -285,9 +285,12 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		desoBlockProducer.postgres, desoBlockProducer.chain.snapshot, nil)
 
 	// Parse the public key that should be used for the block reward.
-	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutput.PublicKey)
-	if err != nil {
-		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: problem parsing block reward output public key: ")
+	blockRewardOutputPublicKey := NewPublicKey(blockRewardOutput.PublicKey)
+	if blockRewardOutputPublicKey == nil {
+		return nil, nil, nil, fmt.Errorf(
+			"DeSoBlockProducer._getBlockTemplate: problem parsing block reward output public key: %v",
+			blockRewardOutput.PublicKey,
+		)
 	}
 
 	// Skip the block reward, which is the first txn in the block.
@@ -305,13 +308,14 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 		if blockRet.Header.Height >= uint64(desoBlockProducer.params.ForkHeights.BlockRewardPatchBlockHeight) {
 			if txnInBlock.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
 				// Parse the transactor's public key to compare with the block reward output public key.
-				transactorPublicKey, err := btcec.ParsePubKey(txnInBlock.PublicKey)
-				if err != nil {
+				transactorPublicKey := NewPublicKey(txnInBlock.PublicKey)
+				if transactorPublicKey == nil {
 					return nil, nil, nil,
-						errors.Wrapf(err,
-							"DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: ")
+						fmt.Errorf(
+							"DeSoBlockProducer._getBlockTemplate: problem parsing transactor public key: %v",
+							txnInBlock.PublicKey)
 				}
-				includeFeesInBlockReward = !transactorPublicKey.IsEqual(blockRewardOutputPublicKey)
+				includeFeesInBlockReward = !transactorPublicKey.Equal(*blockRewardOutputPublicKey)
 			} else {
 				// In the case of atomic transaction wrappers, we must parse and process each inner transaction
 				// independently. We let includeFeesInBlockRewards remain true but decrement feeNanos whenever
@@ -367,8 +371,8 @@ func (desoBlockProducer *DeSoBlockProducer) _getBlockTemplate(publicKey []byte) 
 	blockRet.Header.TransactionMerkleRoot = merkleRoot
 
 	// Compute the next difficulty target given the current tip.
-	diffTarget, err := CalcNextDifficultyTarget(
-		lastNode, CurrentHeaderVersion, desoBlockProducer.params)
+	diffTarget, err := desoBlockProducer.chain.CalcNextDifficultyTarget(
+		lastNode, CurrentHeaderVersion)
 	if err != nil {
 		return nil, nil, nil, errors.Wrapf(err, "DeSoBlockProducer._getBlockTemplate: Problem computing next difficulty: ")
 	}
@@ -465,10 +469,12 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
 	blockRewardOutputPublicKeyBytes []byte,
 	params *DeSoParams,
 ) (*MsgDeSoBlock, error) {
-	blockRewardOutputPublicKey, err := btcec.ParsePubKey(blockRewardOutputPublicKeyBytes)
-	if err != nil {
-		return nil, errors.Wrap(
-			fmt.Errorf("RecomputeBlockRewardWithBlockRewardOutpubPublicKey: Problem parsing block reward output public key: %v", err), "")
+	blockRewardOutputPublicKey := NewPublicKey(blockRewardOutputPublicKeyBytes)
+	if blockRewardOutputPublicKey == nil {
+		return nil,
+			fmt.Errorf(
+				"RecomputeBlockRewardWithBlockRewardOutpubPublicKey: Problem parsing block reward output public key: %v",
+				blockRewardOutputPublicKeyBytes)
 	}
 
 	// Find all transactions in block that have transactor == block reward output public key
@@ -476,14 +482,15 @@ func RecomputeBlockRewardWithBlockRewardOutputPublicKey(
 	totalFees := uint64(0)
 	for _, txn := range block.Txns[1:] {
 		if txn.TxnMeta.GetTxnType() != TxnTypeAtomicTxnsWrapper {
-			transactorPublicKey, err := btcec.ParsePubKey(txn.PublicKey)
-			if err != nil {
-				glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", err)
+			transactorPublicKey := NewPublicKey(txn.PublicKey)
+			if transactorPublicKey == nil {
+				glog.Errorf("DeSoMiner._startThread: Error parsing transactor public key: %v", txn.PublicKey)
 				continue
 			}
-			if transactorPublicKey.IsEqual(blockRewardOutputPublicKey) {
+			if transactorPublicKey.Equal(*blockRewardOutputPublicKey) {
 				continue
 			}
+			var err error
 			totalFees, err = SafeUint64().Add(totalFees, txn.TxnFeeNanos)
 			if err != nil {
 				glog.Errorf("DeSoMiner._startThread: Error adding txn fee: %v", err)
