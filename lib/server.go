@@ -853,7 +853,7 @@ func (srv *Server) GetHeadersForLocatorAndStopHash(
 		if backtrackingNode.Hash.IsEqual(startNode.Hash) {
 			break
 		}
-		headers = append([]*MsgDeSoHeader{backtrackingNode.Header}, headers...)
+		headers = append(headers, backtrackingNode.Header)
 		// Avoid underflow.
 		if backtrackingNode.Height < 1 {
 			break
@@ -870,7 +870,7 @@ func (srv *Server) GetHeadersForLocatorAndStopHash(
 			break
 		}
 	}
-	return headers, nil
+	return collections.Reverse(headers), nil
 }
 
 // GetSnapshot is used for sending MsgDeSoGetSnapshot messages to peers. We will

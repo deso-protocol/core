@@ -22,14 +22,12 @@ require (
 	github.com/dgraph-io/ristretto/v2 v2.2.0
 	github.com/emirpasic/gods v1.18.1
 	github.com/ethereum/go-ethereum v1.15.10
-	github.com/fatih/color v1.18.0
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.14.0
 	github.com/golang/glog v1.2.4
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/oleiade/lane v1.0.1
 	github.com/onflow/crypto v0.25.3
 	github.com/pkg/errors v0.9.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
@@ -86,6 +84,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
 	github.com/ebitengine/purego v0.8.2 // indirect
+	github.com/fatih/color v1.18.0 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/git-chglog/git-chglog v0.15.4 // indirect
