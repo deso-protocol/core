@@ -24,7 +24,7 @@ require (
 	github.com/ethereum/go-ethereum v1.15.10
 	github.com/gernest/mention v2.0.0+incompatible
 	github.com/go-pg/pg/v10 v10.14.0
-	github.com/golang/glog v1.2.4
+	github.com/golang/glog v1.2.5
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/mitchellh/go-homedir v1.1.0
