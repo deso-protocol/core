@@ -19,7 +19,7 @@ require (
 	github.com/deso-protocol/go-merkle-tree v1.0.0
 	github.com/deso-protocol/uint256 v1.3.2
 	github.com/dgraph-io/badger/v3 v3.2103.5
-	github.com/dgraph-io/ristretto v0.1.1
+	github.com/dgraph-io/ristretto v0.2.0
 	github.com/emirpasic/gods v1.18.1
 	github.com/ethereum/go-ethereum v1.15.10
 	github.com/fatih/color v1.18.0
