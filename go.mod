@@ -19,7 +19,7 @@ require (
 	github.com/deso-protocol/go-merkle-tree v1.0.0
 	github.com/deso-protocol/uint256 v1.3.2
 	github.com/dgraph-io/badger/v3 v3.2103.5
-	github.com/dgraph-io/ristretto/v2 v2.2.0
+	github.com/dgraph-io/ristretto v0.1.1
 	github.com/emirpasic/gods v1.18.1
 	github.com/ethereum/go-ethereum v1.15.10
 	github.com/fatih/color v1.18.0
@@ -84,7 +84,7 @@ require (
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
-	github.com/dgraph-io/ristretto v0.1.1 // indirect
+	github.com/dgryski/go-farm v0.0.0-20240924180020-3414d57e47da // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eapache/queue/v2 v2.0.0-20230407133247-75960ed334e4 // indirect
 	github.com/ebitengine/purego v0.8.2 // indirect

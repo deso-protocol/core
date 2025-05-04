@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/deso-protocol/core/collections"
-	"github.com/dgraph-io/ristretto/v2/z"
+	"github.com/dgraph-io/ristretto/z"
 	"io"
 	"log"
 	"math"
