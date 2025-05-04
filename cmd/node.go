@@ -19,7 +19,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/deso-protocol/core/lib"
 	"github.com/deso-protocol/core/migrate"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/golang/glog"
 	migrations "github.com/robinjoseph08/go-pg-migrations/v3"

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/deso-protocol/uint256"
-	"github.com/dgraph-io/badger/v4"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/go-pg/pg/v10"
 	"github.com/go-pg/pg/v10/orm"
 	"github.com/golang/glog"
