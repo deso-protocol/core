@@ -385,9 +385,9 @@ func (bav *UtxoView) HelpConnectDAOCoinMint(
 	if creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos.Gt(
 		uint256.NewInt(0).Sub(MaxUint256, &txMeta.CoinsToMintNanos)) {
 		return 0, 0, nil, errors.Wrapf(
-			RuleErrorOverflowWhileMintingDAOCoins, fmt.Sprintf(
-				"_connectDAOCoin: Overflow while summing CoinsInCirculationNanos and CoinsToMinNanos: %v, %v",
-				creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos))
+			RuleErrorOverflowWhileMintingDAOCoins,
+			"_connectDAOCoin: Overflow while summing CoinsInCirculationNanos and CoinsToMinNanos: %v, %v",
+			creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos, txMeta.CoinsToMintNanos)
 	}
 	// CoinsInCirculationNanos = CoinsInCirculationNanos + CoinsToMintNanos
 	creatorProfileEntry.DAOCoinEntry.CoinsInCirculationNanos = *uint256.NewInt(0).Add(

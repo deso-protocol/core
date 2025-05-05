@@ -593,7 +593,7 @@ func NewServer(
 	// blocks.
 	_mempool := NewDeSoMempool(_chain, _rateLimitFeerateNanosPerKB,
 		_minFeeRateNanosPerKB, _blockCypherAPIKey, _runReadOnlyUtxoViewUpdater, _dataDir,
-		_mempoolDumpDir, false)
+		_mempoolDumpDir, true)
 
 	// Initialize the PoS mempool. We need to initialize a best-effort UtxoView based on the current
 	// known state of the chain. This will all be overwritten as we process blocks later on.
