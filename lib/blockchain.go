@@ -553,24 +553,32 @@ type BlockIndex struct {
 	blockIndexByHash *collections.LruCache[BlockHash, *BlockNode]
 	tip              *BlockNode
 	headerTip        *BlockNode
+	size             int
 }
 
 // NewBlockIndex creates a new BlockIndex with the provided snapshot and tip node.
-func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode) *BlockIndex {
-	blockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
+func NewBlockIndex(db *badger.DB, snapshot *Snapshot, tipNode *BlockNode, blockIndexSize int) (*BlockIndex, error) {
+	blockIndexByHash, err := collections.NewLruCache[BlockHash, *BlockNode](blockIndexSize)
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewBlockIndex: Problem creating LRU cache")
+	}
 	return &BlockIndex{
 		db:               db,
 		snapshot:         snapshot,
 		blockIndexByHash: blockIndexByHash,
 		tip:              tipNode,
 		headerTip:        tipNode,
-	}
+		size:             blockIndexSize,
+	}, nil
 }
 
 // setBlockIndexFromMap is a helper function only used in tests. It constructs the
 // block index from the provided map of block hashes to block nodes.
-func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) {
-	newHashToBlockNodeMap, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes) // TODO: parameterize this?
+func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) error {
+	newHashToBlockNodeMap, err := collections.NewLruCache[BlockHash, *BlockNode](bi.size)
+	if err != nil {
+		return errors.Wrapf(err, "setBlockIndexFromMap: Problem creating LRU cache")
+	}
 	bi.blockIndexByHash = newHashToBlockNodeMap
 	for _, val := range input {
 		bi.addNewBlockNodeToBlockIndex(val)
@@ -582,6 +590,7 @@ func (bi *BlockIndex) setBlockIndexFromMap(input map[BlockHash]*BlockNode) {
 			bi.tip = val
 		}
 	}
+	return nil
 }
 
 // setHeaderTip sets the header tip of the block index to the provided block node.
@@ -879,7 +888,7 @@ func (bc *Blockchain) CopyBlockIndexes() (
 	_blockIndexByHash *collections.LruCache[BlockHash, *BlockNode],
 ) {
 	// Create a new lru cache.
-	newBlockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](MaxBlockIndexNodes)
+	newBlockIndexByHash, _ := collections.NewLruCache[BlockHash, *BlockNode](bc.blockIndex.size)
 	// Iterate over the keys of the block index and copy them to the new lru cache.
 	for _, key := range bc.blockIndex.blockIndexByHash.Keys() {
 		val, _ := bc.blockIndex.blockIndexByHash.Get(key)
@@ -1039,10 +1048,15 @@ func (bc *Blockchain) _initChain() error {
 			if !tipNodeExists {
 				return fmt.Errorf("_initChain: Best hash (%#v) not found in block index", bestBlockHash)
 			}
-			// Walk back the last 6 hours of blocks.
+			// Walk back the last 6 hours of blocks. Or enough to fill the block index cache if the
+			// size of the block index cache is less than 6 * 3600
 			currBlockCounter := 1
 			parentNode := tipNode.GetParent(bc.blockIndex)
-			for currBlockCounter < 3600*6 && parentNode != nil {
+			numBlockNodesToFetch := 3600 * 6
+			if bc.blockIndex.size < numBlockNodesToFetch {
+				numBlockNodesToFetch = bc.blockIndex.size
+			}
+			for currBlockCounter < numBlockNodesToFetch && parentNode != nil {
 				parentNode = parentNode.GetParent(bc.blockIndex)
 				currBlockCounter++
 			}
@@ -1119,6 +1133,7 @@ func NewBlockchain(
 	snapshot *Snapshot,
 	archivalMode bool,
 	checkpointSyncingProviders []string,
+	blockIndexSize int,
 ) (*Blockchain, error) {
 	if err := RunBlockIndexMigrationOnce(db, params); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: Problem running block index migration")
@@ -1137,6 +1152,10 @@ func NewBlockchain(
 	timer := &Timer{}
 	timer.Initialize()
 	blockViewCache, _ := collections.NewLruCache[BlockHash, *BlockViewAndUtxoOps](100) // TODO: parameterize
+	blockIndex, err := NewBlockIndex(db, snapshot, nil, blockIndexSize)                // This tip will be set in _initChain.
+	if err != nil {
+		return nil, errors.Wrapf(err, "NewBlockchain: Problem creating block index")
+	}
 	bc := &Blockchain{
 		db:                              db,
 		postgres:                        postgres,
@@ -1149,7 +1168,7 @@ func NewBlockchain(
 		eventManager:                    eventManager,
 		archivalMode:                    archivalMode,
 
-		blockIndex:     NewBlockIndex(db, snapshot, nil), // This tip will be set in _initChain.
+		blockIndex:     blockIndex,
 		blockViewCache: blockViewCache,
 		snapshotCache:  NewSnapshotCache(),
 

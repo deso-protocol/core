@@ -452,6 +452,7 @@ func NewServer(
 	_transactionValidationRefreshIntervalMillis uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
 	_checkpointSyncingProviders []string,
+	_blockIndexSize int,
 ) (
 	_srv *Server,
 	_err error,
@@ -548,7 +549,8 @@ func NewServer(
 
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
-		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode, _checkpointSyncingProviders)
+		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode, _checkpointSyncingProviders,
+		_blockIndexSize)
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewServer: Problem initializing blockchain"), true
 	}

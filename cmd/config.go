@@ -49,6 +49,9 @@ type Config struct {
 	DisableEncoderMigrations  bool
 	HypersyncMaxQueueSize     uint32
 
+	// Block Index Size
+	BlockIndexSize int
+
 	// PoS Validator
 	PosValidatorSeed string
 
@@ -139,6 +142,18 @@ func LoadConfig() *Config {
 	config.SnapshotBlockHeightPeriod = viper.GetUint64("snapshot-block-height-period")
 	config.DisableEncoderMigrations = viper.GetBool("disable-encoder-migrations")
 	config.HypersyncMaxQueueSize = viper.GetUint32("hypersync-max-queue-size")
+
+	// Block Index Size
+	config.BlockIndexSize = viper.GetInt("block-index-size")
+	if config.BlockIndexSize <= 0 {
+		glog.Fatal("Block index size must be greater than 0")
+	}
+	if config.BlockIndexSize < lib.MinBlockIndexSize {
+		glog.Fatalf("Block index size must be greater than %d", lib.MinBlockIndexSize)
+	}
+	if config.BlockIndexSize > lib.MaxBlockIndexSize {
+		glog.Fatalf("Block index size must be less than %d", lib.MaxBlockIndexSize)
+	}
 
 	// PoS Validator
 	config.PosValidatorSeed = viper.GetString("pos-validator-seed")
@@ -269,6 +284,8 @@ func (config *Config) Print() {
 	if config.MaxSyncBlockHeight > 0 {
 		glog.Infof("MaxSyncBlockHeight: %v", config.MaxSyncBlockHeight)
 	}
+
+	glog.Infof("BlockIndexSize: %v", config.BlockIndexSize)
 
 	if len(config.ConnectIPs) > 0 {
 		glog.Infof("Connect IPs: %s", config.ConnectIPs)

@@ -252,7 +252,7 @@ func TestHasValidBlockHeight(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{*genesisBlock.Hash: genesisBlock})
+	require.NoError(t, bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{*genesisBlock.Hash: genesisBlock}))
 	bc.blockIndex.blockIndexByHash.Put(*genesisBlock.Hash, genesisBlock)
 	// Create a block with a valid header.
 	randomPayload := RandomBytes(256)
@@ -303,7 +303,8 @@ func TestHasValidBlockHeight(t *testing.T) {
 
 	block.Header.Height = 2
 	// TODO: make sure setting to genesis block works.
-	bc.blockIndex = NewBlockIndex(bc.db, bc.snapshot, genesisBlock)
+	bc.blockIndex, err = NewBlockIndex(bc.db, bc.snapshot, genesisBlock, 1000)
+	require.NoError(t, err)
 	err = bc.hasValidBlockHeightPoS(block.Header)
 	require.Equal(t, err, RuleErrorMissingParentBlock)
 }
@@ -331,10 +332,10 @@ func TestUpsertBlockAndBlockNodeToDB(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
+	require.NoError(t, bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
-	})
+	}))
 	randomPayload := RandomBytes(256)
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
 	signature, err := randomBLSPrivateKey.Sign(randomPayload)
@@ -470,10 +471,10 @@ func TestHasValidBlockViewPoS(t *testing.T) {
 		ValidatorsVoteQC:             nil,
 		ValidatorsTimeoutAggregateQC: nil,
 	}, StatusBlockStored|StatusBlockValidated)
-	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
+	require.NoError(t, bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
 		*hash2: block2,
-	})
+	}))
 	randomPayload := RandomBytes(256)
 	randomBLSPrivateKey := _generateRandomBLSPrivateKey(t)
 	signature, err := randomBLSPrivateKey.Sign(randomPayload)
@@ -802,9 +803,9 @@ func TestGetLineageFromCommittedTip(t *testing.T) {
 		Height:         1,
 		ProposedInView: 1,
 	}, StatusBlockStored|StatusBlockValidated|StatusBlockCommitted)
-	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
+	require.NoError(t, bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: genesisNode,
-	})
+	}))
 	block := &MsgDeSoBlock{
 		Header: &MsgDeSoHeader{
 			Version:        HeaderVersion2,
@@ -1241,10 +1242,10 @@ func TestShouldReorg(t *testing.T) {
 			Height: 1,
 		},
 	}
-	bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
+	require.NoError(t, bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
 		*hash1: chain[0],
 		*hash3: chain[1],
-	})
+	}))
 
 	newBlock := &BlockNode{
 		Header: &MsgDeSoHeader{

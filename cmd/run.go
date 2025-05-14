@@ -86,6 +86,10 @@ func SetupRunFlags(cmd *cobra.Command) {
 		  is true.
 		- hypersync: Will sync by downloading historical state, and will NOT
 		  download historical blocks. Can only be set if HyperSync is true.`)
+	// Block Index Size
+	cmd.PersistentFlags().Uint64("block-index-size", lib.DefaultBlockIndexSize, "The number of blocks to keep in memory in the block "+
+		"index. Setting this to a lower number will reduce memory usage, but will require the node to go to disk "+
+		"more when fetching block nodes more often.")
 
 	// PoS Validator
 	cmd.PersistentFlags().String("pos-validator-seed", "", "A BIP39 seed phrase or seed hex used to generate the "+
