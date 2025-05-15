@@ -1963,6 +1963,6 @@ const BlockIndexMigrationFileName = "block_index_migration.txt"
 // BtcecPubKeyBytesLenUncompressed is a constant that was removed from newer version of Btcec
 const BtcecPubKeyBytesLenUncompressed = 65
 
-const DefaultBlockIndexSize = MaxBlockIndexNodes
+const DefaultBlockIndexSize = 100000
 const MaxBlockIndexSize = 10000000
 const MinBlockIndexSize = 10000
