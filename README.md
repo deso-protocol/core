@@ -85,3 +85,9 @@ The architecture for DeSo was heavily-inspired by Bitcoin. We also owe a debt
 of gratitude to the developers of [btcd](https://github.com/btcsuite/btcd) for
 producing a truly amazing Go Bitcoin client that served as a reference when
 building DeSo.
+
+# Have more questions?
+
+DeepWiki (powered by Devin AI) provides up-to-date documentation you can talk to for this repo, click the button below to try it out.
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/deso-protocol/core)
