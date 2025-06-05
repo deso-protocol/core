@@ -552,6 +552,8 @@ func (bc *Blockchain) checkAndStoreArchivalBlock(block *MsgDeSoBlock, blockHash 
 // stores the block in the block index with status VALIDATE_FAILED. It returns the resulting BlockNode.
 func (bc *Blockchain) storeValidateFailedBlockWithWrappedError(block *MsgDeSoBlock, hash *BlockHash, outerErr error) (
 	*BlockNode, error) {
+	glog.Errorf("storeValidateFailedBlockWithWrappedError: %v. block height: %d, block hash: %v",
+		outerErr, block.Header.Height, hash)
 	blockNode, innerErr := bc.storeValidateFailedBlockInBlockIndex(block, hash)
 	if innerErr != nil {
 		return nil, errors.Wrapf(innerErr,
@@ -673,6 +675,8 @@ func (bc *Blockchain) validateAndIndexBlockPoS(
 			return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem checking block timestamp")
 		}
 		if failsTimestampDriftCheck {
+			glog.Errorf("validateAndIndexBlockPoS: Block %v at height %d is too far in the future. Timestamp: %v",
+				blockHash, block.Header.Height, block.Header.TstampNanoSecs)
 			return blockNode, nil
 		}
 	}
@@ -746,6 +750,8 @@ func (bc *Blockchain) validateAndIndexBlockPoS(
 		return blockNode, errors.Wrap(err, "validateAndIndexBlockPoS: Problem checking block timestamp")
 	}
 	if failsTimestampDriftCheck {
+		glog.Errorf("validateAndIndexBlockPoS: Block %v at height %d is too far in the future. Timestamp: %v",
+			blockHash, block.Header.Height, block.Header.TstampNanoSecs)
 		return bc.storeBlockInBlockIndex(block, blockHash)
 	}
 
