@@ -288,7 +288,10 @@ func (txi *TXIndex) Update() error {
 	if !exists || err != nil {
 		return fmt.Errorf("Update: Problem getting block at height %d: %v", txindexTipNode.Height+1, err)
 	}
-	for !blockToAttach.Header.PrevBlockHash.IsEqual(blockTipNode.Hash) {
+	for blockToAttach != nil &&
+		blockToAttach.Header != nil &&
+		blockToAttach.Header.PrevBlockHash != nil &&
+		!blockToAttach.Header.PrevBlockHash.IsEqual(blockTipNode.Hash) {
 		if txi.killed {
 			glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while attaching blocks"))
 			break
@@ -359,9 +362,10 @@ func (txi *TXIndex) Update() error {
 			return fmt.Errorf("Update: Problem attaching block %v: %v",
 				blockToAttach, err)
 		}
+		prevBlockToAttachHeight := blockToAttach.Height
 		blockToAttach, exists, err = txi.CoreChain.GetBlockFromBestChainByHeight(uint64(blockToAttach.Height+1), false)
 		if !exists || err != nil {
-			return fmt.Errorf("Update: Problem getting block at height %d: %v", blockToAttach.Height+1, err)
+			return fmt.Errorf("Update: Problem getting block at height %d: %v", prevBlockToAttachHeight+1, err)
 		}
 	}
 
