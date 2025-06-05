@@ -288,7 +288,7 @@ func (txi *TXIndex) Update() error {
 	if !exists || err != nil {
 		return fmt.Errorf("Update: Problem getting block at height %d: %v", txindexTipNode.Height+1, err)
 	}
-	for !blockToAttach.Hash.IsEqual(blockTipNode.Hash) {
+	for !blockToAttach.Header.PrevBlockHash.IsEqual(blockTipNode.Hash) {
 		if txi.killed {
 			glog.Infof(CLog(Yellow, "TxIndex: Update: Killed while attaching blocks"))
 			break
@@ -300,7 +300,8 @@ func (txi *TXIndex) Update() error {
 		glog.V(2).Infof("Update: Attaching block (height: %d, hash: %v)",
 			blockToAttach.Height, blockToAttach.Hash)
 
-		blockMsg, err := GetBlock(blockToAttach.Hash, txi.CoreChain.DB(), nil)
+		var blockMsg *MsgDeSoBlock
+		blockMsg, err = GetBlock(blockToAttach.Hash, txi.CoreChain.DB(), nil)
 		if err != nil {
 			return fmt.Errorf("Update: Problem fetching attach block "+
 				"with hash %v: %v", blockToAttach.Hash, err)
@@ -330,19 +331,19 @@ func (txi *TXIndex) Update() error {
 			// - Compute its mapping values, which may include custom metadata fields
 			// - add all its mappings to the db.
 			for txnIndexInBlock, txn := range blockMsg.Txns {
-				txnMeta, err := ConnectTxnAndComputeTransactionMetadata(
+				txnMeta, innerErr := ConnectTxnAndComputeTransactionMetadata(
 					txn, utxoView, blockToAttach.Hash, blockToAttach.Height,
 					blockToAttach.Header.TstampNanoSecs, uint64(txnIndexInBlock))
-				if err != nil {
+				if innerErr != nil {
 					return fmt.Errorf("Update: Problem connecting txn %v to txindex: %v",
-						txn, err)
+						txn, innerErr)
 				}
 
-				err = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockMsg.Header.Height,
+				innerErr = DbPutTxindexTransactionMappingsWithTxn(dbTxn, nil, blockMsg.Header.Height,
 					txn, txi.Params, txnMeta, txi.CoreChain.eventManager)
-				if err != nil {
+				if innerErr != nil {
 					return fmt.Errorf("Update: Problem adding txn %v to txindex: %v",
-						txn, err)
+						txn, innerErr)
 				}
 			}
 			return nil
@@ -358,7 +359,6 @@ func (txi *TXIndex) Update() error {
 			return fmt.Errorf("Update: Problem attaching block %v: %v",
 				blockToAttach, err)
 		}
-		var exists bool
 		blockToAttach, exists, err = txi.CoreChain.GetBlockFromBestChainByHeight(uint64(blockToAttach.Height+1), false)
 		if !exists || err != nil {
 			return fmt.Errorf("Update: Problem getting block at height %d: %v", blockToAttach.Height+1, err)
