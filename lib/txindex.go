@@ -364,8 +364,12 @@ func (txi *TXIndex) Update() error {
 		}
 		prevBlockToAttachHeight := blockToAttach.Height
 		blockToAttach, exists, err = txi.CoreChain.GetBlockFromBestChainByHeight(uint64(blockToAttach.Height+1), false)
-		if !exists || err != nil {
+		if err != nil {
 			return fmt.Errorf("Update: Problem getting block at height %d: %v", prevBlockToAttachHeight+1, err)
+		}
+		if !exists {
+			glog.Infof("Update: No more blocks to attach to txindex, exiting loop")
+			break
 		}
 	}
 
