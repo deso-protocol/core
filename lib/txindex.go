@@ -189,7 +189,7 @@ func (txi *TXIndex) Start() {
 				break
 			}
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 }
