@@ -285,10 +285,13 @@ func (srv *Server) GetMiner() *DeSoMiner {
 }
 
 func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) {
+	now := time.Now()
+	fmt.Printf("BroadcastTransaction: %v\n", now)
 	txnHash := txn.Hash()
 	if txnHash == nil {
 		return nil, fmt.Errorf("BroadcastTransaction: Txn hash is nil")
 	}
+	fmt.Printf("Adding transaction to mempool, elapsed: %v\n", time.Since(now))
 	// Use the backendServer to add the transaction to the mempool and
 	// relay it to peers. When a transaction is created by the user there
 	// is no need to consider a rateLimit and also no need to verifySignatures
@@ -298,6 +301,7 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 		return nil, errors.Wrapf(err, "BroadcastTransaction: ")
 	}
 
+	fmt.Printf("Transaction added to mempool, elapsed: %v\n", time.Since(now))
 	// At this point, we know the transaction has been run through the mempool.
 	// Now wait for an update of the ReadOnlyUtxoView so we don't break anything.
 	validationErr := srv.GetMempool().WaitForTxnValidation(txnHash)
@@ -305,6 +309,8 @@ func (srv *Server) BroadcastTransaction(txn *MsgDeSoTxn) ([]*MsgDeSoTxn, error) 
 		return nil, fmt.Errorf("BroadcastTransaction: Transaction %v "+
 			"was not validated due to error: %v", txnHash, validationErr)
 	}
+
+	fmt.Printf("Transaction validated, elapsed: %v\n", time.Since(now))
 
 	return mempoolTxs, nil
 }
