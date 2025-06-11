@@ -1695,7 +1695,11 @@ func (bc *Blockchain) isHyperSyncCondition() bool {
 		headerTipHeight-(headerTipHeight%snapshotBlockHeightPeriod) < posSetupForkHeight {
 		snapshotBlockHeightPeriod = bc.params.DefaultPoWSnapshotBlockHeightPeriod
 	}
-	if uint64(headerTip.Height-blockTip.Height) >= snapshotBlockHeightPeriod {
+	// If the header tip is less than the block tip, then we're not in a hypersync condition.
+	// This happens if we have a timeout and receive two header at the same height while
+	// we have already received the descendent of one of them.
+	if headerTip.Height > blockTip.Height &&
+		uint64(headerTip.Height-blockTip.Height) >= snapshotBlockHeightPeriod {
 		return true
 	}
 	return false
