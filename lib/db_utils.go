@@ -10119,6 +10119,8 @@ func DBGetMatchingDAOCoinLimitOrders(
 	// price or the input order's quantity is fulfilled.
 	opts := badger.DefaultIteratorOptions
 	opts.Reverse = true
+	opts.Prefix = prefixKey
+	opts.PrefetchValues = false
 	iterator := txn.NewIterator(opts)
 	defer iterator.Close()
 
