@@ -8759,6 +8759,8 @@ func DBGetNFTEntriesForPKID(
 	ownerPKID *PKID,
 	limit int,
 	lastKeyBytes []byte,
+	isForSale *bool,
+	isPending *bool,
 ) (
 	_nftEntries []*NFTEntry,
 	_lastKeyBytes []byte,
@@ -8766,23 +8768,73 @@ func DBGetNFTEntriesForPKID(
 	var nftEntries []*NFTEntry
 	prefix := append([]byte{}, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
-	var lastSeenKey []byte
+	if isForSale != nil {
+		keyPrefix = append(keyPrefix, BoolToByte(*isForSale))
+	}
+	lastSeenKey := keyPrefix
+	haveSeenLastSeenKey := true
 	if len(lastKeyBytes) > 0 {
 		lastSeenKey = lastKeyBytes
+		if limit > 0 {
+			limit += 1
+		}
 	}
-	keyBytesFound, entryByteStringsFound, _ := EnumerateKeysForPrefixWithLimitOffsetOrder(handle, keyPrefix, limit, lastSeenKey, false, NewSet[string]([]string{}))
-	//keyBytesFound, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false, true)
-	for _, byteString := range entryByteStringsFound {
-		currentEntry := &NFTEntry{}
-		rr := bytes.NewReader(byteString)
-		DecodeFromBytes(currentEntry, rr)
-		nftEntries = append(nftEntries, currentEntry)
+
+	opts := badger.DefaultIteratorOptions
+	opts.Prefix = keyPrefix
+	var lastSeenKeyBytes []byte
+	dbErr := handle.View(func(txn *badger.Txn) error {
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+		for nodeIterator.Seek(lastSeenKey); nodeIterator.ValidForPrefix(keyPrefix); nodeIterator.Next() {
+			// Break if at or beyond limit.
+			if limit > 0 && len(nftEntries) >= limit {
+				break
+			}
+			key := nodeIterator.Item().Key()
+			// Skip if key is before the last seen key. The caller
+			// needs to filter out the lastSeenKey in the view as
+			// we return any key >= the lastSeenKey.
+			if !haveSeenLastSeenKey {
+				if !bytes.Equal(key, lastSeenKey) {
+					continue
+				}
+				haveSeenLastSeenKey = true
+			}
+
+			val, err := nodeIterator.Item().ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			currentEntry := &NFTEntry{}
+			rr := bytes.NewReader(val)
+			DecodeFromBytes(currentEntry, rr)
+			// If isPending is specified, filter by it.
+			if isPending != nil && currentEntry.IsPending != *isPending {
+				continue
+			}
+			nftEntries = append(nftEntries, currentEntry)
+			lastSeenKeyBytes = append([]byte{}, key...)
+		}
+		return nil
+	})
+	if dbErr != nil {
+		glog.Errorf("DBGetNFTEntriesForPKID: Problem reading NFTEntry, error: (%v)", dbErr)
 	}
-	var lastKey []byte
-	if len(keyBytesFound) > 0 {
-		lastKey = keyBytesFound[len(keyBytesFound)-1]
-	}
-	return nftEntries, lastKey
+
+	//keyBytesFound, entryByteStringsFound, _ := EnumerateKeysForPrefixWithLimitOffsetOrder(handle, keyPrefix, limit, lastSeenKey, false, NewSet[string]([]string{}))
+	////keyBytesFound, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false, true)
+	//for _, byteString := range entryByteStringsFound {
+	//	currentEntry := &NFTEntry{}
+	//	rr := bytes.NewReader(byteString)
+	//	DecodeFromBytes(currentEntry, rr)
+	//	nftEntries = append(nftEntries, currentEntry)
+	//}
+	//var lastKey []byte
+	//if len(keyBytesFound) > 0 {
+	//	lastKey = keyBytesFound[len(keyBytesFound)-1]
+	//}
+	return nftEntries, lastSeenKeyBytes
 }
 
 // =======================================================================================

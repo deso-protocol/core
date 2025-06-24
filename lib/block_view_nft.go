@@ -98,6 +98,8 @@ func (bav *UtxoView) GetNFTEntriesForPKID(
 	ownerPKID *PKID,
 	limit int,
 	lastKeyBytes []byte,
+	isForSale *bool,
+	isPending *bool,
 ) ([]*NFTEntry, []byte) {
 	var dbNFTEntries []*NFTEntry
 	var lastSeenKey []byte
@@ -107,7 +109,7 @@ func (bav *UtxoView) GetNFTEntriesForPKID(
 			dbNFTEntries = append(dbNFTEntries, nft.NewNFTEntry())
 		}
 	} else {
-		dbNFTEntries, lastSeenKey = DBGetNFTEntriesForPKID(bav.Handle, ownerPKID, limit, lastKeyBytes)
+		dbNFTEntries, lastSeenKey = DBGetNFTEntriesForPKID(bav.Handle, ownerPKID, limit, lastKeyBytes, isForSale, isPending)
 	}
 
 	// Make sure all of the DB entries are loaded in the view.
