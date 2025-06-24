@@ -94,7 +94,11 @@ func (bav *UtxoView) GetNFTEntriesForPostHash(nftPostHash *BlockHash) []*NFTEntr
 	return nftEntries
 }
 
-func (bav *UtxoView) GetNFTEntriesForPKID(ownerPKID *PKID, limit int, lastKeyBytes []byte) ([]*NFTEntry, []byte) {
+func (bav *UtxoView) GetNFTEntriesForPKID(
+	ownerPKID *PKID,
+	limit int,
+	lastKeyBytes []byte,
+) ([]*NFTEntry, []byte) {
 	var dbNFTEntries []*NFTEntry
 	var lastSeenKey []byte
 	if bav.Postgres != nil {
@@ -119,7 +123,7 @@ func (bav *UtxoView) GetNFTEntriesForPKID(ownerPKID *PKID, limit int, lastKeyByt
 	// Loop over the view and build the final set of NFTEntries to return.
 	nftEntries := []*NFTEntry{}
 	for _, nftEntry := range bav.NFTKeyToNFTEntry {
-		if !nftEntry.isDeleted && reflect.DeepEqual(nftEntry.OwnerPKID, ownerPKID) {
+		if !nftEntry.isDeleted && nftEntry.OwnerPKID.Eq(ownerPKID) {
 			nftEntries = append(nftEntries, nftEntry)
 		}
 	}
