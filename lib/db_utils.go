@@ -8754,18 +8754,35 @@ func DBGetNFTEntryByNFTOwnershipDetails(db *badger.DB, snap *Snapshot, ownerPKID
 }
 
 // DBGetNFTEntriesForPKID gets NFT Entries *from the DB*. Does not include mempool txns.
-func DBGetNFTEntriesForPKID(handle *badger.DB, ownerPKID *PKID) (_nftEntries []*NFTEntry) {
+func DBGetNFTEntriesForPKID(
+	handle *badger.DB,
+	ownerPKID *PKID,
+	limit int,
+	lastKeyBytes []byte,
+) (
+	_nftEntries []*NFTEntry,
+	_lastKeyBytes []byte,
+) {
 	var nftEntries []*NFTEntry
 	prefix := append([]byte{}, Prefixes.PrefixPKIDIsForSaleBidAmountNanosPostHashSerialNumberToNFTEntry...)
 	keyPrefix := append(prefix, ownerPKID[:]...)
-	_, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false, false)
+	var lastSeenKey []byte
+	if len(lastKeyBytes) > 0 {
+		lastSeenKey = lastKeyBytes
+	}
+	keyBytesFound, entryByteStringsFound, _ := EnumerateKeysForPrefixWithLimitOffsetOrder(handle, keyPrefix, limit, lastSeenKey, false, NewSet[string]([]string{}))
+	//keyBytesFound, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false, true)
 	for _, byteString := range entryByteStringsFound {
 		currentEntry := &NFTEntry{}
 		rr := bytes.NewReader(byteString)
 		DecodeFromBytes(currentEntry, rr)
 		nftEntries = append(nftEntries, currentEntry)
 	}
-	return nftEntries
+	var lastKey []byte
+	if len(keyBytesFound) > 0 {
+		lastKey = keyBytesFound[len(keyBytesFound)-1]
+	}
+	return nftEntries, lastKey
 }
 
 // =======================================================================================
