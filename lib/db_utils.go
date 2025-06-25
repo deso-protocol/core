@@ -5486,8 +5486,8 @@ func InitDbWithDeSoGenesisBlock(params *DeSoParams, handle *badger.DB,
 		blockHash,
 		0, // Height
 		diffTarget,
-		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]), // CumWork
-		genesisBlock.Header, // Header
+		BytesToBigint(ExpectedWorkForBlockHash(diffTarget)[:]),                                                 // CumWork
+		genesisBlock.Header,                                                                                    // Header
 		StatusHeaderValidated|StatusBlockProcessed|StatusBlockStored|StatusBlockValidated|StatusBlockCommitted, // Status
 	)
 
@@ -8822,18 +8822,6 @@ func DBGetNFTEntriesForPKID(
 		glog.Errorf("DBGetNFTEntriesForPKID: Problem reading NFTEntry, error: (%v)", dbErr)
 	}
 
-	//keyBytesFound, entryByteStringsFound, _ := EnumerateKeysForPrefixWithLimitOffsetOrder(handle, keyPrefix, limit, lastSeenKey, false, NewSet[string]([]string{}))
-	////keyBytesFound, entryByteStringsFound := _enumerateKeysForPrefix(handle, keyPrefix, false, true)
-	//for _, byteString := range entryByteStringsFound {
-	//	currentEntry := &NFTEntry{}
-	//	rr := bytes.NewReader(byteString)
-	//	DecodeFromBytes(currentEntry, rr)
-	//	nftEntries = append(nftEntries, currentEntry)
-	//}
-	//var lastKey []byte
-	//if len(keyBytesFound) > 0 {
-	//	lastKey = keyBytesFound[len(keyBytesFound)-1]
-	//}
 	return nftEntries, lastSeenKeyBytes
 }
 
@@ -9908,7 +9896,7 @@ func DBGetPaginatedPostsOrderedByTime(
 	postIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startPostPrefix, Prefixes.PrefixTstampNanosPostHash, /*validForPrefix*/
 		len(Prefixes.PrefixTstampNanosPostHash)+len(maxUint64Tstamp)+HashSizeBytes, /*keyLen*/
-		numToFetch, reverse /*reverse*/, false /*fetchValues*/)
+		numToFetch, reverse                                                         /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DBGetPaginatedPostsOrderedByTime: %v", err)
 	}
@@ -10035,7 +10023,7 @@ func DBGetPaginatedProfilesByDeSoLocked(
 	profileIndexKeys, _, err := DBGetPaginatedKeysAndValuesForPrefix(
 		db, startProfilePrefix, Prefixes.PrefixCreatorDeSoLockedNanosCreatorPKID, /*validForPrefix*/
 		keyLen /*keyLen*/, numToFetch,
-		true /*reverse*/, false /*fetchValues*/)
+		true   /*reverse*/, false /*fetchValues*/)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DBGetPaginatedProfilesByDeSoLocked: %v", err)
 	}
