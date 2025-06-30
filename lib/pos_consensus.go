@@ -352,7 +352,7 @@ func (fc *FastHotStuffConsensus) handleBlockProposalEvent(
 // 3. Process the vote in the consensus module
 // 4. Broadcast the vote msg to the network
 func (fc *FastHotStuffConsensus) HandleLocalVoteEvent(event *consensus.FastHotStuffEvent) error {
-	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalVoteEvent: %s", event.ToString())
+	glog.V(1).Infof("FastHotStuffConsensus.HandleLocalVoteEvent: %s", event.ToString())
 	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalVoteEvent: %s", fc.fastHotStuffEventLoop.ToString())
 
 	// Hold a read lock on the consensus. This is because we need to check the
@@ -444,7 +444,7 @@ func (fc *FastHotStuffConsensus) HandleValidatorVote(pp *Peer, msg *MsgDeSoValid
 // 3. Process the timeout in the consensus module
 // 4. Broadcast the timeout msg to the network
 func (fc *FastHotStuffConsensus) HandleLocalTimeoutEvent(event *consensus.FastHotStuffEvent) error {
-	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: %s", event.ToString())
+	glog.V(1).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: %s", event.ToString())
 	glog.V(2).Infof("FastHotStuffConsensus.HandleLocalTimeoutEvent: %s", fc.fastHotStuffEventLoop.ToString())
 
 	// Hold a read lock on the consensus. This is because we need to check the
