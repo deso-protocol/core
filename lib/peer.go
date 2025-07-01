@@ -566,7 +566,7 @@ func (pp *Peer) cleanupMessageProcessor() {
 
 	// We assume that no more elements will be added to the message queue once this function
 	// is called.
-	glog.Infof("StartDeSoMessageProcessor: Cleaning up message queue for peer: %v", pp)
+	glog.V(1).Infof("StartDeSoMessageProcessor: Cleaning up message queue for peer: %v", pp)
 	pp.messageQueue = nil
 	// Set a few more things to nil just to make sure the garbage collector doesn't
 	// get confused when freeing up this Peer's memory. This is to fix a bug where
@@ -579,11 +579,11 @@ func (pp *Peer) cleanupMessageProcessor() {
 
 func (pp *Peer) StartDeSoMessageProcessor() {
 	pp.startGroup.Done()
-	glog.Infof("StartDeSoMessageProcessor: Starting for peer %v", pp)
+	glog.V(1).Infof("StartDeSoMessageProcessor: Starting for peer %v", pp)
 	for {
 		if pp.disconnected != 0 {
 			pp.cleanupMessageProcessor()
-			glog.Infof("StartDeSoMessageProcessor: Stopping because peer disconnected: %v", pp)
+			glog.V(1).Infof("StartDeSoMessageProcessor: Stopping because peer disconnected: %v", pp)
 			return
 		}
 		msgToProcess := pp.MaybeDequeueDeSoMessage()
@@ -1267,7 +1267,7 @@ out:
 }
 
 func (pp *Peer) Start() {
-	glog.Infof("Peer.Start: Starting peer %v", pp)
+	glog.V(1).Infof("Peer.Start: Starting peer %v", pp)
 	// The protocol has been negotiated successfully so start processing input
 	// and output messages.
 	pp.startGroup.Add(4)
@@ -1362,7 +1362,7 @@ func (pp *Peer) ReadDeSoMessage() (DeSoMessage, error) {
 // Disconnect closes a peer's network connection.
 func (pp *Peer) Disconnect(reason string) {
 	// Only run the logic the first time Disconnect is called.
-	glog.V(0).Infof(CLog(Yellow, "Peer.Disconnect: Starting for Peer %v with reason: %v"), pp, reason)
+	glog.V(1).Infof(CLog(Yellow, "Peer.Disconnect: Starting for Peer %v with reason: %v"), pp, reason)
 	if atomic.LoadInt32(&pp.disconnected) != 0 {
 		glog.V(1).Infof("Peer.Disconnect: Disconnect call ignored since it was already called before for Peer %v", pp)
 		return
