@@ -806,6 +806,8 @@ func (mp *PosMempool) validateTransactions() error {
 	if !mp.IsRunning() {
 		return nil
 	}
+	glog.V(1).Infof("PosMempool.validateTransactions: Starting transaction validation...")
+	currTime := time.Now()
 
 	// We hold a read-lock on the mempool to get the transactions and the latest block view.
 	mp.RLock()
@@ -876,6 +878,8 @@ func (mp *PosMempool) validateTransactions() error {
 
 	// Increment the augmentedLatestBlockViewSequenceNumber.
 	atomic.AddInt64(&mp.augmentedLatestBlockViewSequenceNumber, 1)
+	// Log the time taken to validate the transactions.
+	glog.V(1).Infof("PosMempool.validateTransactions: Finished transaction validation in %v", time.Since(currTime))
 
 	return nil
 }
