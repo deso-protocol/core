@@ -10320,6 +10320,54 @@ func DBPutDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCo
 	return nil
 }
 
+func DBUpsertDAOCoinLimitOrderWithTxn(
+	txn *badger.Txn,
+	snap *Snapshot,
+	order *DAOCoinLimitOrderEntry,
+	blockHeight uint64,
+	eventManager *EventManager,
+) error {
+	if order == nil {
+		return nil
+	}
+
+	orderBytes := EncodeToBytes(blockHeight, order)
+	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
+	key := DBKeyForDAOCoinLimitOrder(order)
+
+	currBytes, err := DBGetWithTxn(txn, snap, key)
+	if err != nil {
+		if !errors.Is(err, badger.ErrKeyNotFound) {
+			return errors.Wrapf(err, "DBUpsertDAOCoinLimitOrderWithTxn: problem getting limit order")
+		}
+	} else {
+		// If the order already exists, we need to compare the bytes.
+		// If the bytes are the same, we don't need to update.
+		if bytes.Equal(currBytes, orderBytes) {
+			// No need to update if the bytes are the same.
+			return nil
+		}
+	}
+
+	if err = DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
+		return errors.Wrapf(err, "DBUpsertDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
+	key = DBKeyForDAOCoinLimitOrderByTransactorPKID(order)
+	if err = DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
+		return errors.Wrapf(err, "DBUpsertDAOCoinLimitOrderWithTxn: problem storing limit order")
+	}
+
+	// Store in index: PrefixDAOCoinLimitOrderByOrderID
+	key = DBKeyForDAOCoinLimitOrderByOrderID(order)
+	if err = DBSetWithTxn(txn, snap, key, orderBytes, eventManager); err != nil {
+		return errors.Wrapf(err, "DBUpsertDAOCoinLimitOrderWithTxn: problem storing order in index PrefixDAOCoinLimitOrderByOrderID")
+	}
+
+	return nil
+}
+
 func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, eventManager *EventManager, entryIsDeleted bool) error {
 	if order == nil {
 		return nil
