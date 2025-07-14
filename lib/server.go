@@ -362,10 +362,10 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 }
 
 func RunDBMigrationsOnce(db *badger.DB, snapshot *Snapshot, params *DeSoParams) error {
-	if err := RunBlockIndexMigrationOnce(db, snapshot, params); err != nil {
+	if err := RunBlockIndexMigrationOnce(db, nil, params); err != nil {
 		return errors.Wrapf(err, "RunDBMigrationsOnce: Problem running block index migration")
 	}
-	if err := RunDAOCoinLimitOrderMigrationOnce(db, snapshot); err != nil {
+	if err := RunDAOCoinLimitOrderMigrationOnce(db, nil); err != nil {
 		return errors.Wrapf(err, "RunDBMigrationsOnce: Problem running DAOCoin limit order migration")
 	}
 	return nil
