@@ -10073,13 +10073,22 @@ func DBGetPaginatedProfilesByDeSoLocked(
 
 func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := DBPrefixKeyForDAOCoinLimitOrder(order)
-	key = append(key, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-	// Store MaxUint32 - block height to guarantee FIFO
-	// orders as we seek in reverse order.
-	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
+	// Store MaxUint256 - ScaledExchangeRateCoinsToSellPerCoinToBuy so we don't have to iterate in reverse.
+	key = append(key, FixedWidthEncodeUint256(uint256.NewInt(0).Sub(MaxUint256, order.ScaledExchangeRateCoinsToSellPerCoinToBuy))...)
+	key = append(key, _EncodeUint32(order.BlockHeight)...)
 	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
+
+//func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+//	key := DBPrefixKeyForDAOCoinLimitOrder(order)
+//	key = append(key, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+//	// Store MaxUint32 - block height to guarantee FIFO
+//	// orders as we seek in reverse order.
+//	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
+//	key = append(key, order.OrderID.ToBytes()...)
+//	return key
+//}
 
 func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
@@ -10175,7 +10184,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 	// We break once we hit the input order's inverted scaled
 	// price or the input order's quantity is fulfilled.
 	opts := badger.DefaultIteratorOptions
-	opts.Reverse = true
+	//opts.Reverse = true
 	opts.Prefix = prefixKey
 	opts.PrefetchValues = false
 	iterator := txn.NewIterator(opts)
