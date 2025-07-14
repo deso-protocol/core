@@ -2594,6 +2594,10 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		)))
 		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
 		isOrphan = len(blockHashesToRequest) > 0
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Finished processing block %v with FastHotStuffConsensus with SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
 	} else if !verifySignatures {
 		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v WITHOUT signature checking because SyncState=%v for peer %v",
