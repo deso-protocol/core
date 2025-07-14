@@ -400,14 +400,14 @@ func RunDAOCoinLimitOrderMigrationOnce(db *badger.DB, snapshot *Snapshot) error 
 		glog.V(2).Info("DAOCoinLimitOrder index migration has already been run")
 		return nil
 	}
-	glog.V(0).Info("Running block index migration")
+	glog.V(0).Info("Running dao coin limit order index migration")
 	if err = RunDAOCoinLimitOrderMigration(db, snapshot, nil); err != nil {
-		return errors.Wrapf(err, "Problem running block index migration")
+		return errors.Wrapf(err, "Problem running dao coin limit order index migration")
 	}
 	if err = SaveBoolToFile(limitOrderMigrationFileName, true); err != nil {
-		return errors.Wrapf(err, "Problem saving block index migration file")
+		return errors.Wrapf(err, "Problem saving dao coin limit order index migration file")
 	}
-	glog.V(2).Info("Block index migration complete")
+	glog.V(2).Info("dao coin limit order index migration complete")
 	return nil
 }
 
