@@ -361,9 +361,19 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
+func RunDBMigrationsOnce(db *badger.DB, snapshot *Snapshot, params *DeSoParams) error {
+	if err := RunBlockIndexMigrationOnce(db, snapshot, params); err != nil {
+		return errors.Wrapf(err, "RunDBMigrationsOnce: Problem running block index migration")
+	}
+	if err := RunDAOCoinLimitOrderMigrationOnce(db, snapshot); err != nil {
+		return errors.Wrapf(err, "RunDBMigrationsOnce: Problem running DAOCoin limit order migration")
+	}
+	return nil
+}
+
 // RunBlockIndexMigrationOnce runs the block index migration once and saves a file to
 // indicate that it has been run.
-func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
+func RunBlockIndexMigrationOnce(db *badger.DB, snapshot *Snapshot, params *DeSoParams) error {
 	blockIndexMigrationFileName := filepath.Join(db.Opts().Dir, BlockIndexMigrationFileName)
 	glog.V(2).Info("FileName: ", blockIndexMigrationFileName)
 	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
@@ -372,10 +382,29 @@ func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
 		return nil
 	}
 	glog.V(0).Info("Running block index migration")
-	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
+	if err = RunBlockIndexMigration(db, snapshot, nil, params); err != nil {
 		return errors.Wrapf(err, "Problem running block index migration")
 	}
 	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
+		return errors.Wrapf(err, "Problem saving block index migration file")
+	}
+	glog.V(2).Info("Block index migration complete")
+	return nil
+}
+
+func RunDAOCoinLimitOrderMigrationOnce(db *badger.DB, snapshot *Snapshot) error {
+	limitOrderMigrationFileName := filepath.Join(db.Opts().Dir, DAOCoinLimitOrderMigrationFileName)
+	glog.V(2).Info("FileName: ", limitOrderMigrationFileName)
+	hasRunMigration, err := ReadBoolFromFile(limitOrderMigrationFileName)
+	if err == nil && hasRunMigration {
+		glog.V(2).Info("DAOCoinLimitOrder index migration has already been run")
+		return nil
+	}
+	glog.V(0).Info("Running block index migration")
+	if err = RunDAOCoinLimitOrderMigration(db, snapshot, nil); err != nil {
+		return errors.Wrapf(err, "Problem running block index migration")
+	}
+	if err = SaveBoolToFile(limitOrderMigrationFileName, true); err != nil {
 		return errors.Wrapf(err, "Problem saving block index migration file")
 	}
 	glog.V(2).Info("Block index migration complete")

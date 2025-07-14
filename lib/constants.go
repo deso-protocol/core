@@ -1959,6 +1959,7 @@ const RoutePathGetCommittedTipBlockInfo = "/api/v0/get-committed-tip-block-info"
 // that indicates whether the block index migration has been run. See RunBlockIndexMigrationOnce
 // for more information.
 const BlockIndexMigrationFileName = "block_index_migration.txt"
+const DAOCoinLimitOrderMigrationFileName = "dao_coin_limit_order_migration.txt"
 
 // BtcecPubKeyBytesLenUncompressed is a constant that was removed from newer version of Btcec
 const BtcecPubKeyBytesLenUncompressed = 65

@@ -328,9 +328,10 @@ type DBPrefixes struct {
 	//   _PrefixDAOCoinLimitOrderByOrderID
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
-	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true" core_state:"true"`
+	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
+	PrefixNewDAOCoinLimitOrder              []byte `prefix_id:"[99]" is_state:"true" core_state:"true"`
 
 	// User Association prefixes
 	// PrefixUserAssociationByID:
@@ -615,7 +616,7 @@ type DBPrefixes struct {
 	// to find a block node given its hash was to do a full scan of
 	// PrefixHeightHashToNodeInfo.
 	PrefixHashToHeight []byte `prefix_id:"[98]"`
-	// NEXT_TAG: 99
+	// NEXT_TAG: 100
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -915,6 +916,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry) {
 		// prefix_id:"[96]"
 		return true, &BLSPublicKeyPKIDPairEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixNewDAOCoinLimitOrder) {
+		// prefix_id:"[99]"
+		return true, &DAOCoinLimitOrderEntry{}
 	}
 
 	return true, nil
@@ -5887,6 +5891,82 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 	})
 }
 
+// RunDAOCoinLimitOrderMigration runs a migration to update the key used in the DAOCoinLimitOrderPrefix to
+// avoid reverse iteration.
+func RunDAOCoinLimitOrderMigration(
+	handle *badger.DB,
+	snapshot *Snapshot,
+	eventManager *EventManager,
+) error {
+	bestHash := DbGetBestHash(handle, snapshot, ChainTypeDeSoBlock)
+	blockHeight := uint64(0)
+	if bestHash != nil {
+		var err error
+		blockHeight, err = GetHeightForHash(handle, snapshot, bestHash)
+		if err != nil {
+			return errors.Wrapf(err, "RunDAOCoinLimitOrderMigration: Problem getting height for best hash %v", bestHash)
+		}
+	}
+	return handle.Update(func(txn *badger.Txn) error {
+
+		// Get the prefix for the height hash to node index.
+		prefix := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		// We don't need values for this migration since the height and hash are in the key.
+		opts.PrefetchValues = false
+		nodeIterator := txn.NewIterator(opts)
+		defer nodeIterator.Close()
+		// Initialize a map to store the dao coin limit orders.
+		ordersMap := make(map[BlockHash]*DAOCoinLimitOrderEntry)
+		// Iterate over all the keys in the height hash to node index, extract the height and hash,
+		// and batch write every 10k entries to the hash to height index.
+		startTime := time.Now()
+		ctr := 0
+		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
+			item := nodeIterator.Item().Key()
+			value, err := nodeIterator.Item().ValueCopy(nil)
+			if err != nil {
+				return errors.Wrapf(err, "RunDAOCoinLimitOrderMigration: Problem getting value for key %v", item)
+			}
+
+			// Parse the value to get the DAOCoinLimitOrderEntry.
+			order := &DAOCoinLimitOrderEntry{}
+			rr := bytes.NewReader(value)
+			if exist, err := DecodeFromBytes(order, rr); !exist || err != nil {
+				return errors.Wrapf(err, "RunDAOCoinLimitOrderMigration: decoding order from bytes for key %v", item)
+			}
+
+			// Add to the map
+			ordersMap[*order.OrderID] = order
+
+			// If we have fewer than 10K entries, continue.
+			if len(ordersMap) < 10000 {
+				continue
+			}
+			ctr++
+			if ctr%10 == 0 {
+				glog.V(0).Infof("Time to run DAOCoinLimitOrderMigration for %v orders: %v", ctr*10000, time.Since(startTime))
+			}
+			// If we have more than 10K entries, batch write the entries to the hash to height index
+			// and reset the map.
+			innerErr := MigrateDAOCoinLimitOrderBatch(handle, snapshot, blockHeight, ordersMap, eventManager)
+			if innerErr != nil {
+				return errors.Wrap(innerErr, "RunDAOCoinLimitOrderMigration: Problem migrating DAO coin limit order batch")
+			}
+			ordersMap = make(map[BlockHash]*DAOCoinLimitOrderEntry)
+		}
+		// If we have any entries left in the map, batch write them to the hash to height index.
+		if len(ordersMap) > 0 {
+			innerErr := MigrateDAOCoinLimitOrderBatch(handle, snapshot, blockHeight, ordersMap, eventManager)
+			if innerErr != nil {
+				return errors.Wrap(innerErr, "RunDAOCoinLimitOrderMigration: Problem migrating DAO coin limit order batch")
+			}
+		}
+		return nil
+	})
+}
+
 // TODO: refactor to actually get the whole best chain if that's
 // what someone wants. It'll take a while and a lot of memory.
 func GetBestChain(tipNode *BlockNode, blockIndex *BlockIndex) ([]*BlockNode, error) {
@@ -10076,21 +10156,38 @@ func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	// Store MaxUint256 - ScaledExchangeRateCoinsToSellPerCoinToBuy so we don't have to iterate in reverse.
 	key = append(key, FixedWidthEncodeUint256(uint256.NewInt(0).Sub(MaxUint256, order.ScaledExchangeRateCoinsToSellPerCoinToBuy))...)
 	key = append(key, _EncodeUint32(order.BlockHeight)...)
+	// Store MaxBlockHash - OrderID so we don't have to iterate in reverse.
+	key = append(key, invertByteSlice(order.OrderID.ToBytes())...)
+	return key
+}
+
+// Invert a byte slice by subtracting each byte from 0xff.
+func invertByteSlice(a []byte) []byte {
+	result := make([]byte, len(a))
+	for i := range a {
+		result[i] = 0xff - a[i]
+	}
+	return result
+}
+
+func OLDDBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+	key := DBPrefixKeyForDAOCoinLimitOrder(order)
+	key = append(key, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
+	// Store MaxUint32 - block height to guarantee FIFO
+	// orders as we seek in reverse order.
+	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
 	key = append(key, order.OrderID.ToBytes()...)
 	return key
 }
 
-//func DBKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
-//	key := DBPrefixKeyForDAOCoinLimitOrder(order)
-//	key = append(key, VariableEncodeUint256(order.ScaledExchangeRateCoinsToSellPerCoinToBuy)...)
-//	// Store MaxUint32 - block height to guarantee FIFO
-//	// orders as we seek in reverse order.
-//	key = append(key, _EncodeUint32(math.MaxUint32-order.BlockHeight)...)
-//	key = append(key, order.OrderID.ToBytes()...)
-//	return key
-//}
-
 func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
+	key := append([]byte{}, Prefixes.PrefixNewDAOCoinLimitOrder...)
+	key = append(key, order.BuyingDAOCoinCreatorPKID.ToBytes()...)
+	key = append(key, order.SellingDAOCoinCreatorPKID.ToBytes()...)
+	return key
+}
+
+func DBPrefixKeyForOldDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
 	key = append(key, order.BuyingDAOCoinCreatorPKID.ToBytes()...)
 	key = append(key, order.SellingDAOCoinCreatorPKID.ToBytes()...)
@@ -10239,7 +10336,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 
 func DBGetAllDAOCoinLimitOrders(handle *badger.DB) ([]*DAOCoinLimitOrderEntry, error) {
 	// Get all DAO Coin limit orders.
-	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
+	key := append([]byte{}, Prefixes.PrefixNewDAOCoinLimitOrder...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
 }
 
@@ -10249,7 +10346,7 @@ func DBGetAllDAOCoinLimitOrdersForThisDAOCoinPair(
 	sellingDAOCoinCreatorPKID *PKID) ([]*DAOCoinLimitOrderEntry, error) {
 
 	// Get all DAO coin limit orders for this DAO coin pair.
-	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
+	key := append([]byte{}, Prefixes.PrefixNewDAOCoinLimitOrder...)
 	key = append(key, buyingDAOCoinCreatorPKID.ToBytes()...)
 	key = append(key, sellingDAOCoinCreatorPKID.ToBytes()...)
 	return _DBGetAllDAOCoinLimitOrdersByPrefix(handle, key)
@@ -10375,6 +10472,26 @@ func DBUpsertDAOCoinLimitOrderWithTxn(
 	}
 
 	return nil
+}
+
+func MigrateDAOCoinLimitOrderBatch(handle *badger.DB, snapshot *Snapshot, blockHeight uint64, orders map[BlockHash]*DAOCoinLimitOrderEntry, eventManager *EventManager) error {
+	return handle.Update(func(txn *badger.Txn) error {
+		for _, order := range orders {
+			orderBytes := EncodeToBytes(blockHeight, order)
+			// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
+			key := DBKeyForDAOCoinLimitOrder(order)
+
+			if err := DBSetWithTxn(txn, snapshot, key, orderBytes, eventManager); err != nil {
+				return errors.Wrapf(err, "PutDAOCoinLimitOrderBatch: problem storing limit order")
+			}
+
+			oldKey := OLDDBKeyForDAOCoinLimitOrder(order)
+			if err := DBDeleteWithTxn(txn, snapshot, oldKey, eventManager, false); err != nil {
+				return errors.Wrapf(err, "PutDAOCoinLimitOrderBatch: problem deleting old limit order")
+			}
+		}
+		return nil
+	})
 }
 
 func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DAOCoinLimitOrderEntry, eventManager *EventManager, entryIsDeleted bool) error {
