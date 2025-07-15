@@ -381,6 +381,8 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 
 	globalParams.SoftMaxBlockSizeBytesPoS = 1000
 
+	globalParams.MinimumNetworkFeeNanosPerKB = 100
+	globalParams.FeeBucketGrowthRateBasisPoints = 1000
 	return &globalParams
 }
 
@@ -565,6 +567,26 @@ func TestComputeFeeBucketWithFee(t *testing.T) {
 	for ii := uint64(1000); ii < 100000; ii++ {
 		n := computeFeeTimeBucketExponentFromFeeNanosPerKB(ii, baseRate, bucketMultiplier)
 		require.True(verifyFeeBucket(n, ii))
+	}
+}
+
+func TestComputeFeeBucketFromRegisterWithFee(t *testing.T) {
+	globalParams := _testGetDefaultGlobalParams()
+	globalParams.MinimumNetworkFeeNanosPerKB = 100
+	globalParams.FeeBucketGrowthRateBasisPoints = 1000
+	baseRate, _ := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+
+	feeBucketGrowthRate := NewFloat().SetUint64(globalParams.FeeBucketGrowthRateBasisPoints)
+	tr := NewTransactionRegister()
+
+	for ii := uint64(100); ii < 100000; ii++ {
+		minFee, maxFee := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(ii, baseRate, feeBucketGrowthRate)
+		require.LessOrEqual(t, minFee, ii)
+		require.GreaterOrEqual(t, maxFee, ii)
+		tr.AddTransaction(&MempoolTx{
+			Hash:     NewBlockHash(RandomBytes(32)),
+			FeePerKB: ii,
+		})
 	}
 }
 
