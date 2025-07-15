@@ -361,9 +361,35 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 	}
 }
 
+// RunDBMigrationsOnce runs all the database migrations that need to be run
+// once. It checks for the existence of files that indicate whether the migrations
+// have already been run, and if not, runs them and saves the files to indicate
+// that they have been run. This is useful for ensuring that the database schema
+// is up to date with the current version of the code. This is only used for
+// migrations that DO NOT result in a fork.
+func RunDBMigrationsOnce(db *badger.DB, snapshot *Snapshot, eventManager *EventManager, params *DeSoParams) error {
+
+	// List of migrations:
+	migrations := []func(*badger.DB, *Snapshot, *EventManager, *DeSoParams) error{
+		RunBlockIndexMigrationOnce,
+		RunDAOCoinLimitOrderMigrationOnce,
+	}
+	for ii, migration := range migrations {
+		if err := migration(db, snapshot, eventManager, params); err != nil {
+			return errors.Wrapf(err, "RunDBMigrationsOnce: Problem running migration %v", ii)
+		}
+	}
+	return nil
+}
+
 // RunBlockIndexMigrationOnce runs the block index migration once and saves a file to
 // indicate that it has been run.
-func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
+func RunBlockIndexMigrationOnce(
+	db *badger.DB,
+	snapshot *Snapshot,
+	eventManager *EventManager,
+	params *DeSoParams,
+) error {
 	blockIndexMigrationFileName := filepath.Join(db.Opts().Dir, BlockIndexMigrationFileName)
 	glog.V(2).Info("FileName: ", blockIndexMigrationFileName)
 	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
@@ -372,13 +398,39 @@ func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
 		return nil
 	}
 	glog.V(0).Info("Running block index migration")
-	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
+	if err = RunBlockIndexMigration(db, snapshot, eventManager, params); err != nil {
 		return errors.Wrapf(err, "Problem running block index migration")
 	}
 	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
 		return errors.Wrapf(err, "Problem saving block index migration file")
 	}
 	glog.V(2).Info("Block index migration complete")
+	return nil
+}
+
+// RunDAOCoinLimitOrderMigrationOnce runs the DAOCoin limit order migration once and saves a file to
+// indicate that it has been run.
+func RunDAOCoinLimitOrderMigrationOnce(
+	db *badger.DB,
+	snapshot *Snapshot,
+	eventManager *EventManager,
+	_ *DeSoParams,
+) error {
+	limitOrderMigrationFileName := filepath.Join(db.Opts().Dir, DAOCoinLimitOrderMigrationFileName)
+	glog.V(2).Info("FileName: ", limitOrderMigrationFileName)
+	hasRunMigration, err := ReadBoolFromFile(limitOrderMigrationFileName)
+	if err == nil && hasRunMigration {
+		glog.V(2).Info("DAOCoinLimitOrder index migration has already been run")
+		return nil
+	}
+	glog.V(0).Info("Running dao coin limit order index migration")
+	if err = RunDAOCoinLimitOrderMigration(db, snapshot, eventManager); err != nil {
+		return errors.Wrapf(err, "Problem running dao coin limit order index migration")
+	}
+	if err = SaveBoolToFile(limitOrderMigrationFileName, true); err != nil {
+		return errors.Wrapf(err, "Problem saving dao coin limit order index migration file")
+	}
+	glog.V(2).Info("dao coin limit order index migration complete")
 	return nil
 }
 
@@ -2565,6 +2617,10 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		)))
 		blockHashesToRequest, err = srv.fastHotStuffConsensus.HandleBlock(pp, blk)
 		isOrphan = len(blockHashesToRequest) > 0
+		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
+			"Server._handleBlock: Finished processing block %v with FastHotStuffConsensus with SyncState=%v for peer %v",
+			blk, srv.blockchain.chainState(), pp,
+		)))
 	} else if !verifySignatures {
 		glog.V(0).Infof(CLog(Cyan, fmt.Sprintf(
 			"Server._handleBlock: Processing block %v WITHOUT signature checking because SyncState=%v for peer %v",

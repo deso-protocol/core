@@ -1152,7 +1152,7 @@ func TestDAOCoinLimitOrder(t *testing.T) {
 		orderEntries, err = dbAdapter.GetAllDAOCoinLimitOrders()
 		require.NoError(err)
 		require.Equal(len(orderEntries), 2)
-		require.True(orderEntries[1].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
+		require.True(orderEntries[0].Eq(metadataM1.ToEntry(m1PKID.PKID, savedHeight, toPKID)))
 
 		// m1 submits order buying 5 $DESO nanos @ 12 DAO coin / $DESO.
 		_doDAOCoinLimitOrderTxnWithTestMeta(testMeta, feeRateNanosPerKb, m1Pub, m1Priv, metadataM1)
