@@ -381,8 +381,6 @@ func _testGetDefaultGlobalParams() *GlobalParamsEntry {
 
 	globalParams.SoftMaxBlockSizeBytesPoS = 1000
 
-	globalParams.MinimumNetworkFeeNanosPerKB = 100
-	globalParams.FeeBucketGrowthRateBasisPoints = 1000
 	return &globalParams
 }
 
