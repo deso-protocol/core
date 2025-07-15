@@ -687,7 +687,7 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		return globalMinFeeRate
 	}
 
-	bucketMinFee, bucketMaxFee := getPriorityFeeBucketFromTxns(
+	bucketMinFee, bucketMaxFee := txnRegister.getPriorityFeeBucketFromTxns(
 		txns,
 		priorityPercentileBasisPoints,
 		txnRegister.minimumNetworkFeeNanosPerKB,
@@ -724,7 +724,7 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 // The feeTimeOrderedTxns have the highest fees first and the lowest fees last, so we need to compute
 // the percentile position of the priorityPercentileBasisPoints param and then compute the fee bucket
 // range based on the fee rate per KB of the transaction at that position.
-func getPriorityFeeBucketFromTxns(
+func (tr *TransactionRegister) getPriorityFeeBucketFromTxns(
 	feeTimeOrderedTxns []*MempoolTx,
 	priorityPercentileBasisPoints uint64,
 	minimumNetworkFeeNanosPerKB *big.Float,
@@ -739,7 +739,7 @@ func getPriorityFeeBucketFromTxns(
 		percentilePosition = uint64(len(feeTimeOrderedTxns)) - 1
 	}
 
-	bucketMin, bucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+	bucketMin, bucketMax := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(
 		feeTimeOrderedTxns[percentilePosition].FeePerKB,
 		minimumNetworkFeeNanosPerKB,
 		feeBucketGrowthRateBasisPoints,

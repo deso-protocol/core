@@ -31,12 +31,13 @@ func TestFeeEstimator(t *testing.T) {
 	require.NoError(t, mempool.Start())
 	require.True(t, mempool.IsRunning())
 	defer mempool.Stop()
-	minFeeBucketMin, minFeeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+	tr := mempool.txnRegister
+	minFeeBucketMin, minFeeBucketMax := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(
 		globalParams.MinimumNetworkFeeNanosPerKB,
 		big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)),
 		mempool.txnRegister.feeBucketGrowthRateBasisPoints)
 	// set the feeMin to the third fee bucket.
-	secondMinFeeBucketMin, secondMinFeeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+	secondMinFeeBucketMin, secondMinFeeBucketMax := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(
 		minFeeBucketMax+1,
 		big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)),
 		mempool.txnRegister.feeBucketGrowthRateBasisPoints)
@@ -119,7 +120,7 @@ func TestFeeEstimator(t *testing.T) {
 	err = posFeeEstimator.AddBlock(dummyBlock)
 	require.NoError(t, err)
 	// Compute the next fee bucket min
-	_, feeBucketMax := computeFeeTimeBucketRangeFromFeeNanosPerKB(
+	_, feeBucketMax := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(
 		feeMin,
 		big.NewFloat(float64(globalParams.MinimumNetworkFeeNanosPerKB)),
 		mempool.txnRegister.feeBucketGrowthRateBasisPoints)
