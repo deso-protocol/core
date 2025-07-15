@@ -146,7 +146,7 @@ func (tr *TransactionRegister) addTransactionNoLock(txn *MempoolTx) error {
 	}
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
-	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
+	bucketMinFeeNanosPerKb, bucketMaxFeeNanosPerKB := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
 		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketGrowthRateBasisPoints)
 	// Lookup the bucket in the map.
 	bucket, bucketExists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]
@@ -197,7 +197,7 @@ func (tr *TransactionRegister) removeTransactionNoLock(txn *MempoolTx) error {
 	}
 
 	// Determine the min fee of the bucket based on the transaction's fee rate.
-	bucketMinFeeNanosPerKb, _ := computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
+	bucketMinFeeNanosPerKb, _ := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(txn.FeePerKB,
 		tr.minimumNetworkFeeNanosPerKB, tr.feeBucketGrowthRateBasisPoints)
 	// Remove the transaction from the bucket.
 	if bucket, exists := tr.feeTimeBucketsByMinFeeMap[bucketMinFeeNanosPerKb]; exists {
@@ -645,8 +645,22 @@ func ComputeMultiplierFromGrowthRateBasisPoints(growthRateBasisPoints *big.Float
 
 // computeFeeTimeBucketRangeFromFeeNanosPerKB takes a fee rate, minimumNetworkFeeNanosPerKB, and feeBucketMultiplier,
 // and returns the [minFeeNanosPerKB, maxFeeNanosPerKB] of the fee range.
-func computeFeeTimeBucketRangeFromFeeNanosPerKB(feeNanosPerKB uint64, minimumNetworkFeeNanosPerKB *big.Float,
+func (tr *TransactionRegister) computeFeeTimeBucketRangeFromFeeNanosPerKB(feeNanosPerKB uint64, minimumNetworkFeeNanosPerKB *big.Float,
 	feeBucketGrowthRateBasisPoints *big.Float) (uint64, uint64) {
+
+	idx, feeBucketInterface := tr.feeTimeBucketSet.Find(func(idx int, value interface{}) bool {
+		bucket, ok := value.(*FeeTimeBucket)
+		if !ok {
+			glog.Error(CLog(Red, "computeFeeTimeBucketRangeFromFeeNanosPerKB: Invalid type in feeTimeBucketSet. This is BAD NEWS, we should never get here."))
+			return false
+		}
+		// If the bucket's min fee is greater than the feeNanosPerKB, then we can stop searching.
+		return bucket.minFeeNanosPerKB < feeNanosPerKB && bucket.maxFeeNanosPerKB > feeNanosPerKB
+	})
+	if idx != -1 && feeBucketInterface != nil {
+		feeBucket := feeBucketInterface.(*FeeTimeBucket)
+		return feeBucket.minFeeNanosPerKB, feeBucket.maxFeeNanosPerKB
+	}
 
 	feeBucketMultiplier := ComputeMultiplierFromGrowthRateBasisPoints(feeBucketGrowthRateBasisPoints)
 	bucketExponent := computeFeeTimeBucketExponentFromFeeNanosPerKB(feeNanosPerKB, minimumNetworkFeeNanosPerKB, feeBucketMultiplier)

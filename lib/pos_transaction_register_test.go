@@ -568,6 +568,26 @@ func TestComputeFeeBucketWithFee(t *testing.T) {
 	}
 }
 
+func TestComputeFeeBucketFromRegisterWithFee(t *testing.T) {
+	globalParams := _testGetDefaultGlobalParams()
+	globalParams.MinimumNetworkFeeNanosPerKB = 100
+	globalParams.FeeBucketGrowthRateBasisPoints = 1000
+	baseRate, _ := globalParams.ComputeFeeTimeBucketMinimumFeeAndMultiplier()
+
+	feeBucketGrowthRate := NewFloat().SetUint64(globalParams.FeeBucketGrowthRateBasisPoints)
+	tr := NewTransactionRegister()
+
+	for ii := uint64(100); ii < 100000; ii++ {
+		minFee, maxFee := tr.computeFeeTimeBucketRangeFromFeeNanosPerKB(ii, baseRate, feeBucketGrowthRate)
+		require.LessOrEqual(t, minFee, ii)
+		require.GreaterOrEqual(t, maxFee, ii)
+		tr.AddTransaction(&MempoolTx{
+			Hash:     NewBlockHash(RandomBytes(32)),
+			FeePerKB: ii,
+		})
+	}
+}
+
 func TestHasGlobalParamChange(t *testing.T) {
 	// Create the transaction register.
 	globalParams := _testGetDefaultGlobalParams()
