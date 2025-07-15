@@ -1135,7 +1135,7 @@ func NewBlockchain(
 	checkpointSyncingProviders []string,
 	blockIndexSize int,
 ) (*Blockchain, error) {
-	if err := RunDBMigrationsOnce(db, snapshot, params); err != nil {
+	if err := RunDBMigrationsOnce(db, snapshot, eventManager, params); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: Problem running block index migration")
 	}
 

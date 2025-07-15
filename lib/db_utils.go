@@ -303,6 +303,7 @@ type DBPrefixes struct {
 	PrefixAuthorizeDerivedKey []byte `prefix_id:"[59]" is_state:"true" core_state:"true"`
 
 	// Prefixes for DAO coin limit orders
+	// UPDATE: see new prefix below.
 	// This index powers the order book.
 	// <
 	//   _PrefixDAOCoinLimitOrder
@@ -311,7 +312,7 @@ type DBPrefixes struct {
 	//   ScaledExchangeRateCoinsToSellPerCoinToBuy [32]byte
 	//   BlockHeight [32]byte
 	//   OrderID [32]byte
-	// > -> <DAOCoinLimitOrderEntry>
+	// > -> <DAOCoinLimitOrderEntry> // DEPRECATED
 	//
 	// This index allows users to query for their open orders.
 	// <
@@ -328,7 +329,19 @@ type DBPrefixes struct {
 	//   _PrefixDAOCoinLimitOrderByOrderID
 	//   OrderID [32]byte
 	// > -> <DAOCoinLimitOrderEntry>
-	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"`
+	//
+	// This index powers the order book. It allows us to
+	// iterate w/o reverse which speeds up processing of
+	// dao coin limit orders.
+	// <
+	//   _PrefixNewDAOCoinLimitOrder
+	//   BuyingDAOCoinCreatorPKID [33]byte
+	//   SellingDAOCoinCreatorPKID [33]byte
+	//   MaxUint256-ScaledExchangeRateCoinsToSellPerCoinToBuy [32]byte
+	//   BlockHeight [32]byte
+	//   MaxBlockHash-OrderID [32]byte
+	// > -> <DAOCoinLimitOrderEntry> // DEPRECATED
+	PrefixDAOCoinLimitOrder                 []byte `prefix_id:"[60]" is_state:"true"` // Deprecated
 	PrefixDAOCoinLimitOrderByTransactorPKID []byte `prefix_id:"[61]" is_state:"true"`
 	PrefixDAOCoinLimitOrderByOrderID        []byte `prefix_id:"[62]" is_state:"true"`
 	PrefixNewDAOCoinLimitOrder              []byte `prefix_id:"[99]" is_state:"true" core_state:"true"`
@@ -5742,6 +5755,11 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 	// places and uint32 in others. Specifically, we don't always validate that we have a uint32 when we go to get
 	// the block from teh DB.
 	return handle.Update(func(txn *badger.Txn) error {
+		// We're about to flush records to the main DB, so we initiate the snapshot update.
+		// This function prepares the data structures in the snapshot.
+		if snapshot != nil {
+			snapshot.PrepareAncestralRecordsFlush()
+		}
 		// Get the prefix for the height hash to node index.
 		prefix := _heightHashToNodeIndexPrefix(false)
 		opts := badger.DefaultIteratorOptions
@@ -5887,12 +5905,21 @@ func RunBlockIndexMigration(handle *badger.DB, snapshot *Snapshot, eventManager 
 				return errors.Wrap(err, "RunBlockIndexMigration: Problem putting block node batch")
 			}
 		}
+		// We can exit early if we're not using a snapshot.
+		if snapshot == nil {
+			return nil
+		}
+		// Flush the ancestral records to the DB.
+		if err = snapshot.FlushAncestralRecordsWithTxn(txn); err != nil {
+			return err
+		}
 		return nil
 	})
 }
 
 // RunDAOCoinLimitOrderMigration runs a migration to update the key used in the DAOCoinLimitOrderPrefix to
-// avoid reverse iteration.
+// avoid reverse iteration. This migration iterates over the old prefix and then inserts into the new prefix
+// and deletes from the old prefix.
 func RunDAOCoinLimitOrderMigration(
 	handle *badger.DB,
 	snapshot *Snapshot,
@@ -5908,19 +5935,22 @@ func RunDAOCoinLimitOrderMigration(
 		}
 	}
 	return handle.Update(func(txn *badger.Txn) error {
-
-		// Get the prefix for the height hash to node index.
+		// We're about to flush records to the main DB, so we initiate the snapshot update.
+		// This function prepares the data structures in the snapshot.
+		if snapshot != nil {
+			snapshot.PrepareAncestralRecordsFlush()
+		}
+		// Get the old prefix for the dao coin limit order index.
 		prefix := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
 		opts := badger.DefaultIteratorOptions
 		opts.Prefix = prefix
-		// We don't need values for this migration since the height and hash are in the key.
-		opts.PrefetchValues = false
 		nodeIterator := txn.NewIterator(opts)
 		defer nodeIterator.Close()
 		// Initialize a map to store the dao coin limit orders.
 		ordersMap := make(map[BlockHash]*DAOCoinLimitOrderEntry)
-		// Iterate over all the keys in the height hash to node index, extract the height and hash,
-		// and batch write every 10k entries to the hash to height index.
+		// Iterate over all the keys in the dao coin limit order index
+		// and store them in the map. Every 10k entries, we will insert
+		// into the new prefix and delete from the old prefix.
 		startTime := time.Now()
 		ctr := 0
 		for nodeIterator.Seek(prefix); nodeIterator.ValidForPrefix(prefix); nodeIterator.Next() {
@@ -5945,23 +5975,32 @@ func RunDAOCoinLimitOrderMigration(
 				continue
 			}
 			ctr++
-			if ctr%10 == 0 {
+			if ctr%5 == 0 {
 				glog.V(0).Infof("Time to run DAOCoinLimitOrderMigration for %v orders: %v", ctr*10000, time.Since(startTime))
 			}
-			// If we have more than 10K entries, batch write the entries to the hash to height index
-			// and reset the map.
+			// If we have more than 10K entries, batch migrate the entries to new dao coin limit order index
+			// and delete the old entries from the old prefix and reset the map.
 			innerErr := MigrateDAOCoinLimitOrderBatch(handle, snapshot, blockHeight, ordersMap, eventManager)
 			if innerErr != nil {
 				return errors.Wrap(innerErr, "RunDAOCoinLimitOrderMigration: Problem migrating DAO coin limit order batch")
 			}
 			ordersMap = make(map[BlockHash]*DAOCoinLimitOrderEntry)
 		}
-		// If we have any entries left in the map, batch write them to the hash to height index.
+		// If we have any entries left in the map, batch migrate the entries to new dao coin limit order index
+		// and delete the old entries from the old prefix
 		if len(ordersMap) > 0 {
 			innerErr := MigrateDAOCoinLimitOrderBatch(handle, snapshot, blockHeight, ordersMap, eventManager)
 			if innerErr != nil {
 				return errors.Wrap(innerErr, "RunDAOCoinLimitOrderMigration: Problem migrating DAO coin limit order batch")
 			}
+		}
+		// We can exit early if we're not using a snapshot.
+		if snapshot == nil {
+			return nil
+		}
+		// Flush the ancestral records to the DB.
+		if innerErr := snapshot.FlushAncestralRecordsWithTxn(txn); innerErr != nil {
+			return innerErr
 		}
 		return nil
 	})
@@ -10187,13 +10226,6 @@ func DBPrefixKeyForDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
 	return key
 }
 
-func DBPrefixKeyForOldDAOCoinLimitOrder(order *DAOCoinLimitOrderEntry) []byte {
-	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrder...)
-	key = append(key, order.BuyingDAOCoinCreatorPKID.ToBytes()...)
-	key = append(key, order.SellingDAOCoinCreatorPKID.ToBytes()...)
-	return key
-}
-
 func DBKeyForDAOCoinLimitOrderByTransactorPKID(order *DAOCoinLimitOrderEntry) []byte {
 	key := append([]byte{}, Prefixes.PrefixDAOCoinLimitOrderByTransactorPKID...)
 	key = append(key, order.TransactorPKID.ToBytes()...)
@@ -10258,9 +10290,9 @@ func DBGetMatchingDAOCoinLimitOrders(
 	// Convert the input BID order to the ASK order to query for.
 	// Note that we seek in reverse for the best matching orders.
 	//   * Swap BuyingDAOCoinCreatorPKID and SellingDAOCoinCreatorPKID.
-	//   * Set ScaledExchangeRateCoinsToSellPerCoinToBuy to MaxUint256.
-	//   * Set BlockHeight to 0 as this becomes math.MaxUint32 in the key.
-	//   * Set OrderID to MaxBlockHash.
+	//   * Set ScaledExchangeRateCoinsToSellPerCoinToBuy to MaxUint256. This will be 0 in the key.
+	//   * Set BlockHeight to 0.
+	//   * Set OrderID to MaxBlockHash. This will be the zero block hash in the key.
 	queryOrder.BuyingDAOCoinCreatorPKID = inputOrder.SellingDAOCoinCreatorPKID
 	queryOrder.SellingDAOCoinCreatorPKID = inputOrder.BuyingDAOCoinCreatorPKID
 	queryOrder.ScaledExchangeRateCoinsToSellPerCoinToBuy = MaxUint256.Clone()
@@ -10277,7 +10309,7 @@ func DBGetMatchingDAOCoinLimitOrders(
 		key = startKey
 	}
 
-	// Go in reverse order to find the highest prices first.
+	// Go in order to find the highest prices first, since the prices are inverted in this index.
 	// We break once we hit the input order's inverted scaled
 	// price or the input order's quantity is fulfilled.
 	opts := badger.DefaultIteratorOptions
@@ -10474,11 +10506,12 @@ func DBUpsertDAOCoinLimitOrderWithTxn(
 	return nil
 }
 
+// MigrateDAOCoinLimitOrderBatch migrates a batch of DAOCoinLimitOrderEntries to the new prefix
+// and deletes from the old prefix.
 func MigrateDAOCoinLimitOrderBatch(handle *badger.DB, snapshot *Snapshot, blockHeight uint64, orders map[BlockHash]*DAOCoinLimitOrderEntry, eventManager *EventManager) error {
 	return handle.Update(func(txn *badger.Txn) error {
 		for _, order := range orders {
 			orderBytes := EncodeToBytes(blockHeight, order)
-			// Store in index: PrefixDAOCoinLimitOrderByTransactorPKID
 			key := DBKeyForDAOCoinLimitOrder(order)
 
 			if err := DBSetWithTxn(txn, snapshot, key, orderBytes, eventManager); err != nil {
@@ -10499,7 +10532,7 @@ func DBDeleteDAOCoinLimitOrderWithTxn(txn *badger.Txn, snap *Snapshot, order *DA
 		return nil
 	}
 
-	// Delete from index: PrefixDAOCoinLimitOrder
+	// Delete from index: PrefixNewDAOCoinLimitOrder
 	key := DBKeyForDAOCoinLimitOrder(order)
 	if err := DBDeleteWithTxn(txn, snap, key, eventManager, entryIsDeleted); err != nil {
 		return errors.Wrapf(err, "DBDeleteDAOCoinLimitOrderWithTxn: problem deleting limit order")
