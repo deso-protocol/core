@@ -1720,8 +1720,8 @@ func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	lastBlock := bc.blockIndex.GetTip()
 	// TODO: This should be an error, for now while debugging we'll just log it.
 	if lastBlock.IsCommitted() {
-        fmt.Printf("BUG: attempted to remove committed block %v\n", lastBlock.Hash)
-    }
+		fmt.Printf("BUG: attempted to remove committed block %v\n", lastBlock.Hash)
+	}
 
 	bc.blockIndex.setTip(lastBlock.GetParent(bc.blockIndex))
 	return lastBlock
