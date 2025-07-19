@@ -1694,7 +1694,11 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	}
 
 	// Re-orgs must NEVER discard committed history.
-	committedTip, _ := bc.GetCommittedTip()
+	committedTip, exists := bc.GetCommittedTip()
+	if !exists {
+		// No committed history yet; fall back to view-based rule.
+		return blockNode.Header.ProposedInView >= currentView
+	}
 	//    If the candidate’s fork point (its parent) is at or **below**
 	//    the committed tip’s height, we would have to remove a committed
 	//    block to switch to that fork — disallowed.
