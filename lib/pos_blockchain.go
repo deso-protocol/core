@@ -1699,10 +1699,14 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 		// No committed history yet; fall back to view-based rule.
 		return blockNode.Header.ProposedInView >= currentView
 	}
-	//    If the candidate’s fork point (its parent) is at or **below**
-	//    the committed tip’s height, we would have to remove a committed
-	//    block to switch to that fork — disallowed.
-	if blockNode.Header.Height <= uint64(committedTip.Height) {
+	// Determine the fork-point (the parent of the candidate).
+	parent := blockNode.GetParent(bc.blockIndex)
+	if parent == nil {
+		return false // cannot safely determine fork point
+	}
+	// If the fork-point height is below the committed tip height we would
+	// detach a committed block disallowed.
+	if parent.Height < committedTip.Height {
 		return false
 	}
 
