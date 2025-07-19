@@ -335,15 +335,7 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		return false, false, nil, errors.Wrap(err, "processBlockPoS: Problem applying new tip: ")
 	}
 
-	// 6. Commit grandparent if possible. Only need to do this if we applied a new tip.
-	if appliedNewTip {
-		if err = bc.runCommitRuleOnBestChain(verifySignatures); err != nil {
-			return false, false, nil, errors.Wrap(err,
-				"processBlockPoS: error running commit rule: ")
-		}
-	}
-
-	// 7. Notify listeners via the EventManager of which blocks have been removed and added.
+	// 6. Notify listeners via the EventManager of which blocks have been removed and added.
 	for ii := len(disconnectedBlockHashes) - 1; ii >= 0; ii-- {
 		disconnectedBlock := bc.GetBlock(&disconnectedBlockHashes[ii])
 		if disconnectedBlock == nil {
@@ -388,6 +380,15 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 			if appliedNewTipOrphan {
 				appliedNewTip = true
 			}
+		}
+	}
+
+	// 7. Commit grandparent if possible. Only need to do this if we applied a new tip.
+	// MOVED HERE: Commit rule now runs after all error-prone operations complete successfully.
+	if appliedNewTip {
+		if err = bc.runCommitRuleOnBestChain(verifySignatures); err != nil {
+			return false, false, nil, errors.Wrap(err,
+				"processBlockPoS: error running commit rule: ")
 		}
 	}
 
