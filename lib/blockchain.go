@@ -245,6 +245,11 @@ func (nn *BlockNode) GetEncoderType() EncoderType {
 }
 
 func (nn *BlockNode) GetParent(blockIndex *BlockIndex) *BlockNode {
+	// No header or no parent hash => no parent.
+	if nn.Header == nil || nn.Header.PrevBlockHash == nil {
+		return nil
+	}
+
 	// If we don't have a parent, try to get it from the block index. We
 	// no longer have a guarantee that we have set the parent node since
 	// we no longer keep the entire block index in memory.

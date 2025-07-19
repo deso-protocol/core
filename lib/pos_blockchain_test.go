@@ -1269,6 +1269,79 @@ func TestShouldReorg(t *testing.T) {
 	require.True(t, bc.shouldReorg(newBlock, 2))
 }
 
+// TestShouldReorgCommittedSafety verifies that a re-org which would
+// detach committed history is rejected, and that a re-org starting at
+// the committed tip is still allowed.
+func TestShouldReorgCommittedSafety(t *testing.T) {
+	bc, _, _ := NewTestBlockchain(t)
+
+	// Build mock chain:
+	h0 := NewBlockHash(RandomBytes(32)) // genesis (committed implicitly)
+	h1 := NewBlockHash(RandomBytes(32))
+	h2 := NewBlockHash(RandomBytes(32))
+
+	genesis := &BlockNode{
+		Hash:   h0,
+		Height: 0,
+		Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
+		Header: &MsgDeSoHeader{Height: 0, ProposedInView: 0},
+	}
+	committed := &BlockNode{
+		Hash:   h1,
+		Height: 1,
+		Status: StatusBlockStored | StatusBlockValidated | StatusBlockCommitted,
+		Header: &MsgDeSoHeader{
+			Height:         1,
+			ProposedInView: 1,
+			PrevBlockHash:  h0,
+		},
+	}
+	uncommitted := &BlockNode{
+		Hash:   h2,
+		Height: 2,
+		Status: StatusBlockStored | StatusBlockValidated,
+		Header: &MsgDeSoHeader{
+			Height:         2,
+			ProposedInView: 2,
+			PrevBlockHash:  h1,
+		},
+	}
+
+	// Load into block-index and make uncommitted the tip.
+	require.NoError(t, bc.blockIndex.setBlockIndexFromMap(map[BlockHash]*BlockNode{
+		*h0: genesis,
+		*h1: committed,
+		*h2: uncommitted,
+	}))
+	bc.addTipBlockToBestChain(genesis)
+	bc.addTipBlockToBestChain(committed)
+	bc.addTipBlockToBestChain(uncommitted)
+
+	// --- Candidate that forks _below_ committed tip (parent = genesis) ---
+	badFork := &BlockNode{
+		Hash:   NewBlockHash(RandomBytes(32)),
+		Height: 2,
+		Header: &MsgDeSoHeader{
+			Height:         2,
+			ProposedInView: 3,
+			PrevBlockHash:  h0, // fork-point below committed tip
+		},
+	}
+	require.False(t, bc.shouldReorg(badFork, 3), "re-org that removes committed blocks must be rejected")
+
+	// --- Candidate that forks exactly AT committed tip (parent = h1) ---
+	goodFork := &BlockNode{
+		Hash:   NewBlockHash(RandomBytes(32)),
+		Height: 3,
+		Header: &MsgDeSoHeader{
+			Height:         3,
+			ProposedInView: 4,
+			PrevBlockHash:  h1, // fork-point is committed tip itself
+		},
+	}
+	require.True(t, bc.shouldReorg(goodFork, 4), "re-org starting at committed tip should be allowed")
+}
+
 // TestTryApplyNewTip tests that tryApplyNewTip works as expected.
 // It tests the following cases:
 // 1. Simple reorg. Just replacing the uncommitted tip.

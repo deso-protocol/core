@@ -1673,6 +1673,12 @@ func (bc *Blockchain) tryApplyNewTip(blockNode *BlockNode, currentView uint64, l
 		connectedBlockHashes,
 		disconnectedBlockHashes,
 	)
+
+	// Flush any cached UtxoViews that correspond to blocks we just disconnected.
+	// (Prevents stale views from being reused after a re-org.)
+	for _, h := range uniqueDisconnectedBlockHashes {
+		bc.blockViewCache.Delete(h)
+	}
 	return true, uniqueConnectedBlockHashes, uniqueDisconnectedBlockHashes, nil
 }
 
@@ -1686,6 +1692,24 @@ func (bc *Blockchain) shouldReorg(blockNode *BlockNode, currentView uint64) bool
 	if chainTip.Hash.IsEqual(blockNode.Header.PrevBlockHash) {
 		return false
 	}
+
+	// Re-orgs must NEVER discard committed history.
+	committedTip, exists := bc.GetCommittedTip()
+	if !exists {
+		// No committed history yet; fall back to view-based rule.
+		return blockNode.Header.ProposedInView >= currentView
+	}
+	// Determine the fork-point (the parent of the candidate).
+	parent := blockNode.GetParent(bc.blockIndex)
+	if parent == nil {
+		return false // cannot safely determine fork point
+	}
+	// If the fork-point height is below the committed tip height we would
+	// detach a committed block disallowed.
+	if parent.Height < committedTip.Height {
+		return false
+	}
+
 	// If the block is proposed in a view less than the current view, there's no need to reorg.
 	return blockNode.Header.ProposedInView >= currentView
 }
@@ -1702,6 +1726,11 @@ func (bc *Blockchain) addTipBlockToBestChain(blockNode *BlockNode) {
 func (bc *Blockchain) removeTipBlockFromBestChain() *BlockNode {
 	// Remove the last block from the best chain.
 	lastBlock := bc.blockIndex.GetTip()
+	// TODO: This should be an error, for now while debugging we'll just log it.
+	if lastBlock.IsCommitted() {
+		fmt.Printf("BUG: attempted to remove committed block %v\n", lastBlock.Hash)
+	}
+
 	bc.blockIndex.setTip(lastBlock.GetParent(bc.blockIndex))
 	return lastBlock
 }
