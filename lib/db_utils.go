@@ -8,8 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
-	"github.com/dgraph-io/ristretto/z"
 	"io"
 	"log"
 	"math"
@@ -20,6 +18,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/deso-protocol/core/collections"
+	"github.com/dgraph-io/ristretto/z"
 
 	"github.com/google/uuid"
 
@@ -615,7 +616,15 @@ type DBPrefixes struct {
 	// to find a block node given its hash was to do a full scan of
 	// PrefixHeightHashToNodeInfo.
 	PrefixHashToHeight []byte `prefix_id:"[98]"`
-	// NEXT_TAG: 99
+
+	// PrefixStateSyncerSince stores the Badger backup cursor (uint64 timestamp) used by the
+	// new diff-based state-change syncer.  This prefix is *not* part of node state
+	// and therefore has **no** is_state / core_state tag.
+	// Key format: <prefix_id>            (no additional components)
+	// Value:      uint64 encoded via EncodeUint64
+	PrefixStateSyncerSince []byte `prefix_id:"[99]"`
+
+	// NEXT_TAG: 100
 }
 
 // DecodeStateKey decodes a state key into a DeSoEncoder type. This is useful for encoders which don't have a stored
@@ -915,6 +924,9 @@ func StatePrefixToDeSoEncoder(prefix []byte) (_isEncoder bool, _encoder DeSoEnco
 	} else if bytes.Equal(prefix, Prefixes.PrefixSnapshotValidatorBLSPublicKeyPKIDPairEntry) {
 		// prefix_id:"[96]"
 		return true, &BLSPublicKeyPKIDPairEntry{}
+	} else if bytes.Equal(prefix, Prefixes.PrefixStateSyncerSince) {
+		// prefix_id:"[99]"
+		return false, nil
 	}
 
 	return true, nil
@@ -1121,25 +1133,23 @@ func DBSetWithTxn(txn *badger.Txn, snap *Snapshot, key []byte, value []byte, eve
 
 	// If snapshot was provided, we will need to load the current value of the record
 	// so that we can later write it in the ancestral record. We first lookup cache.
-	if isState || (eventManager != nil && eventManager.isMempoolManager && isCoreStateKey(key)) {
 
-		// When we are syncing state from the mempool, we need to read the last committed view txn.
-		// This is because we will be querying the badger DB, and during the flush loop, every entry that is
-		// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
-		// initiated before the flush loop started.
-		if eventManager != nil && eventManager.isMempoolManager && eventManager.lastCommittedViewTxn != nil {
-			ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, nil, key)
-		} else {
-			// We check if we've already read this key and stored it in the cache.
-			// Otherwise, we fetch the current value of this record from the DB.
-			ancestralValue, getError = DBGetWithTxn(txn, snap, key)
-		}
+	// When we are syncing state from the mempool, we need to read the last committed view txn.
+	// This is because we will be querying the badger DB, and during the flush loop, every entry that is
+	// updated will first be deleted. In order to counteract this, we reference a badger transaction that was
+	// initiated before the flush loop started.
+	if eventManager != nil && eventManager.isMempoolManager && eventManager.lastCommittedViewTxn != nil {
+		ancestralValue, getError = DBGetWithTxn(eventManager.lastCommittedViewTxn, nil, key)
+	} else {
+		// We check if we've already read this key and stored it in the cache.
+		// Otherwise, we fetch the current value of this record from the DB.
+		ancestralValue, getError = DBGetWithTxn(txn, snap, key)
+	}
 
-		// If there is some error with the DB read, other than non-existent key, we return.
-		if getError != nil && getError != badger.ErrKeyNotFound {
-			return errors.Wrapf(getError, "DBSetWithTxn: problem reading record "+
-				"from DB with key: %v", key)
-		}
+	// If there is some error with the DB read, other than non-existent key, we return.
+	if getError != nil && getError != badger.ErrKeyNotFound {
+		return errors.Wrapf(getError, "DBSetWithTxn: problem reading record "+
+			"from DB with key: %v", key)
 	}
 
 	// We update the DB record with the intended value.

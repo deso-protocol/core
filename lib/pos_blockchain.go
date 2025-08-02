@@ -1791,6 +1791,11 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, blockHeight uint64, v
 	if err != nil {
 		return errors.Wrapf(err, "commitBlockPoS: Problem initializing UtxoView: ")
 	}
+
+	// Get a pre-commit transaction of the blockchain DB.
+	preCommitTxn := bc.db.NewTransaction(true)
+	defer preCommitTxn.Discard()
+	
 	utxoView := utxoViewAndUtxoOps.UtxoView
 	utxoOps := utxoViewAndUtxoOps.UtxoOps
 	block := utxoViewAndUtxoOps.Block
@@ -1847,6 +1852,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, blockHeight uint64, v
 		); innerErr != nil {
 			return errors.Wrapf(innerErr, "commitBlockPoS: Problem writing utxo operations to db on simple add to tip")
 		}
+
 		if innerErr := utxoView.FlushToDBWithoutAncestralRecordsFlushWithTxn(
 			txn, uint64(blockNode.Height)); innerErr != nil {
 			return errors.Wrapf(innerErr, "commitBlockPoS: Problem flushing UtxoView to db")
@@ -1872,6 +1878,7 @@ func (bc *Blockchain) commitBlockPoS(blockHash *BlockHash, blockHeight uint64, v
 			Block:    block,
 			UtxoView: utxoView,
 			UtxoOps:  utxoOps,
+			PreCommitTxn: preCommitTxn,
 		})
 		// TODO: check w/ Z if this is right....
 		// Signal the state syncer that we've flushed to the DB so state syncer

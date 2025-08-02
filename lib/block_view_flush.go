@@ -45,7 +45,7 @@ func (bav *UtxoView) FlushToDbWithTxn(txn *badger.Txn, blockHeight uint64) error
 	if bav.Snapshot != nil {
 		bav.Snapshot.PrepareAncestralRecordsFlush()
 	}
-
+	
 	err := bav.FlushToDBWithoutAncestralRecordsFlushWithTxn(txn, blockHeight)
 	if err != nil {
 		return err

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -11,7 +12,10 @@ import (
 
 	"github.com/deso-protocol/go-deadlock"
 
+	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v3/pb"
 	"github.com/golang/glog"
+	"github.com/golang/protobuf/proto"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
@@ -299,6 +303,250 @@ type StateChangeSyncer struct {
 	BlocksyncCompleteEntriesFlushed bool
 
 	MempoolTxnSyncLimit uint64
+
+	// Directory where per-block / hypersync diff files are written.
+	StateChangeDir string
+
+	// Mutex guarding BackupDatabase streaming and diff file IO.
+	DiffGenerationMutex *sync.Mutex
+}
+
+// BackupDatabase performs a Badger backup of the supplied database starting from the provided
+// "since" timestamp.  This function supports filtering by multiple prefixes, creating separate
+// backup streams for each prefix and combining the results. This is a wrapper around badger.DB.Backup
+// that returns the bytes produced by the backup as well as the value that should be passed as the next
+// "since" value on subsequent incremental backups. This helper makes it easy for downstream callers
+// (including tests and the future state‐consumer plumbing) to perform full and incremental backups
+// without duplicating boiler-plate buffer management or worrying about the backup cursor bookkeeping.
+//
+// Example usage:
+//
+//	var since uint64 = 0
+//	// Backup everything:
+//	preCommitTxn := db.NewTransaction(false)
+//	defer preCommitTxn.Discard()
+//	backupBytes, since, err := stateChangeSyncer.BackupDatabase(db, preCommitTxn, since)
+//	// Persist backupBytes or forward them to a consumer...
+//
+// The function is **stateless** with respect to StateChangeSyncer – callers are expected to persist
+// the returned `since` value if they wish to subsequently make incremental backups.  Keeping the
+// helper on StateChangeSyncer simply provides a convenient, namespaced location that fits this
+// package’s responsibilities.
+func (s *StateChangeSyncer) BackupDatabase(
+	db *badger.DB,
+	preCommitTxn *badger.Txn, // snapshot taken right before the block’s writes
+	since uint64,
+) (backupBytes []byte, nextSince uint64, err error) {
+
+	prefixes := StatePrefixes.CoreStatePrefixesList
+
+	var combined bytes.Buffer
+	maxNextSince := since
+
+	buildStream := func(logPref string, pref []byte) (*badger.Stream, *bytes.Buffer) {
+		var buf bytes.Buffer
+		st := db.NewStream()
+		st.LogPrefix = logPref
+		st.SinceTs = since
+		st.Prefix = pref
+
+		// Filter out no-ops in-flight
+		st.ChooseKey = func(it *badger.Item) bool {
+			return isMeaningfulChange(it, preCommitTxn)
+		}
+		st.KeyToList = func(key []byte, itr *badger.Iterator) (*pb.KVList, error) {
+			// itr is already positioned at the newest version for this key.
+			item := itr.Item()
+
+			// Build a single-entry KVList.
+			kv := &pb.KV{
+				Key:      append([]byte(nil), item.Key()...),
+				Version:  item.Version(),
+				UserMeta: []byte{item.UserMeta()},
+			}
+			if !item.IsDeletedOrExpired() {
+				val, err := item.ValueCopy(nil)
+				if err != nil {
+					return nil, err
+				}
+				kv.Value = val
+			} // else leave Value nil → represents a delete/expiry
+
+			return &pb.KVList{Kv: []*pb.KV{kv}}, nil
+		}
+		return st, &buf
+	}
+
+	if len(prefixes) == 0 {
+		st, buf := buildStream("DB.Backup", nil)
+		nextSince, err = st.Backup(buf, since)
+		if err != nil {
+			return nil, 0, err
+		}
+		return buf.Bytes(), nextSince, nil
+	}
+
+	for i, p := range prefixes {
+		st, buf := buildStream(fmt.Sprintf("DB.Backup.Prefix%d", i), p)
+
+		curNext, err := st.Backup(buf, since)
+		if err != nil {
+			return nil, 0, err
+		}
+		if curNext > maxNextSince {
+			maxNextSince = curNext
+		}
+		combined.Write(buf.Bytes())
+	}
+
+	return combined.Bytes(), maxNextSince, nil
+}
+
+func isMeaningfulChange(it *badger.Item, preTxn *badger.Txn) bool {
+	// Always propagate deletions / expiries
+	if it.IsDeletedOrExpired() {
+		return true
+	}
+
+	// Get the value we’re about to back up.
+	newVal, err := it.ValueCopy(nil)
+	if err != nil {
+		// Defensive: if we can’t read it, better to include it.
+		return true
+	}
+
+	// Compare with the value that existed *before* the block.
+	oldIt, err := preTxn.Get(it.Key())
+	if err == badger.ErrKeyNotFound {
+		// Key didn’t exist → definitely a real change.
+		return true
+	}
+	if err != nil {
+		return true // on unexpected error, fail open
+	}
+
+	oldVal, err := oldIt.ValueCopy(nil)
+	if err != nil {
+		return true
+	}
+
+	return !bytes.Equal(oldVal, newVal) // true ⇢ keep, false ⇢ skip (no-op)
+}
+
+// readBadgerBackup reads a Badger backup stream and calls the provided handler for each KVList chunk.
+func readBadgerBackup(r io.Reader, handle func(*pb.KVList) error) error {
+	for chunk := 0; ; chunk++ {
+		// (1) length header
+		var sz uint32
+		if err := binary.Read(r, binary.LittleEndian, &sz); err != nil {
+			if err == io.EOF {
+				return nil // end of stream
+			}
+			return fmt.Errorf("chunk %d: reading len: %w", chunk, err)
+		}
+
+		// (2) checksum – read and ignore (or verify with crc32.ChecksumIEEE)
+		var crc uint32
+		if err := binary.Read(r, binary.LittleEndian, &crc); err != nil {
+			return fmt.Errorf("chunk %d: reading crc32: %w", chunk, err)
+		}
+
+		// (3) protobuf payload
+		data := make([]byte, sz)
+		if _, err := io.ReadFull(r, data); err != nil {
+			return fmt.Errorf("chunk %d: reading payload: %w", chunk, err)
+		}
+
+		kvList := new(pb.KVList)
+		if err := proto.Unmarshal(data, kvList); err != nil {
+			return fmt.Errorf("chunk %d: unmarshal: %w", chunk, err)
+		}
+
+		if err := handle(kvList); err != nil {
+			return err
+		}
+	}
+}
+
+// ExtractStateChangesFromBackup extracts StateChangeEntry structs from backup bytes.
+// It processes the backup data to find the latest revision of each entry and converts
+// them into StateChangeEntry structs with the specified flushId and blockHeight.
+func (s *StateChangeSyncer) ExtractStateChangesFromBackup(
+	backupBytes []byte,
+	flushID uuid.UUID,
+	blockHeight uint64,
+) ([]*StateChangeEntry, error) {
+
+	var entries []*StateChangeEntry
+	seen := make(map[string]struct{}) // cheap safety net; normally stays empty
+
+	err := readBadgerBackup(bytes.NewReader(backupBytes), func(kvl *pb.KVList) error {
+		for _, kv := range kvl.Kv {
+			keyStr := string(kv.Key)
+			if _, dup := seen[keyStr]; dup {
+				// Shouldn’t happen with the new stream, but bail defensively.
+				continue
+			}
+			seen[keyStr] = struct{}{}
+
+			// Ignore non-core keys early.
+			if !isCoreStateKey(kv.Key) {
+				continue
+			}
+
+			entry := &StateChangeEntry{
+				KeyBytes:    kv.Key,
+				FlushId:     flushID,
+				BlockHeight: blockHeight,
+			}
+
+			// Decide op-type and hold raw value if needed.
+			encoderStoredInValue, _ := StateKeyToDeSoEncoder(kv.Key)
+			if len(kv.Value) == 0 && encoderStoredInValue {
+				entry.OperationType = DbOperationTypeDelete
+			} else {
+				entry.OperationType = DbOperationTypeUpsert
+				entry.EncoderBytes = kv.Value
+			}
+
+			// Derive encoder type + decoded encoder.
+			if isEnc, enc := StateKeyToDeSoEncoder(kv.Key); isEnc && enc != nil {
+				switch enc.GetEncoderType() {
+				case EncoderTypeBlock:
+					entry.EncoderBytes = AddEncoderMetadataToMsgDeSoBlockBytes(kv.Value, blockHeight)
+				case EncoderTypeBlockNode:
+					entry.EncoderBytes = AddEncoderMetadataToBlockNodeBytes(kv.Value, blockHeight)
+				}
+
+				entry.EncoderType = enc.GetEncoderType()
+
+				if len(entry.EncoderBytes) > 0 {
+					dst := entry.EncoderType.New()
+					if ok, err := DecodeFromBytes(dst, bytes.NewReader(entry.EncoderBytes)); ok && err == nil {
+						entry.Encoder = dst
+					} else if err != nil {
+						return fmt.Errorf("decode error for key %x: %w", kv.Key, err)
+					}
+				}
+			} else {
+				// Value encoded in key.
+				keyEnc, err := DecodeStateKey(kv.Key, kv.Value)
+				if err != nil {
+					return fmt.Errorf("state-key decode error for %x: %w", kv.Key, err)
+				}
+				entry.EncoderType = keyEnc.GetEncoderType()
+				entry.Encoder = keyEnc
+			}
+
+			entries = append(entries, entry)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error reading backup: %w", err)
+	}
+
+	return entries, nil
 }
 
 // Open a file, create if it doesn't exist.
@@ -371,7 +619,72 @@ func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType, memp
 		SyncType:                        nodeSyncType,
 		BlocksyncCompleteEntriesFlushed: blocksyncCompleteEntriesFlushed,
 		MempoolTxnSyncLimit:             mempoolTxnSyncLimit,
+		StateChangeDir:                  stateChangeDir,
+		DiffGenerationMutex:             &sync.Mutex{},
 	}
+}
+
+// GenerateCommittedBlockDiff streams all Badger KVs that have changed since the
+// last successful commit (tracked via PrefixStateSyncerSince) and persists
+// them to a per-block diff file.  The file is named
+//
+//	state_changes_<blockHeight>.bin
+//
+// and is written atomically via a temporary file + rename pattern.
+//
+// Callers **must** supply the block height being committed so the consumer can
+// later ingest files in order.  The function is concurrency-safe via the
+// DiffGenerationMutex field.
+func (stateChangeSyncer *StateChangeSyncer) GenerateCommittedBlockDiff(db *badger.DB, preCommitTxn *badger.Txn, blockHeight uint64) error {
+
+	stateChangeSyncer.DiffGenerationMutex.Lock()
+	defer stateChangeSyncer.DiffGenerationMutex.Unlock()
+
+	// Fetch last cursor.
+	since, err := stateChangeSyncer.getLastSince(db)
+	if err != nil {
+		return fmt.Errorf("GenerateCommittedBlockDiff: getLastSince: %v", err)
+	}
+
+	// Stream diff via BackupDatabase.
+	diffBytes, nextSince, err := stateChangeSyncer.BackupDatabase(db, preCommitTxn, since)
+	if err != nil {
+		return fmt.Errorf("GenerateCommittedBlockDiff: BackupDatabase: %v", err)
+	}
+
+	// Nothing changed (possible for empty blocks).
+	if len(diffBytes) == 0 {
+		// Still update cursor so we don't re-emit same 0-byte diff.
+		if err := stateChangeSyncer.setLastSince(db, nextSince); err != nil {
+			return fmt.Errorf("GenerateCommittedBlockDiff: update cursor: %v", err)
+		}
+		return nil
+	}
+
+	// Ensure destination dir exists.
+	if err := os.MkdirAll(stateChangeSyncer.StateChangeDir, 0o755); err != nil {
+		return fmt.Errorf("GenerateCommittedBlockDiff: mkdir: %v", err)
+	}
+
+	finalPath := filepath.Join(stateChangeSyncer.StateChangeDir, fmt.Sprintf("state_changes_%d.bin", blockHeight))
+	tmpPath := finalPath + ".tmp"
+
+	// Write to temp file.
+	if err := os.WriteFile(tmpPath, diffBytes, 0o644); err != nil {
+		return fmt.Errorf("GenerateCommittedBlockDiff: write tmp: %v", err)
+	}
+
+	// Atomic rename.
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		return fmt.Errorf("GenerateCommittedBlockDiff: rename: %v", err)
+	}
+
+	// Persist new cursor.
+	if err := stateChangeSyncer.setLastSince(db, nextSince); err != nil {
+		return fmt.Errorf("GenerateCommittedBlockDiff: setLastSince: %v", err)
+	}
+
+	return nil
 }
 
 // Reset resets the state change syncer by truncating the state change file and index file.

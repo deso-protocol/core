@@ -2564,6 +2564,10 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 		return false, false, RuleErrorBlockAlreadyExists
 	}
 
+	// Get a pre-commit transaction of the blockchain DB.
+	preCommitTxn := bc.db.NewTransaction(true)
+	defer preCommitTxn.Discard()
+	
 	// At this point, because we know the block isn't an orphan, go ahead and mark
 	// it as processed. This flag is basically used to avoid situations in which we
 	// continuously try to fetch and reprocess a block because we forgot to mark
@@ -2930,6 +2934,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 				Block:    desoBlock,
 				UtxoView: bc.blockView,
 				UtxoOps:  utxoOpsForBlock,
+				PreCommitTxn: preCommitTxn,
 			})
 		}
 
@@ -3174,6 +3179,10 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 				}
 			}
 
+			// Get a pre-commit transaction of the blockchain DB.
+			preCommitTxn := bc.db.NewTransaction(true)
+			defer preCommitTxn.Discard()
+
 			// Write the modified utxo set to the view.
 			if err := utxoView.FlushToDbWithTxn(txn, blockHeight); err != nil {
 				return errors.Wrapf(err, "ProcessBlock: Problem flushing to db")
@@ -3228,7 +3237,7 @@ func (bc *Blockchain) processBlockPoW(desoBlock *MsgDeSoBlock, verifySignatures 
 				// FIXME: We need to add the UtxoOps here to handle reorgs properly in Rosetta
 				// For now it's fine because reorgs are virtually impossible.
 				bc.eventManager.blockConnected(&BlockEvent{Block: blockToAttach})
-				bc.eventManager.blockCommitted(&BlockEvent{Block: blockToAttach})
+				bc.eventManager.blockCommitted(&BlockEvent{Block: blockToAttach, PreCommitTxn: preCommitTxn})
 			}
 		}
 	}

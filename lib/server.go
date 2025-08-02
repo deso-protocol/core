@@ -3568,9 +3568,9 @@ func (srv *Server) Start() {
 	}
 
 	// Initialize state syncer mempool job, if needed.
-	if srv.StateChangeSyncer != nil {
-		srv.StateChangeSyncer.StartMempoolSyncRoutine(srv)
-	}
+	// if srv.StateChangeSyncer != nil {
+	// 	srv.StateChangeSyncer.StartMempoolSyncRoutine(srv)
+	// }
 
 	// Start the network manager's internal event loop to open and close connections to peers.
 	srv.networkManager.Start()

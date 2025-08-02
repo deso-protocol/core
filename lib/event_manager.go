@@ -51,6 +51,7 @@ type BlockEvent struct {
 	// Optional
 	UtxoView *UtxoView
 	UtxoOps  [][]*UtxoOperation
+	PreCommitTxn *badger.Txn
 }
 
 type EventManager struct {
