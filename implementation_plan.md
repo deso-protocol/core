@@ -1,7 +1,7 @@
 # State Change Syncer Refactor – Implementation Plan
 
 ## Overview (High-Level Goals)
-This refactor replaces the *event-per-write* state-change logging mechanism with a **diff-based streaming model** built on Badger’s `DB.Stream()` API.
+This refactor replaces the *event-per-write* state-change logging mechanism with a **diff-based streaming model** built on Badger's `DB.Stream()` API.
 
 Runtime behaviour changes:
 • **Per-block diffs** – On block commit the node emits `state_changes_<height>.bin` containing all key/value pairs that changed since the previous block (cursor tracked via Badger timestamp).
@@ -366,3 +366,631 @@ Regression suite only.
 - All CI jobs green.
 
 ---
+
+## Step 5B – Sequential Mempool Diff Files (Refined Approach)
+
+**Objective:** Generate sequential diff files where each file contains only changes since the last mempool sync, allowing stateless consumer processing.
+
+### Consumer Flow (As Specified)
+1. Determine most recent committed block synced
+2. Look for first `mempool_<block+1>_<timestamp>.bin` file  
+3. Apply all changes from that file sequentially
+4. Continue applying subsequent mempool files for same block in timestamp order
+5. When new block commits, revert all mempool changes using ancestral records in reverse order
+6. Start fresh with next block's mempool files
+
+### Node-Side Implementation
+
+```go
+type MempoolSyncState struct {
+    // Track what was written in the last mempool sync for this block height
+    lastSyncState map[string][]byte  // key -> value from last sync
+    currentBlockHeight uint64
+    lastSyncTimestamp int64
+}
+
+func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Server) (bool, error) {
+    // ... existing setup code until FlushToDbWithTxn ...
+    
+    err = mempoolTxUtxoView.FlushToDbWithTxn(txn, uint64(server.blockchain.BlockTip().Height))
+    if err != nil {
+        // ... existing error handling ...
+    }
+    
+    // NEW: Generate sequential diff from transaction
+    err = stateChangeSyncer.generateSequentialMempoolDiff(txn, mempoolEventManager.lastCommittedViewTxn, blockHeight)
+    if err != nil {
+        glog.Errorf("Failed to generate mempool diff: %v", err)
+        // Continue with existing flow
+    }
+    
+    // ... rest of existing logic ...
+}
+
+func (stateChangeSyncer *StateChangeSyncer) generateSequentialMempoolDiff(
+    mempoolTxn *badger.Txn,
+    baseTxn *badger.Txn, 
+    blockHeight uint64,
+) error {
+    stateChangeSyncer.DiffGenerationMutex.Lock()
+    defer stateChangeSyncer.DiffGenerationMutex.Unlock()
+    
+    // Initialize or reset state tracking for new block height
+    if stateChangeSyncer.mempoolSyncState == nil || 
+       stateChangeSyncer.mempoolSyncState.currentBlockHeight != blockHeight {
+        stateChangeSyncer.mempoolSyncState = &MempoolSyncState{
+            lastSyncState:      make(map[string][]byte),
+            currentBlockHeight: blockHeight,
+            lastSyncTimestamp:  0,
+        }
+    }
+    
+    // 1. Extract current mempool state from transaction
+    currentMempoolState := stateChangeSyncer.extractStateFromTransaction(mempoolTxn)
+    
+    // 2. Compare with last sync to find changes
+    changes, ancestralRecords := stateChangeSyncer.computeMempoolDiff(
+        stateChangeSyncer.mempoolSyncState.lastSyncState, 
+        currentMempoolState,
+        baseTxn,
+    )
+    
+    // Skip if no changes
+    if len(changes) == 0 {
+        return nil
+    }
+    
+    // 3. Generate file names
+    timestamp := time.Now().UnixNano()
+    diffFile := fmt.Sprintf("mempool_%d_%d.bin", blockHeight, timestamp)
+    ancestralFile := fmt.Sprintf("mempool_ancestral_%d_%d.bin", blockHeight, timestamp)
+    
+    // 4. Write diff file (only changes since last sync)
+    diffBytes := stateChangeSyncer.encodeMempoolChanges(changes)
+    err := stateChangeSyncer.writeAtomicFile(diffFile, diffBytes)
+    if err != nil {
+        return err
+    }
+    
+    // 5. Write ancestral records for this diff
+    if len(ancestralRecords) > 0 {
+        ancestralBytes := stateChangeSyncer.encodeAncestralRecords(ancestralRecords)
+        err = stateChangeSyncer.writeAtomicFile(ancestralFile, ancestralBytes)
+        if err != nil {
+            return err
+        }
+    }
+    
+    // 6. Update state tracking for next diff
+    stateChangeSyncer.mempoolSyncState.lastSyncState = currentMempoolState
+    stateChangeSyncer.mempoolSyncState.lastSyncTimestamp = timestamp
+    
+    // 7. Clean up old files (different block heights)
+    return stateChangeSyncer.cleanupOldMempoolFiles(int32(blockHeight))
+}
+
+func (stateChangeSyncer *StateChangeSyncer) extractStateFromTransaction(txn *badger.Txn) map[string][]byte {
+    state := make(map[string][]byte)
+    
+    opts := badger.DefaultIteratorOptions
+    opts.PrefetchValues = true
+    
+    it := txn.NewIterator(opts)
+    defer it.Close()
+    
+    for it.Rewind(); it.Valid(); it.Next() {
+        item := it.Item()
+        key := item.Key()
+        
+        if !isCoreStateKey(key) {
+            continue
+        }
+        
+        value, err := item.ValueCopy(nil)
+        if err != nil {
+            continue
+        }
+        
+        state[string(key)] = value
+    }
+    
+    return state
+}
+
+func (stateChangeSyncer *StateChangeSyncer) computeMempoolDiff(
+    lastState map[string][]byte,
+    currentState map[string][]byte, 
+    baseTxn *badger.Txn,
+) (changes map[string][]byte, ancestralRecords []AncestralRecord) {
+    
+    changes = make(map[string][]byte)
+    
+    // Find new and modified entries
+    for key, currentValue := range currentState {
+        lastValue, existed := lastState[key]
+        
+        if !existed {
+            // New entry
+            changes[key] = currentValue
+            
+            // Get original value from committed state for ancestral record
+            var originalValue []byte
+            if item, err := baseTxn.Get([]byte(key)); err == nil {
+                originalValue, _ = item.ValueCopy(nil)
+            }
+            
+            ancestralRecords = append(ancestralRecords, AncestralRecord{
+                Key:           []byte(key),
+                PreviousValue: originalValue,
+                Operation:     AncestralOperationInsert,
+            })
+            
+        } else if !bytes.Equal(lastValue, currentValue) {
+            // Modified entry  
+            changes[key] = currentValue
+            
+            ancestralRecords = append(ancestralRecords, AncestralRecord{
+                Key:           []byte(key),
+                PreviousValue: lastValue,
+                Operation:     AncestralOperationUpdate,
+            })
+        }
+    }
+    
+    // Find deleted entries (in last state but not current)
+    for key, lastValue := range lastState {
+        if _, exists := currentState[key]; !exists {
+            // Entry was deleted/ejected
+            changes[key] = nil // nil value indicates deletion
+            
+            ancestralRecords = append(ancestralRecords, AncestralRecord{
+                Key:           []byte(key),
+                PreviousValue: lastValue,
+                Operation:     AncestralOperationDelete,
+            })
+        }
+    }
+    
+    return changes, ancestralRecords
+}
+
+func (stateChangeSyncer *StateChangeSyncer) encodeMempoolChanges(changes map[string][]byte) []byte {
+    var buffer bytes.Buffer
+    
+    for key, value := range changes {
+        // Create KV entry (reuse badger backup format)
+        kv := &pb.KV{
+            Key:   []byte(key),
+            Value: value, // nil for deletions
+        }
+        
+        kvList := &pb.KVList{Kv: []*pb.KV{kv}}
+        kvBytes, err := proto.Marshal(kvList)
+        if err != nil {
+            continue
+        }
+        
+        // Write in badger backup format
+        binary.Write(&buffer, binary.LittleEndian, uint32(len(kvBytes)))
+        binary.Write(&buffer, binary.LittleEndian, uint32(0)) // CRC placeholder  
+        buffer.Write(kvBytes)
+    }
+    
+    return buffer.Bytes()
+}
+```
+
+### Block Commit Integration
+
+When a new block commits, clean up mempool state:
+
+```go
+func (stateChangeSyncer *StateChangeSyncer) onBlockCommit(blockHeight uint64) {
+    stateChangeSyncer.DiffGenerationMutex.Lock()
+    defer stateChangeSyncer.DiffGenerationMutex.Unlock()
+    
+    // Reset mempool sync state for the new block height
+    stateChangeSyncer.mempoolSyncState = nil
+    
+    // Clean up old mempool files (keep only current block height files)
+    stateChangeSyncer.cleanupOldMempoolFiles(int32(blockHeight))
+}
+```
+
+### Consumer Implementation
+
+```go
+// In state-consumer/consumer/consumer.go
+func (consumer *Consumer) processMempoolForBlock(blockHeight uint64) error {
+    // 1. Find all mempool files for this block height
+    pattern := fmt.Sprintf("mempool_%d_*.bin", blockHeight)
+    files, err := filepath.Glob(filepath.Join(consumer.stateDir, pattern))
+    if err != nil {
+        return err
+    }
+    
+    // 2. Sort by timestamp
+    sort.Strings(files) // timestamp ordering
+    
+    // 3. Apply each file sequentially
+    var appliedFiles []string
+    for _, file := range files {
+        err := consumer.applyMempoolDiffFile(file)
+        if err != nil {
+            return err
+        }
+        appliedFiles = append(appliedFiles, file)
+    }
+    
+    // 4. Store applied files for later revert
+    consumer.currentMempoolFiles = appliedFiles
+    return nil
+}
+
+func (consumer *Consumer) revertMempoolChanges() error {
+    // Apply ancestral records in reverse order
+    for i := len(consumer.currentMempoolFiles) - 1; i >= 0; i-- {
+        file := consumer.currentMempoolFiles[i]
+        ancestralFile := strings.Replace(file, "mempool_", "mempool_ancestral_", 1)
+        
+        err := consumer.applyAncestralRecords(ancestralFile)
+        if err != nil {
+            return err
+        }
+    }
+    
+    consumer.currentMempoolFiles = nil
+    return nil
+}
+```
+
+### Benefits of Sequential Approach
+
+1. **Stateless Consumer**: Consumer doesn't need to track mempool state
+2. **Clear Semantics**: Each file is a diff since the last file  
+3. **Simple Revert**: Just apply ancestral records in reverse order
+4. **Efficient**: Only transmits actual changes between syncs
+5. **Deterministic**: Sequential processing ensures consistent state
+
+### Implementation Effort
+
+This approach requires:
+- Simple state tracking on node side (map of last sync state)
+- Diff computation logic (comparing two maps)
+- Consumer updates for sequential processing
+- Block commit integration to reset state
+
+**Estimated effort: 1-2 weeks** - much simpler than the original complex approach while meeting all your requirements.
+
+---
+
+## Step 5C – Transaction Extraction Strategy (New Implementation Plan)
+
+**Objective:** Separate transaction connection logic from state extraction to create a clean, modular architecture.
+
+### Current Problem Analysis
+
+The existing `SyncMempoolToStateSyncer` mixes two different types of state extraction:
+
+1. **Flushed State Changes**: Extracted from badger transaction after `FlushToDbWithTxn` 
+2. **Transaction/UtxoOp Entries**: Manually created by connecting transactions
+
+These need to be separated because:
+- Transaction entries are NOT part of the badger flush
+- They must be recreated each sync due to transaction ordering
+- They follow predictable patterns (Transaction + UtxoOps per block/transaction)
+- Caching is problematic due to fee-timestamp ordering changes
+
+### Proposed Architecture
+
+```go
+// Main orchestration function
+func (stateChangeSyncer *StateChangeSyncer) generateSequentialMempoolDiff(
+    mempoolTxn *badger.Txn,
+    baseTxn *badger.Txn, 
+    blockHeight uint64,
+) error {
+    // 1. Extract flushed state changes
+    flushedState := stateChangeSyncer.extractStateFromTransaction(mempoolTxn)
+    
+    // 2. Extract transaction entries  
+    transactionState, err := stateChangeSyncer.extractTransactionEntries(server, blockHeight)
+    if err != nil {
+        return err
+    }
+    
+    // 3. Merge both states
+    currentMempoolState := mergeMempoolStates(flushedState, transactionState)
+    
+    // 4. Continue with existing diff logic...
+    changed, deleted, ancestralRecords := stateChangeSyncer.computeMempoolDiff(
+        stateChangeSyncer.mempoolSyncState.lastSyncState, 
+        currentMempoolState,
+        baseTxn,
+    )
+    
+    // ... rest of function
+}
+```
+
+### New Functions to Implement
+
+#### 1. `extractTransactionEntries`
+```go
+func (stateChangeSyncer *StateChangeSyncer) extractTransactionEntries(
+    server *Server, 
+    blockHeight uint64,
+) (map[string][]byte, error)
+```
+
+**Responsibilities:**
+- Connect uncommitted blocks and extract Block + UtxoOp entries
+- Connect mempool transactions and extract Transaction + UtxoOp entries  
+- Return consistent `map[string][]byte` format
+- Handle all transaction ordering and connection logic
+
+#### 2. `mergeMempoolStates`
+```go
+func mergeMempoolStates(
+    flushedState map[string][]byte,
+    transactionState map[string][]byte,
+) map[string][]byte
+```
+
+**Responsibilities:**
+- Merge flushed state and transaction state into single map
+- Handle any key conflicts (transaction state should override)
+- Return combined state for diff computation
+
+### Implementation Strategy
+
+#### Phase 1: Extract Transaction Logic
+1. Create `extractTransactionEntries` function
+2. Move uncommitted block connection logic
+3. Move mempool transaction connection logic  
+4. Return map format instead of using event handlers
+
+#### Phase 2: Integration
+1. Create `mergeMempoolStates` helper
+2. Update `generateSequentialMempoolDiff` to use both functions
+3. Add comprehensive tests
+
+#### Phase 3: Optimization Notes (Future)
+- **Transaction Caching**: Could cache `ConnectTransaction` results per transaction hash
+- **Ordering Optimization**: Could track transaction order changes and incrementally update
+- **Batch Processing**: Could batch similar transaction types
+- **Validation Caching**: Could cache transaction validation results
+
+⚠️ **Note**: Caching optimizations deferred due to complexity of fee-timestamp ordering changes
+
+### Key Benefits
+
+1. **Separation of Concerns**: Flushed state vs Transaction state clearly separated
+2. **Testability**: Each function can be tested independently
+3. **Maintainability**: Transaction logic isolated and easier to understand
+4. **Reusability**: Transaction extraction could be used elsewhere
+5. **Performance**: Clear bottlenecks identified for future optimization
+
+### File Organization
+
+- `extractStateFromTransaction` ✅ (Completed)
+- `extractTransactionEntries` 🔄 (New - To Implement)  
+- `mergeMempoolStates` 🔄 (New - To Implement)
+- `generateSequentialMempoolDiff` 🔄 (Update - Integrate new functions)
+
+### Testing Strategy
+
+#### Unit Tests for `extractTransactionEntries`:
+1. **Uncommitted Blocks**: Verify Block and UtxoOp entries created correctly
+2. **Mempool Transactions**: Verify Transaction and UtxoOp entries created correctly
+3. **Mixed Scenarios**: Both uncommitted blocks and mempool transactions
+4. **Error Handling**: Transaction connection failures
+5. **Empty Cases**: No uncommitted blocks, no mempool transactions
+
+#### Integration Tests:
+1. **End-to-End**: Full mempool diff with flushed + transaction state
+2. **State Merging**: Verify flushed and transaction states merge correctly
+3. **Performance**: Large mempool with many transactions
+
+### Migration Path
+
+1. Implement new functions alongside existing logic
+2. Add feature flag to switch between old/new implementations
+3. Comprehensive testing of new implementation
+4. Gradual rollout and performance comparison
+5. Remove old implementation once validated
+
+This approach maintains the sequential diff functionality while creating a clean, maintainable architecture that separates the different types of state extraction.
+
+## Implementation Summary & Next Steps
+
+### Summary of Analysis
+The mempool refactor represents a significant architectural shift from event-driven to stream-based state tracking. Based on analysis of the current implementation, the key challenges and solutions are:
+
+#### Current System Complexity
+- **Sophisticated Ejection Detection**: The existing system uses three maps (`MempoolSyncedKeyValueMap`, `MempoolFlushKeySet`, `MempoolNewlyFlushedTxns`) to track mempool state and detect ejected transactions
+- **Event-Driven Architecture**: State changes are captured via event handlers and written to a single `mempool.bin` file
+- **Complex Revert Logic**: Ancestral records are embedded in `StateChangeEntry` structures with `IsReverted` flags
+
+#### New System Benefits
+- **Incremental Files**: `mempool_<height>_<ts>.bin` format enables better tracking and cleanup
+- **Separate Ancestral Records**: Cleaner separation of concerns with dedicated revert files
+- **Stream-Based Detection**: Leverages proven badger streaming technology used for block commits
+- **Better Performance**: Reduces event handler overhead and improves consumer processing
+
+### Implementation Priority Matrix
+
+| Component | Priority | Complexity | Dependencies |
+|-----------|----------|------------|--------------|
+| 5.1 - MempoolStateManager | **HIGH** | Medium | None |
+| 5.11 - Change Detection Algorithm | **HIGH** | High | 5.1 |
+| 5.4 - File Generation | **HIGH** | Medium | 5.1, 5.11 |
+| 5.13 - Ancestral Record Format | **HIGH** | Medium | 5.11 |
+| 5.12 - Performance Optimization | **MEDIUM** | High | 5.1, 5.11 |
+| 5.14 - Consumer Integration | **MEDIUM** | Medium | 5.4, 5.13 |
+| 5.17 - Error Recovery | **MEDIUM** | Medium | All core components |
+| 5.15 - Metrics & Monitoring | **LOW** | Low | 5.11 |
+| 5.18 - Comprehensive Testing | **LOW** | Medium | All components |
+
+### Recommended Implementation Phases
+
+#### Phase 1: Core Infrastructure (Weeks 1-2)
+**Goal**: Establish the foundation for stream-based mempool syncing
+
+**Tasks**:
+1. Implement `MempoolStateManager` with in-memory state tracking (5.1)
+2. Create basic change detection algorithm (5.11) 
+3. Implement incremental file generation (5.4)
+4. Design ancestral record format (5.13)
+
+**Success Criteria**:
+- Can generate mempool diff files from current mempool state
+- Basic ejection detection works (new/modified/ejected entries)
+- Files written atomically with proper naming convention
+
+#### Phase 2: Integration & Optimization (Weeks 3-4)
+**Goal**: Integrate with existing system and optimize performance
+
+**Tasks**:
+1. Replace existing `SyncMempoolToStateSyncer` implementation (5.7)
+2. Implement performance optimizations (5.12)
+3. Add error recovery mechanisms (5.17)
+4. Update `StateChangeSyncer` structure (5.8)
+
+**Success Criteria**:
+- New system works alongside existing block commit diff generation
+- Performance meets or exceeds current implementation
+- Graceful error handling and recovery
+
+#### Phase 3: Consumer & Testing (Weeks 5-6)
+**Goal**: Complete end-to-end functionality and validation
+
+**Tasks**:
+1. Update consumer to handle new file formats (5.14)
+2. Implement comprehensive test suite (5.18-5.19)
+3. Add metrics and monitoring (5.15)
+4. Perform migration testing with parallel implementations
+
+**Success Criteria**:
+- Consumer correctly processes incremental mempool files
+- All existing mempool functionality preserved
+- Performance metrics validate the improvements
+
+### Implementation Checklist
+
+#### Core Components
+- [ ] `MempoolStateManager` struct with required fields
+- [ ] In-memory badger DB or map-based state tracking  
+- [ ] Change detection algorithm (new/modified/ejected)
+- [ ] Incremental file generation with atomic writes
+- [ ] Ancestral record file format and encoding
+- [ ] File cleanup and retention policy
+- [ ] Integration with existing `StateChangeSyncer`
+
+#### Consumer Updates
+- [ ] Parse new incremental file format
+- [ ] Handle ancestral record files for reverts
+- [ ] Update file watching logic for new naming convention
+- [ ] Implement reset signal handling for error recovery
+
+#### Testing & Validation
+- [ ] Unit tests for `MempoolStateManager`
+- [ ] Integration tests with live mempool
+- [ ] Performance benchmarks vs current implementation
+- [ ] Migration testing with parallel systems
+- [ ] Error recovery and edge case testing
+
+#### Documentation & Deployment
+- [ ] Update README with new architecture
+- [ ] Document consumer changes and migration process
+- [ ] Feature flag for gradual rollout
+- [ ] Monitoring and alerting for new metrics
+
+### Risk Mitigation Strategies
+
+#### Performance Risks
+- **Risk**: State reconstruction overhead on each sync cycle
+- **Mitigation**: Implement incremental updates and caching (5.12)
+- **Fallback**: Adjust sync frequency if performance degrades
+
+#### Data Consistency Risks  
+- **Risk**: Race conditions between mempool changes and sync
+- **Mitigation**: Use existing `DiffGenerationMutex` for synchronization
+- **Fallback**: Implement reset mechanism for corrupted state (5.17)
+
+#### Consumer Compatibility Risks
+- **Risk**: Breaking changes for existing consumers
+- **Mitigation**: Feature flag and parallel operation during migration
+- **Fallback**: Keep legacy format as backup option
+
+### Key Design Decisions
+
+1. **Map-Based vs Badger DB**: Start with lightweight map-based state tracking, add badger DB if streaming benefits are significant
+2. **File Format**: Use badger backup format for diff files to leverage existing parsing logic
+3. **Ancestral Records**: Separate files with structured format for better revert handling
+4. **Error Recovery**: Full reset strategy with consumer signaling for simplicity
+5. **Performance**: Focus on incremental updates rather than full reconstruction
+
+### Success Metrics
+
+- **Performance**: Mempool sync time should be ≤ current implementation
+- **Memory**: Memory usage should not exceed 2x current implementation
+- **Reliability**: Error rate should be < 0.1% of sync operations
+- **Compatibility**: 100% functional compatibility with existing consumer behavior
+- **Maintainability**: Reduced complexity in state tracking logic
+
+This implementation plan provides a clear roadmap for migrating from the event-driven mempool syncing to a stream-based approach that aligns with the overall state change syncer refactor goals while addressing the specific challenges of mempool state management.
+
+---
+
+### Implementation Status Update
+
+#### ✅ COMPLETED: extractStateFromTransaction
+- **Function**: `extractStateFromTransaction(txn *badger.Txn) map[string][]byte`
+- **Location**: `core/lib/state_change_syncer.go` (lines 1382-1412)
+- **Tests**: `core/lib/state_change_syncer_mempool_test.go`
+  - ✅ Core state update test
+  - ✅ Multiple update test (most recent value wins)
+  - ✅ Integration test with submit post transaction
+- **Status**: Fully implemented and tested
+
+#### ✅ COMPLETED: Sequential Mempool Diff Functions (Phase 1)
+- **Functions**: 
+  - `computeMempoolDiff` (lines 1420-1487)
+  - `generateSequentialMempoolDiff` (lines 1489-1548)
+  - Supporting functions: `encodeMempoolChanges`, `encodeAncestralRecords`, `writeAtomicFile`, `cleanupOldMempoolFiles`
+- **Types**: `AncestralOperation`, `AncestralRecord`, `MempoolSyncState`
+- **Tests**: 
+  - ✅ `TestComputeMempoolDiff_SingleTransaction`
+  - ✅ `TestGenerateSequentialMempoolDiff_SingleTransaction`
+- **Status**: Basic implementation complete, first test case passing
+
+#### 🔄 IN PROGRESS: Comprehensive Test Coverage (Phase 2)
+
+**Remaining Test Cases:**
+
+##### Test Cases for `computeMempoolDiff`:
+1. ✅ **Single Transaction**: One new entry in current state
+2. **Multiple Same Key**: Multiple updates to same key in current state
+3. **Cross-Scan Creation**: Entry in previous, different entry in current  
+4. **Cross-Scan Update**: Same key, different value between scans
+5. **Cross-Scan Delete-Recreate**: Entry exists → deleted → recreated with original value
+6. **Mixed Operations**: Combination of creates, updates, deletes in single diff
+7. **Empty States**: Both empty, only current empty, only previous empty
+8. **Large State**: Performance test with many entries
+
+##### Test Cases for `generateSequentialMempoolDiff`:
+1. ✅ **Single Transaction File**: One mempool transaction generates correct file
+2. **Multiple Same Key File**: Multiple updates generate single entry in file
+3. **Sequential Files**: Multiple scans generate properly named sequential files
+4. **Ancestral Records**: Verify ancestral record file generation and content
+5. **File Cleanup**: Old files removed when block commits
+6. **Timestamp Ordering**: Files generated in correct timestamp order
+7. **Block Height Transition**: Proper file naming across block height changes
+8. **Error Handling**: Failed writes, disk full scenarios
+
+**Implementation Priority:**
+- ✅ Phase 1: Implement both functions with basic logic
+- ✅ Phase 2: Add first test case for each function  
+- 🔄 Phase 3: Add remaining test cases incrementally
+- Phase 4: Performance and error handling tests

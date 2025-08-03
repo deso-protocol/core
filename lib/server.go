@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"github.com/dgraph-io/badger/v3"
 	"net"
 	"path/filepath"
 	"reflect"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/dgraph-io/badger/v3"
 
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/btcsuite/btcd/addrmgr"
@@ -487,6 +488,7 @@ func NewServer(
 			_disableEncoderMigrations,
 			_hypersyncMaxQueueSize,
 			eventManager,
+			stateChangeSyncer,
 		)
 		if err != nil {
 			panic(err)

@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -309,6 +311,33 @@ type StateChangeSyncer struct {
 
 	// Mutex guarding BackupDatabase streaming and diff file IO.
 	DiffGenerationMutex *sync.Mutex
+
+	// State tracking for incremental mempool diff generation
+	mempoolSyncState *MempoolSyncState
+}
+
+// AncestralOperation represents the type of operation that needs to be reverted
+type AncestralOperation uint8
+
+const (
+	AncestralOperationInsert AncestralOperation = 0
+	AncestralOperationUpdate AncestralOperation = 1
+	AncestralOperationDelete AncestralOperation = 2
+)
+
+// AncestralRecord stores the information needed to revert a mempool change
+type AncestralRecord struct {
+	Key           []byte
+	PreviousValue []byte
+	Operation     AncestralOperation
+}
+
+// MempoolSyncState tracks the state between mempool syncs for incremental diff generation
+type MempoolSyncState struct {
+	// Track what was written in the last mempool sync for this block height
+	lastSyncState      map[string][]byte // key -> value from last sync
+	currentBlockHeight uint64
+	lastSyncTimestamp  int64
 }
 
 // BackupDatabase performs a Badger backup of the supplied database starting from the provided
@@ -331,10 +360,10 @@ type StateChangeSyncer struct {
 // The function is **stateless** with respect to StateChangeSyncer – callers are expected to persist
 // the returned `since` value if they wish to subsequently make incremental backups.  Keeping the
 // helper on StateChangeSyncer simply provides a convenient, namespaced location that fits this
-// package’s responsibilities.
+// package's responsibilities.
 func (s *StateChangeSyncer) BackupDatabase(
 	db *badger.DB,
-	preCommitTxn *badger.Txn, // snapshot taken right before the block’s writes
+	preCommitTxn *badger.Txn, // snapshot taken right before the block's writes
 	since uint64,
 ) (backupBytes []byte, nextSince uint64, err error) {
 
@@ -408,17 +437,17 @@ func isMeaningfulChange(it *badger.Item, preTxn *badger.Txn) bool {
 		return true
 	}
 
-	// Get the value we’re about to back up.
+	// Get the value we're about to back up.
 	newVal, err := it.ValueCopy(nil)
 	if err != nil {
-		// Defensive: if we can’t read it, better to include it.
+		// Defensive: if we can't read it, better to include it.
 		return true
 	}
 
 	// Compare with the value that existed *before* the block.
 	oldIt, err := preTxn.Get(it.Key())
 	if err == badger.ErrKeyNotFound {
-		// Key didn’t exist → definitely a real change.
+		// Key didn't exist → definitely a real change.
 		return true
 	}
 	if err != nil {
@@ -484,7 +513,7 @@ func (s *StateChangeSyncer) ExtractStateChangesFromBackup(
 		for _, kv := range kvl.Kv {
 			keyStr := string(kv.Key)
 			if _, dup := seen[keyStr]; dup {
-				// Shouldn’t happen with the new stream, but bail defensively.
+				// Shouldn't happen with the new stream, but bail defensively.
 				continue
 			}
 			seen[keyStr] = struct{}{}
@@ -1379,6 +1408,38 @@ func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Serv
 	}()
 }
 
+// extractStateFromTransaction extracts all core state key-value pairs from a badger transaction.
+// This is used to capture the current mempool state that has been flushed to a transaction
+// but not yet committed to the main database.
+func (stateChangeSyncer *StateChangeSyncer) extractStateFromTransaction(txn *badger.Txn) map[string][]byte {
+	state := make(map[string][]byte)
+
+	opts := badger.DefaultIteratorOptions
+	opts.PrefetchValues = true
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	for it.Rewind(); it.Valid(); it.Next() {
+		item := it.Item()
+		key := item.Key()
+
+		// Only process core state keys
+		if !isCoreStateKey(key) {
+			continue
+		}
+
+		value, err := item.ValueCopy(nil)
+		if err != nil {
+			continue
+		}
+
+		state[string(key)] = value
+	}
+
+	return state
+}
+
 func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server) error {
 	// Check if the state change file already exists and is not empty. If so, return.
 	stateChangeFileInfo, err := stateChangeSyncer.StateChangeFile.Stat()
@@ -1459,4 +1520,436 @@ func (stateChangeSyncer *StateChangeSyncer) FlushAllEntriesToFile(server *Server
 		}
 	}
 	return nil
+}
+
+// computeMempoolDiff compares current mempool state with previous sync state to find changes.
+// Returns changed entries (new/modified) and deleted entries separately.
+func (stateChangeSyncer *StateChangeSyncer) computeMempoolDiff(
+	previousState map[string][]byte,
+	currentState map[string][]byte,
+	baseTxn *badger.Txn,
+) (changed map[string][]byte, deleted map[string][]byte, ancestralRecords []AncestralRecord) {
+
+	changed = make(map[string][]byte)
+	deleted = make(map[string][]byte)
+	ancestralRecords = make([]AncestralRecord, 0)
+
+	// Find new and modified entries
+	for key, currentValue := range currentState {
+		previousValue, existed := previousState[key]
+
+		if !existed {
+			// New entry
+			changed[key] = currentValue
+
+			// Get original value from committed state for ancestral record
+			var originalValue []byte
+			if item, err := baseTxn.Get([]byte(key)); err == nil {
+				originalValue, _ = item.ValueCopy(nil)
+			}
+
+			ancestralRecords = append(ancestralRecords, AncestralRecord{
+				Key:           []byte(key),
+				PreviousValue: originalValue,
+				Operation:     AncestralOperationInsert,
+			})
+
+		} else if !bytes.Equal(previousValue, currentValue) {
+			// Modified entry
+			changed[key] = currentValue
+
+			ancestralRecords = append(ancestralRecords, AncestralRecord{
+				Key:           []byte(key),
+				PreviousValue: previousValue,
+				Operation:     AncestralOperationUpdate,
+			})
+		}
+	}
+
+	// Find deleted entries (in previous state but not current)
+	for key, previousValue := range previousState {
+		if _, exists := currentState[key]; !exists {
+			// Entry was deleted/ejected
+			deleted[key] = previousValue
+
+			ancestralRecords = append(ancestralRecords, AncestralRecord{
+				Key:           []byte(key),
+				PreviousValue: previousValue,
+				Operation:     AncestralOperationDelete,
+			})
+		}
+	}
+
+	return changed, deleted, ancestralRecords
+}
+
+// generateSequentialMempoolDiff generates incremental mempool diff files.
+// This is the main function that orchestrates the mempool diff generation process.
+func (stateChangeSyncer *StateChangeSyncer) generateSequentialMempoolDiff(
+	mempoolTxn *badger.Txn,
+	baseTxn *badger.Txn,
+	blockchain *Blockchain,
+	mempool Mempool,
+	blockHeight uint64,
+) error {
+	stateChangeSyncer.DiffGenerationMutex.Lock()
+	defer stateChangeSyncer.DiffGenerationMutex.Unlock()
+
+	// Initialize or reset state tracking for new block height
+	if stateChangeSyncer.mempoolSyncState == nil ||
+		stateChangeSyncer.mempoolSyncState.currentBlockHeight != blockHeight {
+		stateChangeSyncer.mempoolSyncState = &MempoolSyncState{
+			lastSyncState:      make(map[string][]byte),
+			currentBlockHeight: blockHeight,
+			lastSyncTimestamp:  0,
+		}
+	}
+
+	// 1. Extract flushed state changes from transaction
+	flushedState := stateChangeSyncer.extractStateFromTransaction(mempoolTxn)
+
+	// 2. Extract transaction entries (uncommitted blocks + mempool transactions)
+	transactionState, err := stateChangeSyncer.extractTransactionEntries(blockchain, mempool, blockHeight)
+	if err != nil {
+		return fmt.Errorf("failed to extract transaction entries: %w", err)
+	}
+
+	// 3. Merge both states (transaction state takes precedence)
+	currentMempoolState := mergeMempoolStates(flushedState, transactionState)
+
+	// 4. Compare with last sync to find changes
+	changed, deleted, ancestralRecords := stateChangeSyncer.computeMempoolDiff(
+		stateChangeSyncer.mempoolSyncState.lastSyncState,
+		currentMempoolState,
+		baseTxn,
+	)
+
+	// Skip if no changes
+	if len(changed) == 0 && len(deleted) == 0 {
+		return nil
+	}
+
+	// 5. Generate file names
+	timestamp := time.Now().UnixNano()
+	diffFile := fmt.Sprintf("mempool_%d_%d.bin", blockHeight, timestamp)
+	ancestralFile := fmt.Sprintf("mempool_ancestral_%d_%d.bin", blockHeight, timestamp)
+
+	// 6. Write diff file (only changes since last sync)
+	diffBytes, err := stateChangeSyncer.encodeMempoolChanges(changed, deleted)
+	if err != nil {
+		return fmt.Errorf("failed to encode mempool changes: %w", err)
+	}
+
+	err = stateChangeSyncer.writeAtomicFile(diffFile, diffBytes)
+	if err != nil {
+		return fmt.Errorf("failed to write diff file: %w", err)
+	}
+
+	// 7. Write ancestral records for this diff
+	if len(ancestralRecords) > 0 {
+		ancestralBytes, err := stateChangeSyncer.encodeAncestralRecords(ancestralRecords)
+		if err != nil {
+			return fmt.Errorf("failed to encode ancestral records: %w", err)
+		}
+
+		err = stateChangeSyncer.writeAtomicFile(ancestralFile, ancestralBytes)
+		if err != nil {
+			return fmt.Errorf("failed to write ancestral file: %w", err)
+		}
+	}
+
+	// 8. Update state tracking for next diff
+	stateChangeSyncer.mempoolSyncState.lastSyncState = currentMempoolState
+	stateChangeSyncer.mempoolSyncState.lastSyncTimestamp = timestamp
+
+	// 9. Clean up old files (different block heights)
+	return stateChangeSyncer.cleanupOldMempoolFiles(int32(blockHeight))
+}
+
+// encodeMempoolChanges encodes mempool changes into badger backup format
+func (stateChangeSyncer *StateChangeSyncer) encodeMempoolChanges(
+	changed map[string][]byte,
+	deleted map[string][]byte,
+) ([]byte, error) {
+	var buffer bytes.Buffer
+
+	// Encode changed entries
+	for key, value := range changed {
+		kv := &pb.KV{
+			Key:   []byte(key),
+			Value: value,
+		}
+
+		kvList := &pb.KVList{Kv: []*pb.KV{kv}}
+		kvBytes, err := proto.Marshal(kvList)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal KV for key %s: %w", key, err)
+		}
+
+		// Write in badger backup format
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(len(kvBytes))); err != nil {
+			return nil, err
+		}
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(0)); err != nil { // CRC placeholder
+			return nil, err
+		}
+		buffer.Write(kvBytes)
+	}
+
+	// Encode deleted entries (with nil values)
+	for key := range deleted {
+		kv := &pb.KV{
+			Key:   []byte(key),
+			Value: nil, // nil value indicates deletion
+		}
+
+		kvList := &pb.KVList{Kv: []*pb.KV{kv}}
+		kvBytes, err := proto.Marshal(kvList)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal deleted KV for key %s: %w", key, err)
+		}
+
+		// Write in badger backup format
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(len(kvBytes))); err != nil {
+			return nil, err
+		}
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(0)); err != nil { // CRC placeholder
+			return nil, err
+		}
+		buffer.Write(kvBytes)
+	}
+
+	return buffer.Bytes(), nil
+}
+
+// encodeAncestralRecords encodes ancestral records for revert operations
+func (stateChangeSyncer *StateChangeSyncer) encodeAncestralRecords(records []AncestralRecord) ([]byte, error) {
+	var buffer bytes.Buffer
+
+	for _, record := range records {
+		// Simple encoding: operation(1) + key_len(4) + key + value_len(4) + value
+		if err := binary.Write(&buffer, binary.LittleEndian, uint8(record.Operation)); err != nil {
+			return nil, err
+		}
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(len(record.Key))); err != nil {
+			return nil, err
+		}
+		buffer.Write(record.Key)
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(len(record.PreviousValue))); err != nil {
+			return nil, err
+		}
+		buffer.Write(record.PreviousValue)
+	}
+
+	return buffer.Bytes(), nil
+}
+
+// writeAtomicFile writes data to a file atomically using temp file + rename
+func (stateChangeSyncer *StateChangeSyncer) writeAtomicFile(filename string, data []byte) error {
+	fullPath := filepath.Join(stateChangeSyncer.StateChangeDir, filename)
+	tmpPath := fullPath + ".tmp"
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Write to temp file
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// Atomic rename
+	if err := os.Rename(tmpPath, fullPath); err != nil {
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
+}
+
+// cleanupOldMempoolFiles removes mempool files for block heights older than the current one
+func (stateChangeSyncer *StateChangeSyncer) cleanupOldMempoolFiles(currentBlockHeight int32) error {
+	pattern := filepath.Join(stateChangeSyncer.StateChangeDir, "mempool_*.bin")
+	files, err := filepath.Glob(pattern)
+	if err != nil {
+		return fmt.Errorf("failed to glob mempool files: %w", err)
+	}
+
+	for _, file := range files {
+		filename := filepath.Base(file)
+
+		// Parse block height from filename (mempool_<height>_<timestamp>.bin)
+		parts := strings.Split(filename, "_")
+		if len(parts) < 3 {
+			continue
+		}
+
+		heightStr := parts[1]
+		fileHeight, err := strconv.ParseInt(heightStr, 10, 32)
+		if err != nil {
+			continue
+		}
+
+		// Remove files from previous block heights
+		if int32(fileHeight) < currentBlockHeight {
+			if err := os.Remove(file); err != nil {
+				glog.Warningf("Failed to remove old mempool file %s: %v", file, err)
+			}
+		}
+	}
+
+	// Also clean up ancestral files
+	ancestralPattern := filepath.Join(stateChangeSyncer.StateChangeDir, "mempool_ancestral_*.bin")
+	ancestralFiles, err := filepath.Glob(ancestralPattern)
+	if err != nil {
+		return fmt.Errorf("failed to glob ancestral files: %w", err)
+	}
+
+	for _, file := range ancestralFiles {
+		filename := filepath.Base(file)
+
+		// Parse block height from filename (mempool_ancestral_<height>_<timestamp>.bin)
+		parts := strings.Split(filename, "_")
+		if len(parts) < 4 {
+			continue
+		}
+
+		heightStr := parts[2]
+		fileHeight, err := strconv.ParseInt(heightStr, 10, 32)
+		if err != nil {
+			continue
+		}
+
+		// Remove files from previous block heights
+		if int32(fileHeight) < currentBlockHeight {
+			if err := os.Remove(file); err != nil {
+				glog.Warningf("Failed to remove old ancestral file %s: %v", file, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// extractTransactionEntries extracts transaction and block entries that need to be manually created
+// for the mempool. This includes uncommitted blocks and mempool transactions with their associated
+// UtxoOp bundles. Returns entries in the same map[string][]byte format as extractStateFromTransaction.
+func (stateChangeSyncer *StateChangeSyncer) extractTransactionEntries(
+	blockchain *Blockchain,
+	mempool Mempool,
+	blockHeight uint64,
+) (map[string][]byte, error) {
+	transactionState := make(map[string][]byte)
+
+	// Get mempool and validate it's running
+	if !mempool.IsRunning() {
+		return transactionState, nil // Return empty state if mempool not running
+	}
+
+	// Create a fresh UtxoView (not the augmented one that already includes mempool transactions)
+	// This mirrors the pattern in SyncMempoolToStateSyncer
+	mempoolTxUtxoView := NewUtxoView(blockchain.db, blockchain.params, blockchain.postgres, nil, nil)
+
+	blockchain.ChainLock.RLock()
+	tipHash := blockchain.blockIndex.GetTip().Hash
+	mempoolTxUtxoView.TipHash = tipHash
+	blockchain.ChainLock.RUnlock()
+
+	// 1. Handle Uncommitted Blocks
+	uncommittedBlocks, err := blockchain.GetUncommittedBlocks(tipHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get uncommitted blocks: %w", err)
+	}
+	// Process each uncommitted block (following SyncMempoolToStateSyncer pattern)
+	for _, uncommittedBlock := range uncommittedBlocks {
+		utxoViewAndOpsAtBlockHash, err := blockchain.GetUtxoViewAndUtxoOpsAtBlockHash(
+			*uncommittedBlock.Hash,
+			uint64(uncommittedBlock.Height),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get utxo view for block %s: %w",
+				uncommittedBlock.Hash.String(), err)
+		}
+
+		// Create Block entry
+		blockBytes, err := utxoViewAndOpsAtBlockHash.Block.ToBytes(false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert block to bytes: %w", err)
+		}
+
+		blockKey := string(BlockHashToBlockKey(uncommittedBlock.Hash))
+		transactionState[blockKey] = blockBytes
+
+		// Create Block UtxoOps entry
+		utxoOpBundle := &UtxoOperationBundle{
+			UtxoOpBundle: utxoViewAndOpsAtBlockHash.UtxoOps,
+		}
+		utxoOpsBytes := EncodeToBytes(blockHeight, utxoOpBundle, false)
+		utxoOpsKey := string(_DbKeyForUtxoOps(uncommittedBlock.Hash))
+		transactionState[utxoOpsKey] = utxoOpsBytes
+
+		// Update the view for the next iteration (key pattern from SyncMempoolToStateSyncer)
+		mempoolTxUtxoView = utxoViewAndOpsAtBlockHash.UtxoView
+	}
+
+	// 2. Handle Mempool Transactions
+	mempoolTxns := mempool.GetOrderedTransactions()
+	currentTimestamp := time.Now().UnixNano()
+
+	for _, mempoolTx := range mempoolTxns {
+		if !mempoolTx.validated {
+			continue
+		}
+
+		// Connect the transaction to get UtxoOps
+		utxoOpsForTxn, _, _, _, err := mempoolTxUtxoView.ConnectTransaction(
+			mempoolTx.Tx,
+			mempoolTx.Hash,
+			uint32(blockHeight+1),
+			currentTimestamp,
+			false, // verifySignatures
+			false, // ignoreUtxos
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect transaction %s: %w",
+				mempoolTx.Hash.String(), err)
+		}
+
+		// Create Transaction entry
+		txnBytes := EncodeToBytes(blockHeight, mempoolTx.Tx, false)
+		txnKey := string(TxnHashToTxnKey(mempoolTx.Hash))
+		transactionState[txnKey] = txnBytes
+
+		// Create Transaction UtxoOps entry
+		utxoOpBundle := &UtxoOperationBundle{
+			UtxoOpBundle: [][]*UtxoOperation{utxoOpsForTxn},
+		}
+		utxoOpsBytes := EncodeToBytes(blockHeight, utxoOpBundle, false)
+		utxoOpsKey := string(_DbKeyForTxnUtxoOps(mempoolTx.Hash))
+		transactionState[utxoOpsKey] = utxoOpsBytes
+	}
+
+	return transactionState, nil
+}
+
+// mergeMempoolStates combines flushed state and transaction state into a single map.
+// Transaction state takes precedence over flushed state in case of key conflicts.
+func mergeMempoolStates(
+	flushedState map[string][]byte,
+	transactionState map[string][]byte,
+) map[string][]byte {
+	// Start with flushed state
+	mergedState := make(map[string][]byte, len(flushedState)+len(transactionState))
+
+	// Copy flushed state
+	for key, value := range flushedState {
+		mergedState[key] = value
+	}
+
+	// Overlay transaction state (takes precedence)
+	for key, value := range transactionState {
+		mergedState[key] = value
+	}
+
+	return mergedState
 }

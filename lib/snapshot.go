@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
 	"math"
 	"reflect"
 	"runtime"
@@ -13,12 +12,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/deso-protocol/core/collections"
+
+	"encoding/binary"
+
 	"github.com/cloudflare/circl/group"
 	"github.com/deso-protocol/go-deadlock"
 	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v3/pb"
 	"github.com/fatih/color"
 	"github.com/golang/glog"
-	"github.com/google/uuid"
+	"github.com/golang/protobuf/proto"
 	"github.com/oleiade/lane"
 	"github.com/pkg/errors"
 	"golang.org/x/sync/semaphore"
@@ -366,6 +370,9 @@ type Snapshot struct {
 	timer *Timer
 
 	eventManager *EventManager
+
+	// StateChangeSyncer is used to generate diff files during hypersync chunk processing
+	stateChangeSyncer *StateChangeSyncer
 }
 
 // NewSnapshot creates a new snapshot instance.
@@ -378,6 +385,7 @@ func NewSnapshot(
 	disableMigrations bool,
 	hypersyncMaxQueueSize uint32,
 	eventManager *EventManager,
+	stateChangeSyncer *StateChangeSyncer,
 ) (
 	_snap *Snapshot,
 	_err error,
@@ -506,6 +514,7 @@ func NewSnapshot(
 		timer:                        timer,
 		ExitChannel:                  make(chan bool),
 		eventManager:                 eventManager,
+		stateChangeSyncer:            stateChangeSyncer,
 	}
 	// Now we will set the handler for finishing all operations in the operation channel.
 	snap.OperationChannel.SetFinishAllOperationsHandler(snap.PersistChecksumAndMigration)
@@ -1205,13 +1214,73 @@ func (snap *Snapshot) GetSnapshotChunk(prefix []byte, startKey []byte) (
 	return snapshotEntriesBatch, mainDbFilled || ancestralDbFilled, nil
 }
 
+// generateHypersyncChunkDiff generates a diff file from a hypersync chunk.
+// This converts the chunk DBEntries into the same format as regular committed block diffs.
+func (snap *Snapshot) generateHypersyncChunkDiff(
+	chunk []*DBEntry,
+	blockHeight uint64,
+	chunkId uint64,
+) error {
+	// Skip if no StateChangeSyncer is available
+	if snap.stateChangeSyncer == nil {
+		return nil
+	}
+
+	// Convert DBEntries to the same format as BackupDatabase output
+	var buffer bytes.Buffer
+
+	for _, dbEntry := range chunk {
+		// Only process core state keys (filter like we do in other places)
+		if !isCoreStateKey(dbEntry.Key) {
+			continue
+		}
+
+		// Create KV entry in badger backup format
+		kv := &pb.KV{
+			Key:   append([]byte(nil), dbEntry.Key...),
+			Value: append([]byte(nil), dbEntry.Value...),
+		}
+
+		kvList := &pb.KVList{Kv: []*pb.KV{kv}}
+		kvBytes, err := proto.Marshal(kvList)
+		if err != nil {
+			return fmt.Errorf("failed to marshal KV for hypersync chunk: %w", err)
+		}
+
+		// Write in badger backup format: length + CRC + data
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(len(kvBytes))); err != nil {
+			return err
+		}
+		if err := binary.Write(&buffer, binary.LittleEndian, uint32(0)); err != nil { // CRC placeholder
+			return err
+		}
+		buffer.Write(kvBytes)
+	}
+
+	// Skip if no core state entries
+	if buffer.Len() == 0 {
+		return nil
+	}
+
+	// Generate filename: hypersync_chunk_<height>_<chunk_id>_<timestamp>.bin
+	timestamp := time.Now().UnixNano()
+	filename := fmt.Sprintf("hypersync_chunk_%d_%d_%d.bin", blockHeight, chunkId, timestamp)
+
+	// Use StateChangeSyncer's atomic file writing
+	err := snap.stateChangeSyncer.writeAtomicFile(filename, buffer.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to write hypersync chunk diff file: %w", err)
+	}
+
+	return nil
+}
+
 // SetSnapshotChunk is called to put the snapshot chunk that we've got from a peer in the database.
 func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.RWMutex,
 	chunk []*DBEntry, blockHeight uint64) error {
 
 	var err error
 	var syncGroup sync.WaitGroup
-	dbFlushId := uuid.New()
 
 	snap.timer.Start("SetSnapshotChunk.Total")
 	var initialChecksumBytes []byte
@@ -1237,17 +1306,6 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		// TODO: Should we split the chunk into batches of 8MB so that we don't write too much data at once?
 		for _, dbEntry := range chunk {
 			localErr := wb.Set(dbEntry.Key, dbEntry.Value) // Will create txns as needed.
-			if snap.eventManager != nil {
-				snap.eventManager.stateSyncerOperation(&StateSyncerOperationEvent{
-					StateChangeEntry: &StateChangeEntry{
-						OperationType: DbOperationTypeInsert,
-						KeyBytes:      dbEntry.Key,
-						EncoderBytes:  dbEntry.Value,
-						IsReverted:    false,
-					},
-					FlushId: dbFlushId,
-				})
-			}
 			if localErr != nil {
 				glog.Errorf("Snapshot.SetSnapshotChunk: Problem setting db entry in write batch")
 				err = localErr
@@ -1255,12 +1313,6 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 			}
 		}
 		if localErr := wb.Flush(); localErr != nil {
-			if snap.eventManager != nil {
-				snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-					FlushId:   dbFlushId,
-					Succeeded: false,
-				})
-			}
 			glog.Errorf("Snapshot.SetSnapshotChunk: Problem flushing write batch to db")
 			err = localErr
 			return
@@ -1296,12 +1348,6 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 
 	// If there's a problem setting the snapshot checksum, we'll reschedule this snapshot chunk set.
 	if err != nil {
-		if snap.eventManager != nil {
-			snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-				FlushId:   dbFlushId,
-				Succeeded: false,
-			})
-		}
 		glog.Infof("Snapshot.SetSnapshotChunk: Problem setting the snapshot chunk, error (%v)", err)
 
 		if !snap.disableChecksum {
@@ -1316,11 +1362,11 @@ func (snap *Snapshot) SetSnapshotChunk(mainDb *badger.DB, mainDbMutex *deadlock.
 		return err
 	}
 
-	if snap.eventManager != nil {
-		snap.eventManager.stateSyncerFlushed(&StateSyncerFlushedEvent{
-			FlushId:   dbFlushId,
-			Succeeded: true,
-		})
+	// Generate diff file from the hypersync chunk instead of emitting events
+	chunkId := uint64(time.Now().UnixNano()) // Use timestamp as unique chunk ID
+	if diffErr := snap.generateHypersyncChunkDiff(chunk, blockHeight, chunkId); diffErr != nil {
+		glog.Errorf("Snapshot.SetSnapshotChunk: Failed to generate chunk diff file: %v", diffErr)
+		// Don't fail the chunk processing, just log the error
 	}
 	// If we get here, then we've successfully processed the snapshot chunk
 	// and can free one slot in the operation queue semaphore.
