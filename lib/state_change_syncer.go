@@ -309,8 +309,11 @@ type StateChangeSyncer struct {
 	// Directory where per-block / hypersync diff files are written.
 	StateChangeDir string
 
-	// Mutex guarding BackupDatabase streaming and diff file IO.
+	// Mutex guarding BackupDatabase streaming and committed block diff file IO.
 	DiffGenerationMutex *sync.Mutex
+
+	// Mutex guarding mempool diff file IO (separate from committed blocks).
+	MempoolDiffMutex *sync.Mutex
 
 	// State tracking for incremental mempool diff generation
 	mempoolSyncState *MempoolSyncState
@@ -432,6 +435,13 @@ func (s *StateChangeSyncer) BackupDatabase(
 }
 
 func isMeaningfulChange(it *badger.Item, preTxn *badger.Txn) bool {
+
+	// If no preTxn is provided, we're backing up the entire database.
+	// In this case, we always propagate changes.
+	if preTxn == nil {
+		return true
+	}
+
 	// Always propagate deletions / expiries
 	if it.IsDeletedOrExpired() {
 		return true
@@ -568,6 +578,14 @@ func (s *StateChangeSyncer) ExtractStateChangesFromBackup(
 			}
 
 			entries = append(entries, entry)
+
+			// Debug logging for PostEntry and PostAssociationEntry
+			if entry.EncoderType == EncoderTypePostEntry {
+				glog.Infof("🎯 FOUND PostEntry in diff for block %d: key=%x", blockHeight, entry.KeyBytes)
+			}
+			if entry.EncoderType == EncoderTypePostAssociationEntry {
+				glog.Infof("🎯 FOUND PostAssociationEntry in diff for block %d: key=%x", blockHeight, entry.KeyBytes)
+			}
 		}
 		return nil
 	})
@@ -575,6 +593,7 @@ func (s *StateChangeSyncer) ExtractStateChangesFromBackup(
 		return nil, fmt.Errorf("error reading backup: %w", err)
 	}
 
+	glog.V(2).Infof("ExtractStateChangesFromBackup: Generated %d entries for block %d", len(entries), blockHeight)
 	return entries, nil
 }
 
@@ -650,6 +669,7 @@ func NewStateChangeSyncer(stateChangeDir string, nodeSyncType NodeSyncType, memp
 		MempoolTxnSyncLimit:             mempoolTxnSyncLimit,
 		StateChangeDir:                  stateChangeDir,
 		DiffGenerationMutex:             &sync.Mutex{},
+		MempoolDiffMutex:                &sync.Mutex{},
 	}
 }
 
@@ -1379,32 +1399,85 @@ func (stateChangeSyncer *StateChangeSyncer) SyncMempoolToStateSyncer(server *Ser
 	return false, nil
 }
 
+// StartMempoolSyncRoutine continuously syncs the mempool state to sequential diff files.
+// This replaces the old event-driven mempool sync with a streamlined approach using
+// generateSequentialMempoolDiff for better performance and cleaner architecture.
 func (stateChangeSyncer *StateChangeSyncer) StartMempoolSyncRoutine(server *Server) {
 	go func() {
-		// Wait for mempool to be initialized.
+		// Wait for mempool to be initialized and blockchain to be fully synced.
 		for server.GetMempool() == nil || server.blockchain.chainState() != SyncStateFullyCurrent {
-			time.Sleep(15000 * time.Millisecond)
-			glog.V(2).Infof("Mempool: %v", server.mempool)
-			glog.V(2).Infof("Chain state: %v", server.blockchain.chainState())
+			time.Sleep(15 * time.Second)
+			glog.V(2).Infof("Waiting for mempool and blockchain sync - Mempool: %v, Chain state: %v",
+				server.mempool != nil, server.blockchain.chainState())
 		}
+
+		// Handle initial blocksync flush if needed (legacy compatibility)
 		if !stateChangeSyncer.BlocksyncCompleteEntriesFlushed && stateChangeSyncer.SyncType == NodeSyncTypeBlockSync {
 			err := stateChangeSyncer.FlushAllEntriesToFile(server)
 			if err != nil {
-				glog.Errorf("StateChangeSyncer.StartMempoolSyncRoutine: Error flushing all entries to file: %v", err)
+				glog.Errorf("StartMempoolSyncRoutine: Error flushing all entries to file: %v", err)
 			}
 		}
-		mempoolClosed := !server.GetMempool().IsRunning()
-		for !mempoolClosed {
-			// Sleep for a short while to avoid a tight loop.
-			time.Sleep(100 * time.Millisecond)
-			var err error
 
-			// If the mempool is not empty, sync the mempool to the state syncer.
-			mempoolClosed, err = stateChangeSyncer.SyncMempoolToStateSyncer(server)
+		glog.Infof("Starting mempool sync routine with sequential diff generation")
+
+		// Main sync loop
+		for server.GetMempool().IsRunning() {
+			// Sleep to avoid tight loop and allow mempool to change
+			time.Sleep(100 * time.Millisecond)
+
+			blockHeight := uint64(server.blockchain.blockIndex.GetTip().Height)
+
+			// Create mempool transaction for flushing state
+			mempoolTxn := server.blockchain.db.NewTransaction(true)
+			defer func() {
+				if mempoolTxn != nil {
+					mempoolTxn.Discard()
+				}
+			}()
+
+			// Create base transaction for ancestral records
+			baseTxn := server.blockchain.db.NewTransaction(false)
+			defer func() {
+				if baseTxn != nil {
+					baseTxn.Discard()
+				}
+			}()
+
+			// Get mempool view and flush to transaction
+			mempoolUtxoView, err := server.GetMempool().GetAugmentedUniversalView()
 			if err != nil {
-				glog.Errorf("StateChangeSyncer.StartMempoolSyncRoutine: Error syncing mempool to state syncer: %v", err)
+				glog.Errorf("StartMempoolSyncRoutine: Error getting mempool view: %v", err)
+				continue
 			}
+
+			err = mempoolUtxoView.FlushToDbWithTxn(mempoolTxn, blockHeight)
+			if err != nil {
+				glog.Errorf("StartMempoolSyncRoutine: Error flushing mempool to transaction: %v", err)
+				continue
+			}
+
+			// Generate sequential mempool diff
+			err = stateChangeSyncer.generateSequentialMempoolDiff(
+				mempoolTxn,
+				baseTxn,
+				server.blockchain,
+				server.GetMempool(),
+				blockHeight,
+			)
+			if err != nil {
+				glog.Errorf("StartMempoolSyncRoutine: Error generating mempool diff: %v", err)
+				continue
+			}
+
+			// Clean up transactions for next iteration
+			mempoolTxn.Discard()
+			baseTxn.Discard()
+			mempoolTxn = nil
+			baseTxn = nil
 		}
+
+		glog.Infof("Mempool sync routine stopped - mempool no longer running")
 	}()
 }
 
@@ -1592,8 +1665,8 @@ func (stateChangeSyncer *StateChangeSyncer) generateSequentialMempoolDiff(
 	mempool Mempool,
 	blockHeight uint64,
 ) error {
-	stateChangeSyncer.DiffGenerationMutex.Lock()
-	defer stateChangeSyncer.DiffGenerationMutex.Unlock()
+	stateChangeSyncer.MempoolDiffMutex.Lock()
+	defer stateChangeSyncer.MempoolDiffMutex.Unlock()
 
 	// Initialize or reset state tracking for new block height
 	if stateChangeSyncer.mempoolSyncState == nil ||
@@ -1767,7 +1840,8 @@ func (stateChangeSyncer *StateChangeSyncer) writeAtomicFile(filename string, dat
 	return nil
 }
 
-// cleanupOldMempoolFiles removes mempool files for block heights older than the current one
+// cleanupOldMempoolFiles removes mempool files for block heights more than 2 blocks older than the current one.
+// This allows the consumer to handle any reorgs or delayed processing while still cleaning up old files.
 func (stateChangeSyncer *StateChangeSyncer) cleanupOldMempoolFiles(currentBlockHeight int32) error {
 	pattern := filepath.Join(stateChangeSyncer.StateChangeDir, "mempool_*.bin")
 	files, err := filepath.Glob(pattern)
@@ -1790,8 +1864,8 @@ func (stateChangeSyncer *StateChangeSyncer) cleanupOldMempoolFiles(currentBlockH
 			continue
 		}
 
-		// Remove files from previous block heights
-		if int32(fileHeight) < currentBlockHeight {
+		// Remove files more than 2 blocks old (keep current block and 1 block back)
+		if int32(fileHeight) < currentBlockHeight-1 {
 			if err := os.Remove(file); err != nil {
 				glog.Warningf("Failed to remove old mempool file %s: %v", file, err)
 			}
@@ -1820,8 +1894,8 @@ func (stateChangeSyncer *StateChangeSyncer) cleanupOldMempoolFiles(currentBlockH
 			continue
 		}
 
-		// Remove files from previous block heights
-		if int32(fileHeight) < currentBlockHeight {
+		// Remove files more than 2 blocks old (keep current block and 1 block back)
+		if int32(fileHeight) < currentBlockHeight-1 {
 			if err := os.Remove(file); err != nil {
 				glog.Warningf("Failed to remove old ancestral file %s: %v", file, err)
 			}

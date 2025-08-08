@@ -1039,26 +1039,26 @@ func TestGenerateSequentialMempoolDiff_FileCleanup(t *testing.T) {
 	err = mempoolTxn2.Set(testKey2, []byte("value_2"))
 	require.NoError(err)
 
-	err = syncer.generateSequentialMempoolDiff(mempoolTxn2, baseTxn, chain, mempool, uint64(101))
+	err = syncer.generateSequentialMempoolDiff(mempoolTxn2, baseTxn, chain, mempool, uint64(102))
 	require.NoError(err)
 
-	// Verify block 100 files are cleaned up, block 101 files exist
+	// Verify block 100 files are cleaned up (now 2 blocks old), block 102 files exist
 	files, err = os.ReadDir(dir)
 	require.NoError(err)
 
-	var block100FilesAfter, block101Files int
+	var block100FilesAfter, block102Files int
 	for _, file := range files {
 		name := file.Name()
 		if strings.Contains(name, "_100_") {
 			block100FilesAfter++
 		}
-		if strings.Contains(name, "_101_") {
-			block101Files++
+		if strings.Contains(name, "_102_") {
+			block102Files++
 		}
 	}
 
-	require.Equal(0, block100FilesAfter, "Block 100 files should be cleaned up")
-	require.Greater(block101Files, 0, "Should have files for block 101")
+	require.Equal(0, block100FilesAfter, "Block 100 files should be cleaned up (2 blocks old)")
+	require.Greater(block102Files, 0, "Should have files for block 102")
 }
 
 // TestGenerateSequentialMempoolDiff_TimestampOrdering tests that files are generated
@@ -1565,4 +1565,74 @@ func TestMergeMempoolStates_EmptyStates(t *testing.T) {
 	// Test with both empty
 	merged3 := mergeMempoolStates(flushedEmpty, transactionEmpty)
 	require.Len(merged3, 0)
+}
+
+// TestCleanupOldMempoolFiles_TwoBlockRetention tests that cleanup keeps files for current block and 1 block back
+func TestCleanupOldMempoolFiles_TwoBlockRetention(t *testing.T) {
+	require := require.New(t)
+
+	dir, err := os.MkdirTemp("", "mempool-cleanup-test")
+	require.NoError(err)
+	defer os.RemoveAll(dir)
+
+	syncer := NewStateChangeSyncer(dir, NodeSyncTypeBlockSync, 0)
+
+	// Create test files for different block heights
+	testFiles := []string{
+		"mempool_100_1234567890.bin",           // Current block
+		"mempool_99_1234567890.bin",            // 1 block back - should be kept
+		"mempool_98_1234567890.bin",            // 2 blocks back - should be deleted
+		"mempool_97_1234567890.bin",            // 3 blocks back - should be deleted
+		"mempool_ancestral_100_1234567890.bin", // Current block ancestral
+		"mempool_ancestral_99_1234567890.bin",  // 1 block back ancestral - should be kept
+		"mempool_ancestral_98_1234567890.bin",  // 2 blocks back ancestral - should be deleted
+		"mempool_ancestral_97_1234567890.bin",  // 3 blocks back ancestral - should be deleted
+	}
+
+	// Create all test files
+	for _, filename := range testFiles {
+		filePath := filepath.Join(dir, filename)
+		err = os.WriteFile(filePath, []byte("test"), 0644)
+		require.NoError(err)
+	}
+
+	// Verify all files exist
+	for _, filename := range testFiles {
+		filePath := filepath.Join(dir, filename)
+		_, err = os.Stat(filePath)
+		require.NoError(err, "File should exist before cleanup: %s", filename)
+	}
+
+	// Run cleanup for block height 100
+	err = syncer.cleanupOldMempoolFiles(100)
+	require.NoError(err)
+
+	// Check which files still exist
+	expectedToExist := []string{
+		"mempool_100_1234567890.bin",           // Current block - should exist
+		"mempool_99_1234567890.bin",            // 1 block back - should exist
+		"mempool_ancestral_100_1234567890.bin", // Current block ancestral - should exist
+		"mempool_ancestral_99_1234567890.bin",  // 1 block back ancestral - should exist
+	}
+
+	expectedToBeDeleted := []string{
+		"mempool_98_1234567890.bin",           // 2 blocks back - should be deleted
+		"mempool_97_1234567890.bin",           // 3 blocks back - should be deleted
+		"mempool_ancestral_98_1234567890.bin", // 2 blocks back ancestral - should be deleted
+		"mempool_ancestral_97_1234567890.bin", // 3 blocks back ancestral - should be deleted
+	}
+
+	// Verify files that should still exist
+	for _, filename := range expectedToExist {
+		filePath := filepath.Join(dir, filename)
+		_, err = os.Stat(filePath)
+		require.NoError(err, "File should still exist after cleanup: %s", filename)
+	}
+
+	// Verify files that should be deleted
+	for _, filename := range expectedToBeDeleted {
+		filePath := filepath.Join(dir, filename)
+		_, err = os.Stat(filePath)
+		require.True(os.IsNotExist(err), "File should be deleted after cleanup: %s", filename)
+	}
 }

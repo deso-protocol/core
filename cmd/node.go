@@ -244,6 +244,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.MempoolMaxValidationViewConnects,
 		node.Config.TransactionValidationRefreshIntervalMillis,
 		node.Config.StateSyncerMempoolTxnSyncLimit,
+		node.Config.EnableMempoolSync,
 		node.Config.CheckpointSyncingProviders,
 		node.Config.BlockIndexSize,
 	)

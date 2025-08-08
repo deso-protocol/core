@@ -88,6 +88,7 @@ type Config struct {
 	// State Syncer
 	StateChangeDir                 string
 	StateSyncerMempoolTxnSyncLimit uint64
+	EnableMempoolSync              bool
 
 	// PoS Checkpoint Syncing
 	CheckpointSyncingProviders []string
@@ -215,6 +216,7 @@ func LoadConfig() *Config {
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")
 	config.StateSyncerMempoolTxnSyncLimit = viper.GetUint64("state-syncer-mempool-txn-sync-limit")
+	config.EnableMempoolSync = viper.GetBool("enable-mempool-sync")
 
 	// PoS Checkpoint Syncing
 	config.CheckpointSyncingProviders = GetStringSliceWorkaround("checkpoint-syncing-providers")

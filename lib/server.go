@@ -165,6 +165,7 @@ type Server struct {
 	timer *Timer
 
 	StateChangeSyncer *StateChangeSyncer
+	enableMempoolSync bool
 	// DbMutex protects the badger database from concurrent access when it's being closed & re-opened.
 	// This is necessary because the database is closed & re-opened when the node finishes hypersyncing in order
 	// to change the database options from Default options to Performance options.
@@ -452,6 +453,7 @@ func NewServer(
 	_mempoolMaxValidationViewConnects uint64,
 	_transactionValidationRefreshIntervalMillis uint64,
 	_stateSyncerMempoolTxnSyncLimit uint64,
+	_enableMempoolSync bool,
 	_checkpointSyncingProviders []string,
 	_blockIndexSize int,
 ) (
@@ -517,6 +519,7 @@ func NewServer(
 
 	if stateChangeSyncer != nil {
 		srv.StateChangeSyncer = stateChangeSyncer
+		srv.enableMempoolSync = _enableMempoolSync
 	}
 
 	// The same timesource is used in the chain data structure and in the connection
@@ -548,6 +551,7 @@ func NewServer(
 	eventManager.OnBlockConnected(srv._handleBlockMainChainConnectedd)
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
+	
 
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
@@ -724,6 +728,8 @@ func NewServer(
 	if srv.statsdClient != nil {
 		srv.StartStatsdReporter()
 	}
+
+	eventManager.OnBlockCommitted(srv._handleBlockMainChainCommitted)
 
 	// Initialize the addrs to broadcast map.
 	srv.addrsToBroadcast = make(map[string][]*SingleAddr)
@@ -2354,6 +2360,16 @@ func (srv *Server) _handleBlockMainChainConnectedd(event *BlockEvent) {
 		"main chain and chain is current.", hex.EncodeToString(blockHash[:]), blk.Header.Height)
 }
 
+func (srv *Server) _handleBlockMainChainCommitted(event *BlockEvent) {
+	if srv.StateChangeSyncer == nil {
+		return
+	}
+	err := srv.StateChangeSyncer.GenerateCommittedBlockDiff(srv.blockchain.db, event.PreCommitTxn, uint64(event.Block.Header.Height))
+	if err != nil {
+		glog.Errorf("Failed to generate block diff: %v", err)
+	}
+}
+
 // It's assumed that the caller will hold the ChainLock for reading so
 // that the mempool transactions don't shift under our feet.
 func (srv *Server) _handleBlockMainChainDisconnectedd(event *BlockEvent) {
@@ -2695,14 +2711,14 @@ func (srv *Server) _handleBlock(pp *Peer, blk *MsgDeSoBlock, isLastBlock bool) {
 		// If we don't have any blocks to wait for anymore, hit the peer with
 		// a GetHeaders request to see if there are any more headers we should
 		// be aware of. This will generally happen in two cases:
-		// - With our sync peer after we’re almost at the end of syncing blocks.
+		// - With our sync peer after we're almost at the end of syncing blocks.
 		//   In this case, calling GetHeaders once the requestedblocks is almost
 		//   gone will result in us getting all of the remaining blocks right up
 		//   to the tip and then stopping, which is exactly what we want.
 		// - With a peer that sent us an inv. In this case, the peer could have
-		//   more blocks for us or it could not. Either way, it’s good to check
+		//   more blocks for us or it could not. Either way, it's good to check
 		//   and worst case the peer will return an empty header bundle that will
-		//   result in us not sending anything back because there won’t be any new
+		//   result in us not sending anything back because there won't be any new
 		//   blocks to request.
 		locator, locatorHeights := srv.blockchain.LatestHeaderLocator()
 		headerTip := srv.blockchain.headerTip()
@@ -3570,9 +3586,12 @@ func (srv *Server) Start() {
 	}
 
 	// Initialize state syncer mempool job, if needed.
-	// if srv.StateChangeSyncer != nil {
-	// 	srv.StateChangeSyncer.StartMempoolSyncRoutine(srv)
-	// }
+	if srv.StateChangeSyncer != nil && srv.enableMempoolSync {
+		glog.Infof("Starting mempool sync routine (enabled via --enable-mempool-sync flag)")
+		srv.StateChangeSyncer.StartMempoolSyncRoutine(srv)
+	} else if srv.StateChangeSyncer != nil {
+		glog.Infof("Mempool sync routine disabled (use --enable-mempool-sync to enable)")
+	}
 
 	// Start the network manager's internal event loop to open and close connections to peers.
 	srv.networkManager.Start()

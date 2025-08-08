@@ -229,6 +229,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
 	cmd.PersistentFlags().Uint("state-syncer-mempool-txn-sync-limit", 10000, "The maximum number of transactions to "+
 		"process in the mempool tx state syncer at a time.")
+	cmd.PersistentFlags().Bool("enable-mempool-sync", false, "Enable continuous mempool state synchronization to diff files. "+
+		"When enabled, the node will generate incremental mempool diff files for state consumers.")
 
 	// PoS Checkpoint Syncing
 	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, fmt.Sprintf("A comma-separated list of URLs that "+
