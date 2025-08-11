@@ -365,6 +365,11 @@ func (bc *Blockchain) processBlockPoS(block *MsgDeSoBlock, currentView uint64, v
 		}
 	}
 
+	// If we're currently syncing, then we can skip the orphan processing step.
+	if bc.isSyncing() {
+		return appliedNewTip, false, nil, nil
+	}
+
 	// Now that we've processed this block, we check for any blocks that were previously
 	// stored as orphans, which are children of this block. We can process them now.
 	blockNodesAtNextHeight := bc.blockIndex.GetBlockNodesByHeight(uint64(blockNode.Height) + 1)
