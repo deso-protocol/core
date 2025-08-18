@@ -1349,6 +1349,8 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 		glog.Errorf("GetBlockNodesToFetch: Problem getting best block tip")
 		return nil
 	}
+	glog.V(0).Infof("GetBlockNodesToFetch: Best block tip is %v at height %d",
+		bestBlockTip.Hash, bestBlockTip.Height)
 
 	// If the maxHeight is set to < 0, then we don't want to use it as a constraint.
 	maxHeight := uint32(math.MaxUint32)
@@ -1363,20 +1365,24 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 	// then we need to reduce the height limit.
 	blockNodesToFetch := []*BlockNode{}
 	heightLimit := uint64(maxHeight)
+	glog.V(0).Infof("GetBlockNodesToFetch: Height limit is %d", heightLimit)
 	if heightLimit > bc.blockIndex.GetHeaderTip().Header.Height {
 		heightLimit = bc.blockIndex.GetHeaderTip().Header.Height
+		glog.V(0).Infof("GetBlockNodesToFetch: Height limit adjusted to header tip height %d",
+			heightLimit)
 	}
 	if heightLimit > bestBlockTip.Header.Height+uint64(numBlocks) {
 		heightLimit = bestBlockTip.Header.Height + uint64(numBlocks)
+		glog.V(0).Infof("GetBlockNodesToFetch: Height limit adjusted to best block tip height + numBlocks %d",
+			heightLimit)
 	}
-	currentHeight := heightLimit
 	var backtrackingNode *BlockNode
 	if heightLimit == bc.blockIndex.GetHeaderTip().Header.Height {
 		backtrackingNode = bc.blockIndex.GetHeaderTip()
 	} else {
 		var backtrackingNodeExists bool
 		var backtrackingNodeErr error
-		backtrackingNode, backtrackingNodeExists, backtrackingNodeErr = bc.GetBlockFromBestChainByHeight(currentHeight, true)
+		backtrackingNode, backtrackingNodeExists, backtrackingNodeErr = bc.GetBlockFromBestChainByHeight(heightLimit, true)
 		if backtrackingNodeErr != nil {
 			glog.Errorf("GetBlockNodesToFetch: Problem getting maxNode block by height: %v", backtrackingNodeErr)
 			return nil
@@ -1386,6 +1392,8 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 			return nil
 		}
 	}
+	glog.V(0).Infof("GetBlockNodesToFetch: Backtracking node is %v at height %d",
+		backtrackingNode.Hash, backtrackingNode.Height)
 	// Walk back from the maxNode to the bestBlockTip.
 	for len(blockNodesToFetch) < numBlocks &&
 		backtrackingNode.Height > bestBlockTip.Height {
@@ -1408,6 +1416,14 @@ func (bc *Blockchain) GetBlockNodesToFetch(
 	}
 
 	slices.Reverse(blockNodesToFetch)
+	// Log final list
+	glog.V(0).Infof("GetBlockNodesToFetch: Found %d blocks, starting from %v at height %d to "+
+		" %v at height %d",
+		len(blockNodesToFetch),
+		blockNodesToFetch[0].Hash,
+		blockNodesToFetch[0].Height,
+		blockNodesToFetch[len(blockNodesToFetch)-1].Hash,
+		blockNodesToFetch[len(blockNodesToFetch)-1].Height)
 
 	// Return the nodes for the blocks we should fetch.
 	return blockNodesToFetch
