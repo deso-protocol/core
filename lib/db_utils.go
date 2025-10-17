@@ -4572,10 +4572,9 @@ func _getBlockHashForPrefix(handle *badger.DB, snap *Snapshot, prefix []byte) *B
 }
 
 func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
-	// Open the old database (read-only)
+	// Open the old database
 	oldOpts := PerformanceBadgerOptions(oldDbPath)
 	oldOpts.ValueDir = oldDbPath
-	// oldOpts.ReadOnly = true
 	oldDB, err := badger.Open(oldOpts)
 	if err != nil {
 		return fmt.Errorf("failed to open old database: %w", err)
@@ -4593,43 +4592,31 @@ func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
 
 	fmt.Println("Starting BadgerDB clone...")
 	startTime := time.Now()
+	count := 0
 
-	// Read from old DB and write to new DB
-	err = oldDB.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 100 // Prefetch for better performance
-		it := txn.NewIterator(opts)
-		defer it.Close()
+	// Use Stream for efficient bulk reading with automatic transaction management
+	stream := oldDB.NewStream()
+	stream.NumGo = 16 // Number of goroutines for parallel processing
+	stream.LogPrefix = "Cloning"
 
-		// Use WriteBatch for efficient bulk writes
+	// Send function writes to the new database
+	stream.Send = func(buf *z.Buffer) error {
+		list, err := badger.BufferToKVList(buf)
+		if err != nil {
+			return err
+		}
+
+		// Write batch to new database
 		wb := newDB.NewWriteBatch()
 		defer wb.Cancel()
 
-		count := 0
-		for it.Rewind(); it.Valid(); it.Next() {
-			item := it.Item()
-			key := item.KeyCopy(nil)
-
-			err := item.Value(func(val []byte) error {
-				// Copy the value
-				valCopy := append([]byte{}, val...)
-				if err := wb.Set(key, valCopy); err != nil {
-					return fmt.Errorf("failed to set entry: %w", err)
-				}
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("failed to copy key: %w", err)
+		for _, kv := range list.Kv {
+			keyCopy := append([]byte{}, kv.Key...)
+			valCopy := append([]byte{}, kv.Value...)
+			if err := wb.Set(keyCopy, valCopy); err != nil {
+				return fmt.Errorf("failed to set entry: %w", err)
 			}
-
 			count++
-
-			// Print status every 100,000 entries
-			if count%100000 == 0 {
-				elapsed := time.Since(startTime)
-				fmt.Printf("Cloned %d entries in %s (%.0f entries/sec)\n",
-					count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
-			}
 
 			// Flush batch periodically to avoid memory issues
 			if count%1000 == 0 {
@@ -4637,24 +4624,31 @@ func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
 					return fmt.Errorf("failed to flush batch: %w", err)
 				}
 			}
+
+			// Print status periodically
+			if count%100000 == 0 {
+				elapsed := time.Since(startTime)
+				fmt.Printf("Cloned %d entries in %s (%.0f entries/sec)\n",
+					count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
+			}
 		}
 
-		// Final flush
 		if err := wb.Flush(); err != nil {
-			return fmt.Errorf("failed to flush final batch: %w", err)
+			return fmt.Errorf("failed to flush batch: %w", err)
 		}
-
-		// Print final stats
-		elapsed := time.Since(startTime)
-		fmt.Printf("Clone complete! Total entries: %d, Time: %s, Average rate: %.0f entries/sec\n",
-			count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
 
 		return nil
-	})
+	}
 
-	if err != nil {
+	// Run the stream
+	if err := stream.Orchestrate(context.Background()); err != nil {
 		return fmt.Errorf("failed to clone database: %w", err)
 	}
+
+	// Print final stats
+	elapsed := time.Since(startTime)
+	fmt.Printf("Clone complete! Total entries: %d, Time: %s, Average rate: %.0f entries/sec\n",
+		count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
 
 	return nil
 }
