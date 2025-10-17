@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/deso-protocol/core/collections"
@@ -4571,85 +4572,86 @@ func _getBlockHashForPrefix(handle *badger.DB, snap *Snapshot, prefix []byte) *B
 	return ret
 }
 
-func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
-	// Open the old database
-	oldOpts := PerformanceBadgerOptions(oldDbPath)
-	oldOpts.ValueDir = oldDbPath
-	oldDB, err := badger.Open(oldOpts)
+func _cloneBadgerDb(oldDbPath, newDbPath string) error {
+	// Open source read-only to minimize background work during scan.
+	srcOpts := PerformanceBadgerOptions(oldDbPath)
+	srcOpts.ValueDir = oldDbPath
+	srcOpts.ReadOnly = true
+	srcDB, err := badger.Open(srcOpts)
 	if err != nil {
-		return fmt.Errorf("failed to open old database: %w", err)
+		return fmt.Errorf("open src: %w", err)
 	}
-	defer oldDB.Close()
+	defer srcDB.Close()
 
-	// Open/create the new database
-	newOpts := PerformanceBadgerOptions(newDbPath)
-	newOpts.ValueDir = newDbPath
-	newDB, err := badger.Open(newOpts)
+	// Open destination.
+	dstOpts := PerformanceBadgerOptions(newDbPath)
+	dstOpts.ValueDir = newDbPath
+	dstDB, err := badger.Open(dstOpts)
 	if err != nil {
-		return fmt.Errorf("failed to open new database: %w", err)
+		return fmt.Errorf("open dst: %w", err)
 	}
-	defer newDB.Close()
+	defer dstDB.Close()
 
-	fmt.Println("Starting BadgerDB clone...")
-	startTime := time.Now()
-	count := 0
+	fmt.Println("Starting BadgerDB clone (raw key/value only)...")
+	start := time.Now()
+	var total uint64
 
-	// Use Stream for efficient bulk reading with automatic transaction management
-	stream := oldDB.NewStream()
-	stream.NumGo = 16 // Number of goroutines for parallel processing
-	stream.LogPrefix = "Cloning"
+	stream := srcDB.NewStream()
+	stream.NumGo = 8             // tune to your box
+	stream.LogPrefix = "Cloning" // optional
 
-	// Send function writes to the new database
+	// Optional: ensure we only take the latest version per key (default behavior anyway).
+	// stream.Pick = func(key []byte, versions []*pb.KV) *pb.KV { return versions[len(versions)-1] }
+
 	stream.Send = func(buf *z.Buffer) error {
+		// Decode the buffer into a KV list so we can drop metadata.
 		list, err := badger.BufferToKVList(buf)
 		if err != nil {
 			return err
 		}
 
-		// Write batch to new database
-		wb := newDB.NewWriteBatch()
+		// One batch per shard-buffer; we’ll flush by size to avoid oversized txns.
+		wb := dstDB.NewWriteBatch()
 		defer wb.Cancel()
 
+		const maxBatchBytes = 32 << 20 // ~32MB; adjust based on RAM/IOPS
+		batchBytes := 0
+
 		for _, kv := range list.Kv {
-			keyCopy := append([]byte{}, kv.Key...)
-			valCopy := append([]byte{}, kv.Value...)
-			if err := wb.Set(keyCopy, valCopy); err != nil {
-				return fmt.Errorf("failed to set entry: %w", err)
-			}
-			count++
+			// Only write the raw key/value. No TTL/UserMeta/Meta preserved.
+			// Copy to avoid referencing the buffer after Send returns.
+			k := append([]byte{}, kv.Key...)
+			v := append([]byte{}, kv.Value...)
 
-			// Flush batch periodically to avoid memory issues
-			if count%1000 == 0 {
+			if err := wb.Set(k, v); err != nil {
+				return fmt.Errorf("write: %w", err)
+			}
+
+			batchBytes += len(k) + len(v) + 16 // small overhead fudge
+			if batchBytes >= maxBatchBytes {
 				if err := wb.Flush(); err != nil {
-					return fmt.Errorf("failed to flush batch: %w", err)
+					return fmt.Errorf("flush: %w", err)
 				}
-			}
-
-			// Print status periodically
-			if count%100000 == 0 {
-				elapsed := time.Since(startTime)
-				fmt.Printf("Cloned %d entries in %s (%.0f entries/sec)\n",
-					count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
+				batchBytes = 0
 			}
 		}
 
 		if err := wb.Flush(); err != nil {
-			return fmt.Errorf("failed to flush batch: %w", err)
+			return fmt.Errorf("final flush: %w", err)
 		}
 
+		atomic.AddUint64(&total, uint64(len(list.Kv)))
 		return nil
 	}
 
-	// Run the stream
 	if err := stream.Orchestrate(context.Background()); err != nil {
-		return fmt.Errorf("failed to clone database: %w", err)
+		return fmt.Errorf("stream: %w", err)
 	}
 
-	// Print final stats
-	elapsed := time.Since(startTime)
-	fmt.Printf("Clone complete! Total entries: %d, Time: %s, Average rate: %.0f entries/sec\n",
-		count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
-
+	elapsed := time.Since(start).Round(time.Second)
+	t := atomic.LoadUint64(&total)
+	fmt.Printf("Clone complete! Total entries: %d, Time: %s, Avg rate: %.0f entries/sec\n",
+		t, elapsed, float64(t)/(time.Since(start).Seconds()+1e-9))
 	return nil
 }
 
