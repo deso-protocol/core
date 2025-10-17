@@ -4613,16 +4613,11 @@ func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
 			err := item.Value(func(val []byte) error {
 				// Copy the value
 				valCopy := append([]byte{}, val...)
-
-				// Set with the same TTL if it exists
-				entry := badger.NewEntry(key, valCopy)
-				if item.ExpiresAt() > 0 {
-					entry = entry.WithTTL(time.Until(time.Unix(int64(item.ExpiresAt()), 0)))
+				if err := wb.Set(key, valCopy); err != nil {
+					return fmt.Errorf("failed to set entry: %w", err)
 				}
-
-				return wb.SetEntry(entry)
+				return nil
 			})
-
 			if err != nil {
 				return fmt.Errorf("failed to copy key: %w", err)
 			}
@@ -4637,7 +4632,7 @@ func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
 			}
 
 			// Flush batch periodically to avoid memory issues
-			if count%10000 == 0 {
+			if count%1000 == 0 {
 				if err := wb.Flush(); err != nil {
 					return fmt.Errorf("failed to flush batch: %w", err)
 				}
