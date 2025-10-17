@@ -4576,7 +4576,6 @@ func _cloneBadgerDb(oldDbPath, newDbPath string) error {
 	// Open source read-only to minimize background work during scan.
 	srcOpts := PerformanceBadgerOptions(oldDbPath)
 	srcOpts.ValueDir = oldDbPath
-	srcOpts.ReadOnly = true
 	srcDB, err := badger.Open(srcOpts)
 	if err != nil {
 		return fmt.Errorf("open src: %w", err)
