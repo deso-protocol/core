@@ -4609,11 +4609,9 @@ func _cloneBadgerDb(oldDbPath, newDbPath string) error {
 			return err
 		}
 
-		// One batch per shard-buffer; we’ll flush by size to avoid oversized txns.
-		wb := dstDB.NewWriteBatch()
-		defer wb.Cancel()
-
 		const maxBatchBytes = 32 << 20 // ~32MB; adjust based on RAM/IOPS
+
+		wb := dstDB.NewWriteBatch()
 		batchBytes := 0
 
 		for _, kv := range list.Kv {
@@ -4623,19 +4621,26 @@ func _cloneBadgerDb(oldDbPath, newDbPath string) error {
 			v := append([]byte{}, kv.Value...)
 
 			if err := wb.Set(k, v); err != nil {
+				wb.Cancel()
 				return fmt.Errorf("write: %w", err)
 			}
 
 			batchBytes += len(k) + len(v) + 16 // small overhead fudge
 			if batchBytes >= maxBatchBytes {
 				if err := wb.Flush(); err != nil {
+					wb.Cancel()
 					return fmt.Errorf("flush: %w", err)
 				}
+				// After flush, the batch's transaction is committed and discarded.
+				// Create a new WriteBatch to continue processing.
+				wb = dstDB.NewWriteBatch()
 				batchBytes = 0
 			}
 		}
 
+		// Flush any remaining entries
 		if err := wb.Flush(); err != nil {
+			wb.Cancel()
 			return fmt.Errorf("final flush: %w", err)
 		}
 
