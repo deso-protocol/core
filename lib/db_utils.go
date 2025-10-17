@@ -4670,18 +4670,22 @@ func _getLatestBadgerDbPath(dataDir string) string {
 	if err != nil {
 		panic(err)
 	}
-	// Iterate from 0 to versionInt inclusive, checking to see if the folder exists.
+	glog.Infof("GetBadgerDbPath: Version int: %d\n", versionInt)
+	// Iterate from versionInt down to 0, checking to see if the folder exists.
 	latestVersionFound := -1
-	for i := 0; i <= versionInt; i++ {
+	for i := versionInt; i >= 0; i-- {
 		dbPath := filepath.Join(dataDir, BadgerDbFolder, fmt.Sprintf("v-%05d", i))
 		if _, err := os.Stat(dbPath); err == nil {
 			latestVersionFound = i
+			break
 		}
 	}
+	glog.Infof("GetBadgerDbPath: Latest version found: %d\n", latestVersionFound)
 	legacyBadgerDbPath := filepath.Join(dataDir, BadgerDbFolder)
 	if latestVersionFound == -1 {
 		// Check to see if the base badger db folder exists.
 		if _, err := os.Stat(legacyBadgerDbPath); err == nil {
+			glog.Infof("GetBadgerDbPath: Legacy badger db path found: %s\n", legacyBadgerDbPath)
 			return legacyBadgerDbPath
 		}
 		return ""
@@ -4693,6 +4697,9 @@ func _getLatestBadgerDbPath(dataDir string) string {
 func GetBadgerDbPath(dataDir string) string {
 	existingDbPath := _getLatestBadgerDbPath(dataDir)
 	latestDbPath := filepath.Join(dataDir, BadgerDbFolder, BadgerDbVersionString)
+	// Log existing db path and latest db path.
+	glog.Infof("GetBadgerDbPath: Existing badger db path: %s\n", existingDbPath)
+	glog.Infof("GetBadgerDbPath: Latest badger db path: %s\n", latestDbPath)
 	if existingDbPath == "" || existingDbPath == latestDbPath {
 		// Log that the db found is the latest version and there's nothing to do.
 		glog.Infof("GetBadgerDbPath: Latest badger db path found is the "+
