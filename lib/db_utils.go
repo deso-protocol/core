@@ -8,18 +8,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/deso-protocol/core/collections"
-	"github.com/dgraph-io/ristretto/z"
 	"io"
 	"log"
 	"math"
 	"math/big"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/core/lib"
+	"github.com/dgraph-io/ristretto/z"
 
 	"github.com/google/uuid"
 
@@ -38,7 +42,12 @@ const (
 	// BadgerDbFolder is the subfolder in the config dir where we
 	// store the badgerdb database by default.
 	BadgerDbFolder = "badgerdb"
-	MaxPrefixLen   = 1
+	// This string is specifically for Badger. We add it to force badger to "reset" to a
+	// fresh instance by copying all keys from the old badger to the new badger. We do this
+	// as a pure workaround hack to fix an issue where badger becomes slow after a certain
+	// number of insertions. Once the db is slow, you just bump this version to reset the db.
+	BadgerDbVersionString = "v-00000"
+	MaxPrefixLen          = 1
 	// This string is added as a subdirectory of --data-dir flag that contains
 	// everything our node is doing. We use it in order to force a "fresh sync"
 	// of a node when making major updates. Not having this structure would
@@ -4563,9 +4572,147 @@ func _getBlockHashForPrefix(handle *badger.DB, snap *Snapshot, prefix []byte) *B
 	return ret
 }
 
+func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
+	// Open the old database (read-only)
+	oldOpts := lib.PerformanceBadgerOptions(oldDbPath)
+	oldOpts.ValueDir = oldDbPath
+	oldOpts.ReadOnly = true
+	oldDB, err := badger.Open(oldOpts)
+	if err != nil {
+		return fmt.Errorf("failed to open old database: %w", err)
+	}
+	defer oldDB.Close()
+
+	// Open/create the new database
+	newOpts := lib.PerformanceBadgerOptions(newDbPath)
+	newOpts.ValueDir = newDbPath
+	newDB, err := badger.Open(newOpts)
+	if err != nil {
+		return fmt.Errorf("failed to open new database: %w", err)
+	}
+	defer newDB.Close()
+
+	fmt.Println("Starting BadgerDB clone...")
+	startTime := time.Now()
+
+	// Read from old DB and write to new DB
+	err = oldDB.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchSize = 100 // Prefetch for better performance
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		// Use WriteBatch for efficient bulk writes
+		wb := newDB.NewWriteBatch()
+		defer wb.Cancel()
+
+		count := 0
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			key := item.KeyCopy(nil)
+
+			err := item.Value(func(val []byte) error {
+				// Copy the value
+				valCopy := append([]byte{}, val...)
+
+				// Set with the same TTL if it exists
+				entry := badger.NewEntry(key, valCopy)
+				if item.ExpiresAt() > 0 {
+					entry = entry.WithTTL(time.Until(time.Unix(int64(item.ExpiresAt()), 0)))
+				}
+
+				return wb.SetEntry(entry)
+			})
+
+			if err != nil {
+				return fmt.Errorf("failed to copy key: %w", err)
+			}
+
+			count++
+
+			// Print status every 100,000 entries
+			if count%100000 == 0 {
+				elapsed := time.Since(startTime)
+				fmt.Printf("Cloned %d entries in %s (%.0f entries/sec)\n",
+					count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
+			}
+
+			// Flush batch periodically to avoid memory issues
+			if count%10000 == 0 {
+				if err := wb.Flush(); err != nil {
+					return fmt.Errorf("failed to flush batch: %w", err)
+				}
+			}
+		}
+
+		// Final flush
+		if err := wb.Flush(); err != nil {
+			return fmt.Errorf("failed to flush final batch: %w", err)
+		}
+
+		// Print final stats
+		elapsed := time.Since(startTime)
+		fmt.Printf("Clone complete! Total entries: %d, Time: %s, Average rate: %.0f entries/sec\n",
+			count, elapsed.Round(time.Second), float64(count)/elapsed.Seconds())
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to clone database: %w", err)
+	}
+
+	return nil
+}
+
+func _getLatestBadgerDbPath(dataDir string) string {
+	// Parse the integer out of BadgerDbVersionString.
+	versionInt, err := strconv.Atoi(strings.TrimPrefix(BadgerDbVersionString, "v-"))
+	if err != nil {
+		panic(err)
+	}
+	// Iterate from 0 to versionInt inclusive, checking to see if the folder exists.
+	latestVersionFound := -1
+	for i := 0; i <= versionInt; i++ {
+		dbPath := filepath.Join(dataDir, BadgerDbFolder, fmt.Sprintf("v-%05d", i))
+		if _, err := os.Stat(dbPath); err == nil {
+			latestVersionFound = i
+		}
+	}
+	legacyBadgerDbPath := filepath.Join(dataDir, BadgerDbFolder)
+	if latestVersionFound == -1 {
+		// Check to see if the base badger db folder exists.
+		if _, err := os.Stat(legacyBadgerDbPath); err == nil {
+			return legacyBadgerDbPath
+		}
+		return ""
+	}
+	return filepath.Join(dataDir, BadgerDbFolder, fmt.Sprintf("v-%05d", latestVersionFound))
+}
+
 // GetBadgerDbPath returns the path where we store the badgerdb data.
 func GetBadgerDbPath(dataDir string) string {
-	return filepath.Join(dataDir, BadgerDbFolder)
+	existingDbPath := _getLatestBadgerDbPath(dataDir)
+	latestDbPath := filepath.Join(dataDir, BadgerDbFolder, BadgerDbVersionString)
+	if existingDbPath == "" || existingDbPath == latestDbPath {
+		// Log that the db found is the latest version and there's nothing to do.
+		glog.Infof("GetBadgerDbPath: Latest badger db path found is the "+
+			"latest version and there's nothing to do: %s\n", existingDbPath)
+		return latestDbPath
+	}
+	// If we get here, it means existingDbPath is not the latest version, so we need to
+	// clone it to the latest version.
+	// TODO: This is a dirty hack to work around a bug in badger where the db becomes slow
+	// after a certain number of insertions. Once the db is slow, you can bump this version
+	// to reset the db. At minimum, we should change this to something more robuse, like checking
+	// how old a db is and resetting it only if it's too old or something.
+	glog.Infof("GetBadgerDbPath: Cloning badger db from %s to %s\n", existingDbPath, latestDbPath)
+	if err := _cloneBadgerDb(existingDbPath, latestDbPath); err != nil {
+		glog.Errorf("GetBadgerDbPath: Error cloning badger db from %s to %s: %v\n", existingDbPath, latestDbPath, err)
+		panic(err)
+	}
+	glog.Infof("GetBadgerDbPath: Cloned badger db from %s to %s\n", existingDbPath, latestDbPath)
+	return latestDbPath
 }
 
 func _EncodeUint32(num uint32) []byte {
