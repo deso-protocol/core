@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/deso-protocol/core/collections"
-	"github.com/deso-protocol/core/lib"
 	"github.com/dgraph-io/ristretto/z"
 
 	"github.com/google/uuid"
@@ -4574,7 +4573,7 @@ func _getBlockHashForPrefix(handle *badger.DB, snap *Snapshot, prefix []byte) *B
 
 func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
 	// Open the old database (read-only)
-	oldOpts := lib.PerformanceBadgerOptions(oldDbPath)
+	oldOpts := PerformanceBadgerOptions(oldDbPath)
 	oldOpts.ValueDir = oldDbPath
 	oldOpts.ReadOnly = true
 	oldDB, err := badger.Open(oldOpts)
@@ -4584,7 +4583,7 @@ func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
 	defer oldDB.Close()
 
 	// Open/create the new database
-	newOpts := lib.PerformanceBadgerOptions(newDbPath)
+	newOpts := PerformanceBadgerOptions(newDbPath)
 	newOpts.ValueDir = newDbPath
 	newDB, err := badger.Open(newOpts)
 	if err != nil {
