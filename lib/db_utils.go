@@ -4575,7 +4575,7 @@ func _cloneBadgerDb(oldDbPath string, newDbPath string) error {
 	// Open the old database (read-only)
 	oldOpts := PerformanceBadgerOptions(oldDbPath)
 	oldOpts.ValueDir = oldDbPath
-	oldOpts.ReadOnly = true
+	// oldOpts.ReadOnly = true
 	oldDB, err := badger.Open(oldOpts)
 	if err != nil {
 		return fmt.Errorf("failed to open old database: %w", err)
