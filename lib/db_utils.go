@@ -4597,8 +4597,8 @@ func _cloneBadgerDb(oldDbPath, newDbPath string) error {
 	var total uint64
 
 	stream := srcDB.NewStream()
-	stream.NumGo = 8             // tune to your box
-	stream.LogPrefix = "Cloning" // optional
+	stream.NumGo = runtime.NumCPU() // tune to your box
+	stream.LogPrefix = "Cloning"    // optional
 
 	// Optional: ensure we only take the latest version per key (default behavior anyway).
 	// stream.Pick = func(key []byte, versions []*pb.KV) *pb.KV { return versions[len(versions)-1] }
