@@ -8,21 +8,28 @@ Remove a specific number of entries from the **tip** (end) of state-changes file
 ```bash
 ./backend \
   --state-change-dir=/state-changes \
+  --consumer-progress-dir=/consumer-progress \
   --cauterize-state-changes=true \
   --cauterize-entry-count=1000
 
 # Or with environment variables
 export STATE_CHANGE_DIR=/state-changes
+export CONSUMER_PROGRESS_DIR=/consumer-progress
 export CAUTERIZE_STATE_CHANGES=true
 export CAUTERIZE_ENTRY_COUNT=1000
 ./backend
 ```
 
+**✨ NEW: Consumer Progress Auto-Update**
+- If `--consumer-progress-dir` is provided, consumer progress is **automatically updated** to match the truncated state
+- No manual intervention needed!
+- Consumer can resume immediately without errors
+
 **When to Use:**
 - ✅ You know corruption is at the tip (most recent entries)
 - ✅ You want to remove a specific number of recent entries
 - ✅ Consumer progress is ahead or unreliable
-- ✅ You don't want to rely on consumer progress file
+- ✅ You want automatic consumer progress management
 
 ### Mode 2: Cauterize to Consumer Progress (Original)
 Truncate to where the consumer last successfully processed.
@@ -49,12 +56,14 @@ Truncate to where the consumer last successfully processed.
 IF --cauterize-state-changes=true:
     IF --cauterize-entry-count > 0:
         → Use Mode 1: Remove N entries from tip
-        → Consumer progress is IGNORED
-        → --consumer-progress-dir is NOT required
+        → IF --consumer-progress-dir is provided:
+            → Consumer progress automatically updated ✅
+        → ELSE:
+            → Warning: Manual consumer progress update needed ⚠️
     ELSE:
         → Use Mode 2: Truncate to consumer progress
         → --consumer-progress-dir IS required
-        → Entry count is determined by consumer progress
+        → Consumer progress remains unchanged (already correct)
 ```
 
 ---
@@ -66,13 +75,13 @@ IF --cauterize-state-changes=true:
 - Actual entries in files: 1,266,870,195 entries
 - Consumer is **14 entries ahead** (inconsistent state)
 
-**Solution with Entry Count Mode:**
+**Solution with Auto-Update (RECOMMENDED):**
 
 ```bash
-# Remove the last 1000 entries from tip
-# This ignores the consumer progress issue entirely
+# Remove the last 1000 entries AND auto-update consumer progress
 ./backend \
   --state-change-dir=/state-changes \
+  --consumer-progress-dir=/consumer-progress \
   --cauterize-state-changes=true \
   --cauterize-entry-count=1000
 ```
@@ -81,17 +90,25 @@ IF --cauterize-state-changes=true:
 ```
 Total entries: 1,266,870,195
 Entries to remove: 1,000
-Remaining entries: 1,266,870,195 - 1,000 = 1,266,869,195
-Truncates to entry index: 1,266,869,195
+Remaining entries: 1,266,869,195
+✅ Consumer progress automatically set to: 1,266,869,195
+✅ Consumer can resume immediately!
 ```
 
-**Then update consumer progress:**
+**Alternative: Without Auto-Update (NOT RECOMMENDED):**
 ```bash
-# Set consumer to match cauterized state
-python3 -c "import struct; open('/consumer-progress/consumer-progress.bin', 'wb').write(struct.pack('<Q', 1266869195))"
+# If you don't provide --consumer-progress-dir
+./backend \
+  --state-change-dir=/state-changes \
+  --cauterize-state-changes=true \
+  --cauterize-entry-count=1000
 
-# Or let consumer start fresh
-rm /consumer-progress/consumer-progress.bin
+# You'll see warnings:
+# ⚠️  Consumer progress directory not provided - consumer progress NOT updated
+# ⚠️  You must manually set consumer progress to 1266869195 or the consumer will crash
+
+# Then manually update:
+python3 -c "import struct; open('/consumer-progress/consumer-progress.bin', 'wb').write(struct.pack('<Q', 1266869195))"
 ```
 
 ---
@@ -100,7 +117,8 @@ rm /consumer-progress/consumer-progress.bin
 
 | Feature | Entry Count Mode | Consumer Progress Mode |
 |---------|------------------|----------------------|
-| **Requires consumer progress** | ❌ No | ✅ Yes |
+| **Requires consumer progress** | ❌ No (optional) | ✅ Yes (required) |
+| **Auto-updates consumer progress** | ✅ Yes (if dir provided) | ➖ N/A (already correct) |
 | **Fixed number of entries** | ✅ Yes | ❌ No (depends on progress) |
 | **Good for tip corruption** | ✅ Yes | ❌ May miss it |
 | **Good for known corruption** | ✅ Yes | ❌ Depends on progress |
@@ -111,25 +129,31 @@ rm /consumer-progress/consumer-progress.bin
 
 ## Output Examples
 
-### Mode 1: Entry Count
+### Mode 1: Entry Count (With Consumer Progress Auto-Update)
 
 ```
 I0122 15:42:10.123456  1 server.go:479] Cauterize mode enabled with entry count: 1000 entries from tip
-I0122 15:42:10.123789  1 state_change_syncer.go:537] === CAUTERIZE BY ENTRY COUNT STARTED ===
-I0122 15:42:10.123890  1 state_change_syncer.go:538] Entries to remove from tip: 1000
-I0122 15:42:10.124012  1 state_change_syncer.go:547] Total entries in state-changes: 1266870195
-I0122 15:42:10.124234  1 state_change_syncer.go:557] Target entry index after cauterization: 1266869195
-I0122 15:42:10.124456  1 state_change_syncer.go:558] This will remove the last 1000 entries (indices 1266869195 through 1266870194)
-W0122 15:42:10.124890  1 state_change_syncer.go:598] ⚠️  CAUTERIZE WILL REMOVE 1000 ENTRIES (50636915 BYTES OF DATA)
-W0122 15:42:10.124991  1 state_change_syncer.go:599] ⚠️  This operation is DESTRUCTIVE and cannot be undone
-W0122 15:42:10.125092  1 state_change_syncer.go:600] ⚠️  Proceeding in 5 seconds... (Ctrl+C to cancel)
-I0122 15:42:15.125234  1 state_change_syncer.go:608] ✓ Truncated state-changes.bin to 781363084099 bytes
-I0122 15:42:15.125456  1 state_change_syncer.go:615] ✓ Truncated state-changes-index.bin to 10134953560 bytes
-I0122 15:42:15.125567  1 state_change_syncer.go:625] ✓ Cleared mempool.bin
-I0122 15:42:15.125678  1 state_change_syncer.go:632] ✓ Cleared mempool-index.bin
-I0122 15:42:15.125789  1 state_change_syncer.go:637] === CAUTERIZE BY ENTRY COUNT COMPLETE ===
-I0122 15:42:15.125890  1 state_change_syncer.go:639]   - Removed 1000 entries from the tip
-I0122 15:42:15.125991  1 state_change_syncer.go:642]   - Remaining entries: 1266869195 (indices 0 through 1266869194)
+I0122 15:42:10.123789  1 state_change_syncer.go:549] === CAUTERIZE BY ENTRY COUNT STARTED ===
+I0122 15:42:10.123890  1 state_change_syncer.go:550] Entries to remove from tip: 1000
+I0122 15:42:10.124012  1 state_change_syncer.go:567] Total entries in state-changes: 1266870195
+I0122 15:42:10.124234  1 state_change_syncer.go:577] Target entry index after cauterization: 1266869195
+I0122 15:42:10.124456  1 state_change_syncer.go:579] This will remove the last 1000 entries (indices 1266869195 through 1266870194)
+W0122 15:42:10.124890  1 state_change_syncer.go:618] ⚠️  CAUTERIZE WILL REMOVE 1000 ENTRIES (50636915 BYTES OF DATA)
+W0122 15:42:10.124991  1 state_change_syncer.go:619] ⚠️  This operation is DESTRUCTIVE and cannot be undone
+W0122 15:42:10.125092  1 state_change_syncer.go:620] ⚠️  Proceeding in 5 seconds... (Ctrl+C to cancel)
+I0122 15:42:15.125234  1 state_change_syncer.go:628] ✓ Truncated state-changes.bin to 781363084099 bytes
+I0122 15:42:15.125456  1 state_change_syncer.go:635] ✓ Truncated state-changes-index.bin to 10134953560 bytes
+I0122 15:42:15.125567  1 state_change_syncer.go:649] Updating consumer progress file at /consumer-progress/consumer-progress.bin
+I0122 15:42:15.125678  1 state_change_syncer.go:664] ✓ Updated consumer-progress.bin to entry index: 1266869195
+I0122 15:42:15.125789  1 state_change_syncer.go:678] ✓ Cleared mempool.bin
+I0122 15:42:15.125890  1 state_change_syncer.go:685] ✓ Cleared mempool-index.bin
+I0122 15:42:15.125991  1 state_change_syncer.go:690] === CAUTERIZE BY ENTRY COUNT COMPLETE ===
+I0122 15:42:15.126092  1 state_change_syncer.go:692]   - Removed 1000 entries from the tip
+I0122 15:42:15.126193  1 state_change_syncer.go:693]   - Removed 50636915 bytes from state-changes.bin
+I0122 15:42:15.126294  1 state_change_syncer.go:694]   - Removed 8000 bytes from state-changes-index.bin
+I0122 15:42:15.126395  1 state_change_syncer.go:695]   - Remaining entries: 1266869195 (indices 0 through 1266869194)
+I0122 15:42:15.126496  1 state_change_syncer.go:697]   - Consumer progress updated to: 1266869195
+I0122 15:42:15.126597  1 state_change_syncer.go:699]   - Node will now replay blocks to regenerate removed entries
 ```
 
 ### Mode 2: Consumer Progress

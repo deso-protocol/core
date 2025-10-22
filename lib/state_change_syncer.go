@@ -535,13 +535,17 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeToConsumerProgress(consumer
 // from the END of the files, regardless of consumer progress. This is useful for removing known
 // corrupted entries at the tip of the state-changes files.
 //
+// If consumerProgressDir is provided, this function will also update the consumer-progress.bin file
+// to match the new entry count, ensuring the consumer can resume without errors.
+//
 // Steps:
 // 1. Get total number of entries from index file size
 // 2. Calculate target entry index (total - entryCount)
 // 3. Calculate byte position using index file
 // 4. Truncate files to that position
-// 5. Clear mempool files
-func (stateChangeSyncer *StateChangeSyncer) CauterizeByEntryCount(entryCount uint64) error {
+// 5. Update consumer progress (if dir provided)
+// 6. Clear mempool files
+func (stateChangeSyncer *StateChangeSyncer) CauterizeByEntryCount(entryCount uint64, consumerProgressDir string) error {
 	glog.Infof("=== CAUTERIZE BY ENTRY COUNT STARTED ===")
 	glog.Infof("Entries to remove from tip: %d", entryCount)
 
@@ -633,7 +637,40 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeByEntryCount(entryCount uin
 	// Step 7: Update internal state
 	stateChangeSyncer.StateChangeFileSize = stateChangesBytePosition
 
-	// Step 8: Clear mempool files (will be regenerated)
+	// Step 8: Update consumer progress file (if directory provided)
+	if consumerProgressDir != "" {
+		consumerProgressFilePath := filepath.Join(consumerProgressDir, "consumer-progress.bin")
+
+		// Check if consumer progress file exists
+		_, err := os.Stat(consumerProgressFilePath)
+		fileExists := err == nil
+
+		if fileExists {
+			glog.Infof("Updating consumer progress file at %s", consumerProgressFilePath)
+
+			// Open consumer progress file for writing
+			consumerProgressFile, err := os.OpenFile(consumerProgressFilePath, os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {
+				return errors.Wrapf(err, "CauterizeByEntryCount: Could not open consumer progress file for writing")
+			}
+			defer consumerProgressFile.Close()
+
+			// Write the new entry count (targetEntryIndex)
+			err = binary.Write(consumerProgressFile, binary.LittleEndian, targetEntryIndex)
+			if err != nil {
+				return errors.Wrapf(err, "CauterizeByEntryCount: Could not write consumer progress")
+			}
+
+			glog.Infof("✓ Updated consumer-progress.bin to entry index: %d", targetEntryIndex)
+		} else {
+			glog.Infof("ℹ Consumer progress file not found at %s (will be created when consumer starts)", consumerProgressFilePath)
+		}
+	} else {
+		glog.Warningf("⚠️  Consumer progress directory not provided - consumer progress NOT updated")
+		glog.Warningf("⚠️  You must manually set consumer progress to %d or the consumer will crash", targetEntryIndex)
+	}
+
+	// Step 9: Clear mempool files (will be regenerated)
 	err = stateChangeSyncer.StateChangeMempoolFile.Truncate(0)
 	if err != nil {
 		glog.Warningf("Could not truncate mempool file: %v", err)
@@ -656,6 +693,9 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeByEntryCount(entryCount uin
 	glog.Infof("  - Removed %d bytes from state-changes.bin", bytesRemoved)
 	glog.Infof("  - Removed %d bytes from state-changes-index.bin", indexBytesRemoved)
 	glog.Infof("  - Remaining entries: %d (indices 0 through %d)", targetEntryIndex, targetEntryIndex-1)
+	if consumerProgressDir != "" {
+		glog.Infof("  - Consumer progress updated to: %d", targetEntryIndex)
+	}
 	glog.Infof("  - Node will now replay blocks to regenerate removed entries")
 
 	return nil

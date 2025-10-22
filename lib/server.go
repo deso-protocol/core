@@ -477,7 +477,7 @@ func NewServer(
 			if _cauterizeEntryCount > 0 {
 				// Mode 1: Cauterize by entry count from tip (ignores consumer progress)
 				glog.Infof("Cauterize mode enabled with entry count: %d entries from tip", _cauterizeEntryCount)
-				err := stateChangeSyncer.CauterizeByEntryCount(_cauterizeEntryCount)
+				err := stateChangeSyncer.CauterizeByEntryCount(_cauterizeEntryCount, _consumerProgressDir)
 				if err != nil {
 					return nil, errors.Wrapf(err, "NewServer: Failed to cauterize by entry count"), false
 				}
