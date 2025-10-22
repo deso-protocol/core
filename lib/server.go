@@ -445,6 +445,8 @@ func NewServer(
 	_nodeMessageChan chan NodeMessage,
 	_forceChecksum bool,
 	_stateChangeDir string,
+	_consumerProgressDir string,
+	_cauterizeStateChanges bool,
 	_hypersyncMaxQueueSize uint32,
 	_blsKeystore *BLSKeystore,
 	_mempoolBackupIntervalMillis uint64,
@@ -468,6 +470,18 @@ func NewServer(
 		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType, _stateSyncerMempoolTxnSyncLimit)
 		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
+
+		// If cauterize mode is enabled, truncate state-changes files to consumer's last processed position
+		if _cauterizeStateChanges {
+			if _consumerProgressDir == "" {
+				return nil, errors.New("NewServer: --consumer-progress-dir must be set when using --cauterize-state-changes"), false
+			}
+			glog.Infof("Cauterize mode enabled, truncating state-changes to consumer progress...")
+			err := stateChangeSyncer.CauterizeToConsumerProgress(_consumerProgressDir)
+			if err != nil {
+				return nil, errors.Wrapf(err, "NewServer: Failed to cauterize state-changes"), false
+			}
+		}
 	}
 
 	// Setup snapshot

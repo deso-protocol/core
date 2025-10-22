@@ -389,6 +389,140 @@ func (stateChangeSyncer *StateChangeSyncer) Reset() {
 	stateChangeSyncer.StateChangeFileSize = 0
 }
 
+// CauterizeToConsumerProgress truncates the state-changes files to the consumer's last processed position.
+// This is used to remove corrupted data downstream of the consumer's progress and allow the consumer
+// to resume from a clean state while the node replays blocks to regenerate the removed entries.
+//
+// Steps:
+// 1. Read consumer progress from consumer-progress.bin (uint64 entry index)
+// 2. Calculate byte position in state-changes.bin using index file
+// 3. Truncate state-changes.bin to that byte position
+// 4. Truncate state-changes-index.bin to (entryIndex * 8) bytes
+// 5. Clear mempool files (they'll be regenerated)
+func (stateChangeSyncer *StateChangeSyncer) CauterizeToConsumerProgress(consumerProgressDir string) error {
+	glog.Infof("=== CAUTERIZE OPERATION STARTED ===")
+	glog.Infof("Consumer Progress Dir: %s", consumerProgressDir)
+
+	// Step 1: Read consumer progress
+	consumerProgressFilePath := filepath.Join(consumerProgressDir, "consumer-progress.bin")
+	consumerProgressFile, err := os.Open(consumerProgressFilePath)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not open consumer progress file at %s", consumerProgressFilePath)
+	}
+	defer consumerProgressFile.Close()
+
+	var lastProcessedEntryIndex uint64
+	err = binary.Read(consumerProgressFile, binary.LittleEndian, &lastProcessedEntryIndex)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not read consumer progress")
+	}
+
+	glog.Infof("Last processed entry index: %d", lastProcessedEntryIndex)
+
+	// Validation: Don't cauterize if consumer hasn't processed anything
+	if lastProcessedEntryIndex == 0 {
+		return errors.New("CauterizeToConsumerProgress: Consumer progress is 0, nothing to cauterize")
+	}
+
+	// Step 2: Calculate byte position using index file
+	// Each entry in index file is 8 bytes (uint64), pointing to byte position in state-changes.bin
+	indexFileOffset := int64(lastProcessedEntryIndex * 8)
+
+	// Get current file sizes for logging
+	stateChangeFileInfo, err := stateChangeSyncer.StateChangeFile.Stat()
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not stat state-changes.bin")
+	}
+
+	indexFileInfo, err := stateChangeSyncer.StateChangeIndexFile.Stat()
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not stat state-changes-index.bin")
+	}
+
+	// Validation: Verify the index is within bounds
+	totalIndexEntries := uint64(indexFileInfo.Size() / 8)
+	if lastProcessedEntryIndex >= totalIndexEntries {
+		return errors.Errorf("CauterizeToConsumerProgress: Entry index %d exceeds total entries %d",
+			lastProcessedEntryIndex, totalIndexEntries)
+	}
+
+	_, err = stateChangeSyncer.StateChangeIndexFile.Seek(indexFileOffset, 0) // io.SeekStart = 0
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not seek to index position %d", indexFileOffset)
+	}
+
+	var stateChangesBytePosition uint64
+	err = binary.Read(stateChangeSyncer.StateChangeIndexFile, binary.LittleEndian, &stateChangesBytePosition)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not read byte position from index")
+	}
+
+	glog.Infof("Byte position in state-changes.bin: %d", stateChangesBytePosition)
+
+	// Validation: Verify the calculated position is reasonable
+	if stateChangesBytePosition > uint64(stateChangeFileInfo.Size()) {
+		return errors.Errorf("CauterizeToConsumerProgress: Calculated position (%d) exceeds file size (%d)",
+			stateChangesBytePosition, stateChangeFileInfo.Size())
+	}
+
+	// Step 3: Log what will be removed
+	bytesRemoved := stateChangeFileInfo.Size() - int64(stateChangesBytePosition)
+	indexBytesRemoved := indexFileInfo.Size() - indexFileOffset
+
+	glog.Infof("Current state-changes.bin size: %d bytes", stateChangeFileInfo.Size())
+	glog.Infof("Current state-changes-index.bin size: %d bytes", indexFileInfo.Size())
+	glog.Infof("Will remove %d bytes from state-changes.bin", bytesRemoved)
+	glog.Infof("Will remove %d bytes from state-changes-index.bin", indexBytesRemoved)
+
+	glog.Warningf("⚠️  CAUTERIZE WILL REMOVE %d BYTES OF DATA", bytesRemoved)
+	glog.Warningf("⚠️  This operation is DESTRUCTIVE and cannot be undone")
+	glog.Warningf("⚠️  Proceeding in 5 seconds... (Ctrl+C to cancel)")
+	time.Sleep(5 * time.Second)
+
+	// Step 4: Truncate state-changes.bin
+	err = stateChangeSyncer.StateChangeFile.Truncate(int64(stateChangesBytePosition))
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not truncate state-changes.bin")
+	}
+	glog.Infof("✓ Truncated state-changes.bin to %d bytes", stateChangesBytePosition)
+
+	// Step 5: Truncate state-changes-index.bin
+	err = stateChangeSyncer.StateChangeIndexFile.Truncate(indexFileOffset)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not truncate state-changes-index.bin")
+	}
+	glog.Infof("✓ Truncated state-changes-index.bin to %d bytes", indexFileOffset)
+
+	// Step 6: Update internal state
+	stateChangeSyncer.StateChangeFileSize = stateChangesBytePosition
+
+	// Step 7: Clear mempool files (will be regenerated)
+	err = stateChangeSyncer.StateChangeMempoolFile.Truncate(0)
+	if err != nil {
+		glog.Warningf("Could not truncate mempool file: %v", err)
+	} else {
+		glog.Infof("✓ Cleared mempool.bin")
+	}
+
+	err = stateChangeSyncer.StateChangeMempoolIndexFile.Truncate(0)
+	if err != nil {
+		glog.Warningf("Could not truncate mempool index file: %v", err)
+	} else {
+		glog.Infof("✓ Cleared mempool-index.bin")
+	}
+
+	stateChangeSyncer.StateChangeMempoolFileSize = 0
+
+	glog.Infof("=== CAUTERIZE OPERATION COMPLETE ===")
+	glog.Infof("Summary:")
+	glog.Infof("  - Removed %d bytes from state-changes.bin", bytesRemoved)
+	glog.Infof("  - Removed %d bytes from state-changes-index.bin", indexBytesRemoved)
+	glog.Infof("  - Consumer can resume from entry index %d", lastProcessedEntryIndex)
+	glog.Infof("  - Node will now replay blocks to regenerate removed entries")
+
+	return nil
+}
+
 // handleDbTransactionConnected is called when a badger db operation takes place.
 // This function checks to see if the operation effects a "core_state" index, and if so it encodes a StateChangeEntry
 // to be written to the state change file upon DB flush.

@@ -229,6 +229,12 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"from an empty string to a non-empty string (or from a non-empty string to the empty string) requires a resync.")
 	cmd.PersistentFlags().Uint("state-syncer-mempool-txn-sync-limit", 10000, "The maximum number of transactions to "+
 		"process in the mempool tx state syncer at a time.")
+	cmd.PersistentFlags().String("consumer-progress-dir", "", "The directory containing consumer-progress.bin. "+
+		"Required when using --cauterize-state-changes. Typically the same directory where your state consumer stores progress.")
+	cmd.PersistentFlags().Bool("cauterize-state-changes", false, "If enabled, the node will truncate state-changes "+
+		"files to the consumer's last processed position on startup. This removes corrupted data downstream of the consumer's "+
+		"progress. REQUIRES: --state-change-dir and --consumer-progress-dir must be set. "+
+		"WARNING: This is a DESTRUCTIVE operation. Ensure backups exist before using.")
 
 	// PoS Checkpoint Syncing
 	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, fmt.Sprintf("A comma-separated list of URLs that "+

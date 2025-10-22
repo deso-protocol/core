@@ -238,6 +238,8 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.nodeMessageChan,
 		node.Config.ForceChecksum,
 		node.Config.StateChangeDir,
+		node.Config.ConsumerProgressDir,
+		node.Config.CauterizeStateChanges,
 		node.Config.HypersyncMaxQueueSize,
 		blsKeystore,
 		node.Config.MempoolBackupIntervalMillis,
