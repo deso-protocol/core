@@ -240,6 +240,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		node.Config.StateChangeDir,
 		node.Config.ConsumerProgressDir,
 		node.Config.CauterizeStateChanges,
+		node.Config.CauterizeEntryCount,
 		node.Config.HypersyncMaxQueueSize,
 		blsKeystore,
 		node.Config.MempoolBackupIntervalMillis,

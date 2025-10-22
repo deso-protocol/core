@@ -235,6 +235,9 @@ func SetupRunFlags(cmd *cobra.Command) {
 		"files to the consumer's last processed position on startup. This removes corrupted data downstream of the consumer's "+
 		"progress. REQUIRES: --state-change-dir and --consumer-progress-dir must be set. "+
 		"WARNING: This is a DESTRUCTIVE operation. Ensure backups exist before using.")
+	cmd.PersistentFlags().Uint64("cauterize-entry-count", 0, "Optional: Number of entries from the tip of state-changes "+
+		"to remove. If set (non-zero), cauterize will remove this many entries from the END of the state-changes files, "+
+		"ignoring consumer progress. If unset or 0, cauterize uses consumer progress. Example: 1000 removes the last 1000 entries.")
 
 	// PoS Checkpoint Syncing
 	cmd.PersistentFlags().StringSlice("checkpoint-syncing-providers", []string{}, fmt.Sprintf("A comma-separated list of URLs that "+

@@ -90,6 +90,7 @@ type Config struct {
 	StateSyncerMempoolTxnSyncLimit uint64
 	ConsumerProgressDir            string
 	CauterizeStateChanges          bool
+	CauterizeEntryCount            uint64
 
 	// PoS Checkpoint Syncing
 	CheckpointSyncingProviders []string
@@ -219,6 +220,7 @@ func LoadConfig() *Config {
 	config.StateSyncerMempoolTxnSyncLimit = viper.GetUint64("state-syncer-mempool-txn-sync-limit")
 	config.ConsumerProgressDir = viper.GetString("consumer-progress-dir")
 	config.CauterizeStateChanges = viper.GetBool("cauterize-state-changes")
+	config.CauterizeEntryCount = viper.GetUint64("cauterize-entry-count")
 
 	// PoS Checkpoint Syncing
 	config.CheckpointSyncingProviders = GetStringSliceWorkaround("checkpoint-syncing-providers")

@@ -523,6 +523,128 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeToConsumerProgress(consumer
 	return nil
 }
 
+// CauterizeByEntryCount truncates the state-changes files by removing a specified number of entries
+// from the END of the files, regardless of consumer progress. This is useful for removing known
+// corrupted entries at the tip of the state-changes files.
+//
+// Steps:
+// 1. Get total number of entries from index file size
+// 2. Calculate target entry index (total - entryCount)
+// 3. Calculate byte position using index file
+// 4. Truncate files to that position
+// 5. Clear mempool files
+func (stateChangeSyncer *StateChangeSyncer) CauterizeByEntryCount(entryCount uint64) error {
+	glog.Infof("=== CAUTERIZE BY ENTRY COUNT STARTED ===")
+	glog.Infof("Entries to remove from tip: %d", entryCount)
+
+	// Step 1: Get total number of entries from index file
+	indexFileInfo, err := stateChangeSyncer.StateChangeIndexFile.Stat()
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeByEntryCount: Could not stat state-changes-index.bin")
+	}
+
+	totalIndexEntries := uint64(indexFileInfo.Size() / 8)
+	glog.Infof("Total entries in state-changes: %d", totalIndexEntries)
+
+	// Validation: Can't remove more entries than exist
+	if entryCount >= totalIndexEntries {
+		return errors.Errorf("CauterizeByEntryCount: Cannot remove %d entries, only %d entries exist",
+			entryCount, totalIndexEntries)
+	}
+
+	// Step 2: Calculate target entry index (what will remain)
+	targetEntryIndex := totalIndexEntries - entryCount
+	glog.Infof("Target entry index after cauterization: %d", targetEntryIndex)
+	glog.Infof("This will remove the last %d entries (indices %d through %d)",
+		entryCount, targetEntryIndex, totalIndexEntries-1)
+
+	// Step 3: Calculate byte position using index file
+	indexFileOffset := int64(targetEntryIndex * 8)
+
+	_, err = stateChangeSyncer.StateChangeIndexFile.Seek(indexFileOffset, 0) // io.SeekStart = 0
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeByEntryCount: Could not seek to index position %d", indexFileOffset)
+	}
+
+	var stateChangesBytePosition uint64
+	err = binary.Read(stateChangeSyncer.StateChangeIndexFile, binary.LittleEndian, &stateChangesBytePosition)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeByEntryCount: Could not read byte position from index")
+	}
+
+	glog.Infof("Byte position in state-changes.bin: %d", stateChangesBytePosition)
+
+	// Get current file sizes for logging
+	stateChangeFileInfo, err := stateChangeSyncer.StateChangeFile.Stat()
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeByEntryCount: Could not stat state-changes.bin")
+	}
+
+	// Validation: Verify the calculated position is reasonable
+	if stateChangesBytePosition > uint64(stateChangeFileInfo.Size()) {
+		return errors.Errorf("CauterizeByEntryCount: Calculated position (%d) exceeds file size (%d)",
+			stateChangesBytePosition, stateChangeFileInfo.Size())
+	}
+
+	// Step 4: Log what will be removed
+	bytesRemoved := stateChangeFileInfo.Size() - int64(stateChangesBytePosition)
+	indexBytesRemoved := indexFileInfo.Size() - indexFileOffset
+
+	glog.Infof("Current state-changes.bin size: %d bytes", stateChangeFileInfo.Size())
+	glog.Infof("Current state-changes-index.bin size: %d bytes", indexFileInfo.Size())
+	glog.Infof("Will remove %d bytes from state-changes.bin", bytesRemoved)
+	glog.Infof("Will remove %d bytes from state-changes-index.bin", indexBytesRemoved)
+
+	glog.Warningf("⚠️  CAUTERIZE WILL REMOVE %d ENTRIES (%d BYTES OF DATA)", entryCount, bytesRemoved)
+	glog.Warningf("⚠️  This operation is DESTRUCTIVE and cannot be undone")
+	glog.Warningf("⚠️  Proceeding in 5 seconds... (Ctrl+C to cancel)")
+	time.Sleep(5 * time.Second)
+
+	// Step 5: Truncate state-changes.bin
+	err = stateChangeSyncer.StateChangeFile.Truncate(int64(stateChangesBytePosition))
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeByEntryCount: Could not truncate state-changes.bin")
+	}
+	glog.Infof("✓ Truncated state-changes.bin to %d bytes", stateChangesBytePosition)
+
+	// Step 6: Truncate state-changes-index.bin
+	err = stateChangeSyncer.StateChangeIndexFile.Truncate(indexFileOffset)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeByEntryCount: Could not truncate state-changes-index.bin")
+	}
+	glog.Infof("✓ Truncated state-changes-index.bin to %d bytes", indexFileOffset)
+
+	// Step 7: Update internal state
+	stateChangeSyncer.StateChangeFileSize = stateChangesBytePosition
+
+	// Step 8: Clear mempool files (will be regenerated)
+	err = stateChangeSyncer.StateChangeMempoolFile.Truncate(0)
+	if err != nil {
+		glog.Warningf("Could not truncate mempool file: %v", err)
+	} else {
+		glog.Infof("✓ Cleared mempool.bin")
+	}
+
+	err = stateChangeSyncer.StateChangeMempoolIndexFile.Truncate(0)
+	if err != nil {
+		glog.Warningf("Could not truncate mempool index file: %v", err)
+	} else {
+		glog.Infof("✓ Cleared mempool-index.bin")
+	}
+
+	stateChangeSyncer.StateChangeMempoolFileSize = 0
+
+	glog.Infof("=== CAUTERIZE BY ENTRY COUNT COMPLETE ===")
+	glog.Infof("Summary:")
+	glog.Infof("  - Removed %d entries from the tip", entryCount)
+	glog.Infof("  - Removed %d bytes from state-changes.bin", bytesRemoved)
+	glog.Infof("  - Removed %d bytes from state-changes-index.bin", indexBytesRemoved)
+	glog.Infof("  - Remaining entries: %d (indices 0 through %d)", targetEntryIndex, targetEntryIndex-1)
+	glog.Infof("  - Node will now replay blocks to regenerate removed entries")
+
+	return nil
+}
+
 // handleDbTransactionConnected is called when a badger db operation takes place.
 // This function checks to see if the operation effects a "core_state" index, and if so it encodes a StateChangeEntry
 // to be written to the state change file upon DB flush.

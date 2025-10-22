@@ -447,6 +447,7 @@ func NewServer(
 	_stateChangeDir string,
 	_consumerProgressDir string,
 	_cauterizeStateChanges bool,
+	_cauterizeEntryCount uint64,
 	_hypersyncMaxQueueSize uint32,
 	_blsKeystore *BLSKeystore,
 	_mempoolBackupIntervalMillis uint64,
@@ -473,13 +474,23 @@ func NewServer(
 
 		// If cauterize mode is enabled, truncate state-changes files to consumer's last processed position
 		if _cauterizeStateChanges {
-			if _consumerProgressDir == "" {
-				return nil, errors.New("NewServer: --consumer-progress-dir must be set when using --cauterize-state-changes"), false
-			}
-			glog.Infof("Cauterize mode enabled, truncating state-changes to consumer progress...")
-			err := stateChangeSyncer.CauterizeToConsumerProgress(_consumerProgressDir)
-			if err != nil {
-				return nil, errors.Wrapf(err, "NewServer: Failed to cauterize state-changes"), false
+			if _cauterizeEntryCount > 0 {
+				// Mode 1: Cauterize by entry count from tip (ignores consumer progress)
+				glog.Infof("Cauterize mode enabled with entry count: %d entries from tip", _cauterizeEntryCount)
+				err := stateChangeSyncer.CauterizeByEntryCount(_cauterizeEntryCount)
+				if err != nil {
+					return nil, errors.Wrapf(err, "NewServer: Failed to cauterize by entry count"), false
+				}
+			} else {
+				// Mode 2: Cauterize to consumer progress (original behavior)
+				if _consumerProgressDir == "" {
+					return nil, errors.New("NewServer: --consumer-progress-dir must be set when using --cauterize-state-changes without --cauterize-entry-count"), false
+				}
+				glog.Infof("Cauterize mode enabled, truncating state-changes to consumer progress...")
+				err := stateChangeSyncer.CauterizeToConsumerProgress(_consumerProgressDir)
+				if err != nil {
+					return nil, errors.Wrapf(err, "NewServer: Failed to cauterize state-changes"), false
+				}
 			}
 		}
 	}
