@@ -424,7 +424,15 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeToConsumerProgress(consumer
 		return errors.New("CauterizeToConsumerProgress: Consumer progress is 0, nothing to cauterize")
 	}
 
-	// Step 2: Calculate byte position using index file
+	// Step 2: Open index file for reading (the existing handle is write-only)
+	indexFilePath := stateChangeSyncer.StateChangeIndexFile.Name()
+	indexFileForReading, err := os.Open(indexFilePath)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not open index file for reading")
+	}
+	defer indexFileForReading.Close()
+
+	// Calculate byte position using index file
 	// Each entry in index file is 8 bytes (uint64), pointing to byte position in state-changes.bin
 	indexFileOffset := int64(lastProcessedEntryIndex * 8)
 
@@ -434,7 +442,7 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeToConsumerProgress(consumer
 		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not stat state-changes.bin")
 	}
 
-	indexFileInfo, err := stateChangeSyncer.StateChangeIndexFile.Stat()
+	indexFileInfo, err := indexFileForReading.Stat()
 	if err != nil {
 		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not stat state-changes-index.bin")
 	}
@@ -446,13 +454,13 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeToConsumerProgress(consumer
 			lastProcessedEntryIndex, totalIndexEntries)
 	}
 
-	_, err = stateChangeSyncer.StateChangeIndexFile.Seek(indexFileOffset, 0) // io.SeekStart = 0
+	_, err = indexFileForReading.Seek(indexFileOffset, 0) // io.SeekStart = 0
 	if err != nil {
 		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not seek to index position %d", indexFileOffset)
 	}
 
 	var stateChangesBytePosition uint64
-	err = binary.Read(stateChangeSyncer.StateChangeIndexFile, binary.LittleEndian, &stateChangesBytePosition)
+	err = binary.Read(indexFileForReading, binary.LittleEndian, &stateChangesBytePosition)
 	if err != nil {
 		return errors.Wrapf(err, "CauterizeToConsumerProgress: Could not read byte position from index")
 	}
@@ -537,8 +545,16 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeByEntryCount(entryCount uin
 	glog.Infof("=== CAUTERIZE BY ENTRY COUNT STARTED ===")
 	glog.Infof("Entries to remove from tip: %d", entryCount)
 
-	// Step 1: Get total number of entries from index file
-	indexFileInfo, err := stateChangeSyncer.StateChangeIndexFile.Stat()
+	// Step 1: Open index file for reading (the existing handle is write-only)
+	indexFilePath := stateChangeSyncer.StateChangeIndexFile.Name()
+	indexFileForReading, err := os.Open(indexFilePath)
+	if err != nil {
+		return errors.Wrapf(err, "CauterizeByEntryCount: Could not open index file for reading")
+	}
+	defer indexFileForReading.Close()
+
+	// Get total number of entries from index file
+	indexFileInfo, err := indexFileForReading.Stat()
 	if err != nil {
 		return errors.Wrapf(err, "CauterizeByEntryCount: Could not stat state-changes-index.bin")
 	}
@@ -561,13 +577,13 @@ func (stateChangeSyncer *StateChangeSyncer) CauterizeByEntryCount(entryCount uin
 	// Step 3: Calculate byte position using index file
 	indexFileOffset := int64(targetEntryIndex * 8)
 
-	_, err = stateChangeSyncer.StateChangeIndexFile.Seek(indexFileOffset, 0) // io.SeekStart = 0
+	_, err = indexFileForReading.Seek(indexFileOffset, 0) // io.SeekStart = 0
 	if err != nil {
 		return errors.Wrapf(err, "CauterizeByEntryCount: Could not seek to index position %d", indexFileOffset)
 	}
 
 	var stateChangesBytePosition uint64
-	err = binary.Read(stateChangeSyncer.StateChangeIndexFile, binary.LittleEndian, &stateChangesBytePosition)
+	err = binary.Read(indexFileForReading, binary.LittleEndian, &stateChangesBytePosition)
 	if err != nil {
 		return errors.Wrapf(err, "CauterizeByEntryCount: Could not read byte position from index")
 	}
