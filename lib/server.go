@@ -364,21 +364,22 @@ func ValidateHyperSyncFlags(isHypersync bool, syncType NodeSyncType) {
 // RunBlockIndexMigrationOnce runs the block index migration once and saves a file to
 // indicate that it has been run.
 func RunBlockIndexMigrationOnce(db *badger.DB, params *DeSoParams) error {
+	glog.Info("STARTUP_DEBUG: RunBlockIndexMigrationOnce() called")
 	blockIndexMigrationFileName := filepath.Join(db.Opts().Dir, BlockIndexMigrationFileName)
-	glog.V(2).Info("FileName: ", blockIndexMigrationFileName)
+	glog.Infof("STARTUP_DEBUG: Migration file path: %s", blockIndexMigrationFileName)
 	hasRunMigration, err := ReadBoolFromFile(blockIndexMigrationFileName)
 	if err == nil && hasRunMigration {
-		glog.V(2).Info("Block index migration has already been run")
+		glog.Info("STARTUP_DEBUG: Block index migration has already been run, skipping")
 		return nil
 	}
-	glog.V(0).Info("Running block index migration")
+	glog.Info("STARTUP_DEBUG: Running block index migration (this may take a while)...")
 	if err = RunBlockIndexMigration(db, nil, nil, params); err != nil {
 		return errors.Wrapf(err, "Problem running block index migration")
 	}
 	if err = SaveBoolToFile(blockIndexMigrationFileName, true); err != nil {
 		return errors.Wrapf(err, "Problem saving block index migration file")
 	}
-	glog.V(2).Info("Block index migration complete")
+	glog.Info("STARTUP_DEBUG: Block index migration complete")
 	return nil
 }
 
@@ -458,24 +459,31 @@ func NewServer(
 	_err error,
 	_shouldRestart bool,
 ) {
+	glog.Info("STARTUP_DEBUG: NewServer() called")
 	var err error
 
 	// Only initialize state change syncer if the directories are defined.
 	var stateChangeSyncer *StateChangeSyncer
 	if _stateChangeDir != "" {
+		glog.Infof("STARTUP_DEBUG: Creating StateChangeSyncer with dir: %s", _stateChangeDir)
 		// Create the state change syncer to handle syncing state changes to disk, and assign some of its methods
 		// to the event manager.
 		stateChangeSyncer = NewStateChangeSyncer(_stateChangeDir, _syncType, _stateSyncerMempoolTxnSyncLimit)
 		eventManager.OnStateSyncerOperation(stateChangeSyncer._handleStateSyncerOperation)
 		eventManager.OnStateSyncerFlushed(stateChangeSyncer._handleStateSyncerFlush)
+		glog.Info("STARTUP_DEBUG: StateChangeSyncer created")
+	} else {
+		glog.Info("STARTUP_DEBUG: No stateChangeDir, skipping StateChangeSyncer")
 	}
 
 	// Setup snapshot
+	glog.Infof("STARTUP_DEBUG: Setting up snapshot, hyperSync=%v", _hyperSync)
 	var _snapshot *Snapshot
 	shouldRestart := false
 	isChecksumIssue := false
 	archivalMode := false
 	if _hyperSync {
+		glog.Info("STARTUP_DEBUG: Creating Snapshot for hypersync...")
 		_snapshot, err, shouldRestart, isChecksumIssue = NewSnapshot(
 			_db,
 			_snapshotBlockHeightPeriod,
@@ -491,15 +499,20 @@ func NewServer(
 		if err != nil {
 			panic(err)
 		}
+		glog.Infof("STARTUP_DEBUG: Snapshot created, shouldRestart=%v, isChecksumIssue=%v", shouldRestart, isChecksumIssue)
+	} else {
+		glog.Info("STARTUP_DEBUG: hypersync disabled, skipping Snapshot creation")
 	}
 
 	// We only set archival mode true if we're a hypersync node.
 	if IsNodeArchival(_syncType) {
 		archivalMode = true
 	}
+	glog.Infof("STARTUP_DEBUG: archivalMode=%v", archivalMode)
 
 	// Create an empty Server object here so we can pass a reference to it to the
 	// ConnectionManager.
+	glog.Info("STARTUP_DEBUG: Creating Server struct...")
 	srv := &Server{
 		DisableNetworking:            _disableNetworking,
 		ReadOnlyMode:                 _readOnlyMode,
@@ -512,6 +525,7 @@ func NewServer(
 		connectIps:                   _connectIps,
 		datadir:                      _dataDir,
 	}
+	glog.Info("STARTUP_DEBUG: Server struct created")
 
 	if stateChangeSyncer != nil {
 		srv.StateChangeSyncer = stateChangeSyncer
@@ -520,16 +534,20 @@ func NewServer(
 	// The same timesource is used in the chain data structure and in the connection
 	// manager. It just takes and keeps track of the median time among our peers so
 	// we can keep a consistent clock.
+	glog.Info("STARTUP_DEBUG: Creating timesource...")
 	timesource := chainlib.NewMedianTime()
 	// We need to add an initial time sample or else it will return the zero time, which
 	// messes things up during initialization.
 	timesource.AddTimeSample("my-time", time.Now())
+	glog.Info("STARTUP_DEBUG: Timesource created")
 
 	// Create a new connection manager but note that it won't be initialized until Start().
+	glog.Info("STARTUP_DEBUG: Creating ConnectionManager...")
 	_incomingMessages := make(chan *ServerMessage, _params.ServerMessageChannelSize+(_targetOutboundPeers+_maxInboundPeers)*3)
 	_cmgr := NewConnectionManager(
 		_params, _listeners, _hyperSync, _syncType, _stallTimeoutSeconds,
 		_minFeeRateNanosPerKB, _incomingMessages, srv)
+	glog.Info("STARTUP_DEBUG: ConnectionManager created")
 
 	// Set up the blockchain data structure. This is responsible for accepting new
 	// blocks, keeping track of the best chain, and keeping all of that state up
@@ -547,6 +565,7 @@ func NewServer(
 	eventManager.OnBlockAccepted(srv._handleBlockAccepted)
 	eventManager.OnBlockDisconnected(srv._handleBlockMainChainDisconnectedd)
 
+	glog.Info("STARTUP_DEBUG: Calling NewBlockchain()...")
 	_chain, err := NewBlockchain(
 		_trustedBlockProducerPublicKeys, _trustedBlockProducerStartHeight, _maxSyncBlockHeight,
 		_params, timesource, _db, postgres, eventManager, _snapshot, archivalMode, _checkpointSyncingProviders,

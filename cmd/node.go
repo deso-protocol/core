@@ -108,21 +108,28 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	}
 
 	// Setup statsd
+	glog.Info("STARTUP_DEBUG: Setting up statsd...")
 	statsdClient, err := statsd.New(fmt.Sprintf("%s:%d", os.Getenv("DD_AGENT_HOST"), 8125))
 	if err != nil {
 		glog.Fatal(err)
 	}
+	glog.Info("STARTUP_DEBUG: Statsd setup complete")
 
 	// Setup listeners and peers
+	glog.Info("STARTUP_DEBUG: Setting up address manager...")
 	desoAddrMgr := addrmgr.New(node.Config.DataDirectory, net.LookupIP)
 	desoAddrMgr.Start()
+	glog.Info("STARTUP_DEBUG: Address manager started")
 
 	// This just gets localhost listening addresses on the protocol port.
 	// Such as [{127.0.0.1 18000 } {::1 18000 }], and associated listener structs.
+	glog.Info("STARTUP_DEBUG: Getting listening addresses...")
 	_, node.Listeners = GetAddrsToListenOn(node.Config.ProtocolPort)
+	glog.Infof("STARTUP_DEBUG: Got %d listeners", len(node.Listeners))
 
 	// If --connect-ips is not passed, we will connect the addresses from
 	// --add-ips, DNSSeeds, and DNSSeedGenerators.
+	glog.Infof("STARTUP_DEBUG: ConnectIPs length: %d", len(node.Config.ConnectIPs))
 	if len(node.Config.ConnectIPs) == 0 {
 		glog.Infof("Looking for AddIPs: %v", len(node.Config.AddIPs))
 		for _, host := range node.Config.AddIPs {
@@ -138,16 +145,21 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		if !node.Config.PrivateMode {
 			go addSeedAddrsFromPrefixes(desoAddrMgr, node.Params)
 		}
+	} else {
+		glog.Infof("STARTUP_DEBUG: Skipping DNS seeds because ConnectIPs is set: %v", node.Config.ConnectIPs)
 	}
 
 	// Setup chain database
+	glog.Infof("STARTUP_DEBUG: Opening BadgerDB at %s...", node.Config.DataDirectory)
 	dbDir := lib.GetBadgerDbPath(node.Config.DataDirectory)
 	opts := lib.PerformanceBadgerOptions(dbDir)
 	opts.ValueDir = dbDir
+	glog.Infof("STARTUP_DEBUG: BadgerDB path: %s, calling badger.Open()...", dbDir)
 	node.ChainDB, err = badger.Open(opts)
 	if err != nil {
 		panic(err)
 	}
+	glog.Info("STARTUP_DEBUG: BadgerDB opened successfully")
 
 	// Setup snapshot logger
 	if node.Config.LogDBSummarySnapshots {
@@ -155,7 +167,9 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	}
 
 	// Validate that we weren't passed incompatible Hypersync flags
+	glog.Info("STARTUP_DEBUG: Validating hypersync flags...")
 	lib.ValidateHyperSyncFlags(node.Config.HyperSync, node.Config.SyncType)
+	glog.Info("STARTUP_DEBUG: Hypersync flags validated")
 
 	// Setup postgres using a remote URI. Postgres is not currently supported when we're in hypersync mode.
 	if node.Config.HyperSync && node.Config.PostgresURI != "" {
@@ -164,6 +178,7 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 	}
 	var db *pg.DB
 	if node.Config.PostgresURI != "" {
+		glog.Info("STARTUP_DEBUG: Setting up Postgres...")
 		options, err := pg.ParseURL(node.Config.PostgresURI)
 		if err != nil {
 			panic(err)
@@ -182,22 +197,32 @@ func (node *Node) Start(exitChannels ...*chan struct{}) {
 		if err != nil {
 			panic(err)
 		}
+		glog.Info("STARTUP_DEBUG: Postgres setup complete")
+	} else {
+		glog.Info("STARTUP_DEBUG: No Postgres URI, skipping Postgres setup")
 	}
 
 	// Setup eventManager
+	glog.Info("STARTUP_DEBUG: Creating event manager...")
 	eventManager := lib.NewEventManager()
+	glog.Info("STARTUP_DEBUG: Event manager created")
 
 	var blsKeystore *lib.BLSKeystore
 	if node.Config.PosValidatorSeed != "" {
+		glog.Info("STARTUP_DEBUG: Creating BLS keystore...")
 		blsKeystore, err = lib.NewBLSKeystore(node.Config.PosValidatorSeed)
 		if err != nil {
 			panic(err)
 		}
+		glog.Info("STARTUP_DEBUG: BLS keystore created")
+	} else {
+		glog.Info("STARTUP_DEBUG: No PosValidatorSeed, skipping BLS keystore")
 	}
 
 	// Setup the server. ShouldRestart is used whenever we detect an issue and should restart the node after a recovery
 	// process, just in case. These issues usually arise when the node was shutdown unexpectedly mid-operation. The node
 	// performs regular health checks to detect whenever this occurs.
+	glog.Info("STARTUP_DEBUG: Calling lib.NewServer()...")
 	shouldRestart := false
 	node.Server, err, shouldRestart = lib.NewServer(
 		node.Params,

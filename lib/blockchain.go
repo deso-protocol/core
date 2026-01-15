@@ -969,16 +969,27 @@ func (bc *Blockchain) IsFullyStored() bool {
 // then _initChain will initialize it to contain only the genesis block before
 // proceeding to read from it.
 func (bc *Blockchain) _initChain() error {
+	glog.Info("STARTUP_DEBUG: _initChain() called")
+
 	// See if we have a best chain hash stored in the db.
+	glog.Info("STARTUP_DEBUG: Getting best block hash from db...")
 	var bestBlockHash *BlockHash
 	if bc.postgres != nil {
+		glog.Info("STARTUP_DEBUG: Using postgres to get best block hash")
 		chain := bc.postgres.GetChain(MAIN_CHAIN)
 		if chain != nil {
 			bestBlockHash = chain.TipHash
 		}
 	} else {
+		glog.Info("STARTUP_DEBUG: Using badger to get best block hash")
 		bestBlockHash = DbGetBestHash(bc.db, bc.snapshot, ChainTypeDeSoBlock)
 	}
+	if bestBlockHash != nil {
+		glog.Infof("STARTUP_DEBUG: Best block hash: %s", bestBlockHash.String())
+	} else {
+		glog.Info("STARTUP_DEBUG: Best block hash is nil (new chain)")
+	}
+
 	// When we load up initially, the best header hash is just the tip of the best
 	// block chain, since we don't store headers for which we don't have corresponding
 	// blocks.
@@ -987,6 +998,7 @@ func (bc *Blockchain) _initChain() error {
 	// If there is no best chain hash in the db then it means we've never
 	// initialized anything so take the time to do it now.
 	if bestBlockHash == nil || bestHeaderHash == nil {
+		glog.Info("STARTUP_DEBUG: No best block hash, initializing with genesis block...")
 		var err error
 
 		if bc.postgres != nil {
@@ -1004,6 +1016,7 @@ func (bc *Blockchain) _initChain() error {
 		// set the best hash we're aware of equal to it.
 		bestBlockHash = MustDecodeHexBlockHash(bc.params.GenesisBlockHashHex)
 		bestHeaderHash = bestBlockHash
+		glog.Info("STARTUP_DEBUG: Genesis block initialized")
 	}
 
 	// At this point we should have bestHashes set and the db should have been
@@ -1025,22 +1038,28 @@ func (bc *Blockchain) _initChain() error {
 	// up processing, but we use the BlockIndex struct as a read-through cache to look up
 	// blocks from the cache or database as needed.
 
+	glog.Info("STARTUP_DEBUG: Looking up tip node from block index...")
 	var err error
 	var tipNode *BlockNode
 	if bc.postgres != nil {
+		glog.Info("STARTUP_DEBUG: Using postgres to get block index...")
 		bc.blockIndex.blockIndexByHash, err = bc.postgres.GetBlockIndex()
 		var exists bool
 		tipNode, exists = bc.blockIndex.blockIndexByHash.Get(*bestBlockHash)
 		if !exists {
 			return fmt.Errorf("_initChain: Best hash (%#v) not found in block index", bestBlockHash)
 		}
+		glog.Info("STARTUP_DEBUG: Tip node found via postgres")
 	} else {
+		glog.Info("STARTUP_DEBUG: Using badger to get tip node...")
 		var tipNodeExists bool
 		// For badger, we only need the tip block to get started.
 		// Special case for looking up the genesis block.
 		if bestBlockHash.IsEqual(GenesisBlockHash) {
+			glog.Info("STARTUP_DEBUG: Looking up genesis block...")
 			tipNode, tipNodeExists = bc.blockIndex.GetBlockNodeByHashAndHeight(bestBlockHash, 0)
 		} else {
+			glog.Info("STARTUP_DEBUG: Looking up tip block by hash only...")
 			tipNode, tipNodeExists, err = bc.blockIndex.GetBlockNodeByHashOnly(bestBlockHash)
 			if err != nil {
 				return errors.Wrapf(err, "_initChain: Problem reading best block from db")
@@ -1048,21 +1067,31 @@ func (bc *Blockchain) _initChain() error {
 			if !tipNodeExists {
 				return fmt.Errorf("_initChain: Best hash (%#v) not found in block index", bestBlockHash)
 			}
+			glog.Infof("STARTUP_DEBUG: Tip node found, height=%d", tipNode.Height)
+
 			// Walk back the last 6 hours of blocks. Or enough to fill the block index cache if the
 			// size of the block index cache is less than 6 * 3600
+			glog.Info("STARTUP_DEBUG: Walking back block index cache...")
 			currBlockCounter := 1
 			parentNode := tipNode.GetParent(bc.blockIndex)
 			numBlockNodesToFetch := 3600 * 6
 			if bc.blockIndex.size < numBlockNodesToFetch {
 				numBlockNodesToFetch = bc.blockIndex.size
 			}
+			glog.Infof("STARTUP_DEBUG: Will fetch up to %d block nodes for cache", numBlockNodesToFetch)
 			for currBlockCounter < numBlockNodesToFetch && parentNode != nil {
 				parentNode = parentNode.GetParent(bc.blockIndex)
 				currBlockCounter++
+				// Log progress every 10000 blocks
+				if currBlockCounter%10000 == 0 {
+					glog.Infof("STARTUP_DEBUG: Walked back %d blocks...", currBlockCounter)
+				}
 			}
+			glog.Infof("STARTUP_DEBUG: Finished walking back %d blocks", currBlockCounter)
 		}
 	}
 	// We start by simply setting the chain tip and header tip to the tip node.
+	glog.Info("STARTUP_DEBUG: Setting chain tip and header tip...")
 	bc.blockIndex.setTip(tipNode)
 	bc.blockIndex.setHeaderTip(tipNode)
 	bc.isInitialized = true
@@ -1135,10 +1164,15 @@ func NewBlockchain(
 	checkpointSyncingProviders []string,
 	blockIndexSize int,
 ) (*Blockchain, error) {
+	glog.Info("STARTUP_DEBUG: NewBlockchain() called")
+
+	glog.Info("STARTUP_DEBUG: Running RunBlockIndexMigrationOnce...")
 	if err := RunBlockIndexMigrationOnce(db, params); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: Problem running block index migration")
 	}
+	glog.Info("STARTUP_DEBUG: RunBlockIndexMigrationOnce complete")
 
+	glog.Info("STARTUP_DEBUG: Decoding trusted block producer public keys...")
 	trustedBlockProducerPublicKeys := make(map[PkMapKey]bool)
 	for _, keyStr := range trustedBlockProducerPublicKeyStrs {
 		pkBytes, _, err := Base58CheckDecode(keyStr)
@@ -1148,14 +1182,23 @@ func NewBlockchain(
 		}
 		trustedBlockProducerPublicKeys[MakePkMapKey(pkBytes)] = true
 	}
+	glog.Infof("STARTUP_DEBUG: Decoded %d trusted block producer public keys", len(trustedBlockProducerPublicKeys))
 
 	timer := &Timer{}
 	timer.Initialize()
+
+	glog.Info("STARTUP_DEBUG: Creating block view cache...")
 	blockViewCache, _ := collections.NewLruCache[BlockHash, *BlockViewAndUtxoOps](100) // TODO: parameterize
-	blockIndex, err := NewBlockIndex(db, snapshot, nil, blockIndexSize)                // This tip will be set in _initChain.
+	glog.Info("STARTUP_DEBUG: Block view cache created")
+
+	glog.Infof("STARTUP_DEBUG: Creating NewBlockIndex with size %d...", blockIndexSize)
+	blockIndex, err := NewBlockIndex(db, snapshot, nil, blockIndexSize) // This tip will be set in _initChain.
 	if err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: Problem creating block index")
 	}
+	glog.Info("STARTUP_DEBUG: NewBlockIndex created")
+
+	glog.Info("STARTUP_DEBUG: Creating Blockchain struct...")
 	bc := &Blockchain{
 		db:                              db,
 		postgres:                        postgres,
@@ -1177,26 +1220,36 @@ func NewBlockchain(
 		orphanList: list.New(),
 		timer:      timer,
 	}
+	glog.Info("STARTUP_DEBUG: Blockchain struct created")
 
 	// Hold the chain lock whenever we modify this object from now on.
+	glog.Info("STARTUP_DEBUG: Acquiring ChainLock...")
 	bc.ChainLock.Lock()
 	defer bc.ChainLock.Unlock()
+	glog.Info("STARTUP_DEBUG: ChainLock acquired")
 
 	// Initialize all the in-memory data structures by loading our state
 	// from the db. This function creates an initial database state containing
 	// only the genesis block if we've never initialized the database before.
+	glog.Info("STARTUP_DEBUG: Calling _initChain()...")
 	if err := bc._initChain(); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: ")
 	}
+	glog.Info("STARTUP_DEBUG: _initChain() complete")
 
 	// Update the best chain and best header chain to include uncommitted blocks.
+	glog.Info("STARTUP_DEBUG: Calling _applyUncommittedBlocksToBestChain()...")
 	if err := bc._applyUncommittedBlocksToBestChain(); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: ")
 	}
+	glog.Info("STARTUP_DEBUG: _applyUncommittedBlocksToBestChain() complete")
 
 	// always update the checkpoint block info when creating a new blockchain
+	glog.Info("STARTUP_DEBUG: Calling updateCheckpointBlockInfo()...")
 	bc.updateCheckpointBlockInfo()
+	glog.Info("STARTUP_DEBUG: updateCheckpointBlockInfo() complete")
 
+	glog.Info("STARTUP_DEBUG: NewBlockchain() returning successfully")
 	return bc, nil
 }
 
