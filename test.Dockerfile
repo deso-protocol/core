@@ -6,6 +6,7 @@ RUN apk add --update bash cmake g++ gcc git make vips vips-dev
 
 COPY --from=golang:1.24-alpine /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV CGO_CFLAGS="-std=gnu11"
 
 WORKDIR /deso/src/core
 
@@ -26,6 +27,6 @@ COPY test_data   test_data
 COPY main.go     .
 
 # build backend
-RUN CGO_CFLAGS="-std=gnu11" GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
+RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
 ENTRYPOINT ["go", "test", "-v", "-failfast", "-p", "1", "github.com/deso-protocol/core/bls", "github.com/deso-protocol/core/collections", "github.com/deso-protocol/core/collections/bitset", "github.com/deso-protocol/core/consensus", "github.com/deso-protocol/core/lib"]
