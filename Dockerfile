@@ -25,7 +25,7 @@ COPY test_data   test_data
 COPY main.go     .
 
 # build backend
-RUN GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
+RUN CGO_CFLAGS="-std=gnu11" GOOS=linux go build -mod=mod -a -installsuffix cgo -o bin/core main.go
 
 # create tiny image
 FROM alpine:latest
