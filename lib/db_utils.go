@@ -14,6 +14,7 @@ import (
 	"log"
 	"math"
 	"math/big"
+	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -10758,6 +10759,22 @@ func PerformanceBadgerOptions(dir string) badger.Options {
 
 func DefaultBadgerOptions(dir string) badger.Options {
 	opts := badger.DefaultOptions(dir).WithLoggingLevel(badger.WARNING)
+
+	// Check if synchronous writes should be disabled via environment variable.
+	// By default, SyncWrites is true (Badger's default) for maximum durability.
+	// Setting BADGER_SYNC_WRITES=false disables fsync after each write, which improves
+	// performance significantly but risks data loss on crash.
+	//
+	// Safety note: Disabling SyncWrites means committed transactions may not be persisted
+	// to disk if the system crashes. However, because DeSo commits blocks atomically within
+	// single Badger transactions, the worst case is losing recent blocks that will be
+	// re-synced from peers. The node should never enter an inconsistent state.
+	if os.Getenv("BADGER_SYNC_WRITES") == "false" {
+		opts.SyncWrites = false
+		glog.Warningf("DefaultBadgerOptions: BADGER_SYNC_WRITES=false - Synchronous writes " +
+			"disabled for improved performance. Data loss possible on crash.")
+	}
+
 	return opts
 }
 
