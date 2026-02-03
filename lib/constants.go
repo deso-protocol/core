@@ -1925,7 +1925,7 @@ const (
 
 	// DefaultMaxNonceExpirationBlockHeightOffset - default value to which the MaxNonceExpirationBlockHeightOffset
 	// is set to before specified by ParamUpdater.
-	DefaultMaxNonceExpirationBlockHeightOffset = 288
+	DefaultMaxNonceExpirationBlockHeightOffset = 86400 // 1 day
 
 	// TODO: Are these fields needed?
 	// Access group enumeration max recursion depth.

@@ -6,6 +6,7 @@ RUN apk add --update bash cmake g++ gcc git make vips vips-dev
 
 COPY --from=golang:1.24-alpine /usr/local/go/ /usr/local/go/
 ENV PATH="/usr/local/go/bin:${PATH}"
+ENV CGO_CFLAGS="-std=gnu11"
 
 WORKDIR /deso/src/core
 
