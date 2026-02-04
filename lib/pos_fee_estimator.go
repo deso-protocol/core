@@ -222,7 +222,7 @@ func addBlockToTransactionRegister(txnRegister *TransactionRegister, block *Cach
 		if txn.Tx.TxnMeta.GetTxnType() == TxnTypeBlockReward {
 			continue
 		}
-
+		txn.SetValidated(true)
 		if err := txnRegister.AddTransaction(txn); err != nil {
 			return errors.Wrap(err,
 				"PoSFeeEstimator.addBlockToTransactionRegister: error adding txn to pastBlocksTransactionRegister")
@@ -669,6 +669,10 @@ func (posFeeEstimator *PoSFeeEstimator) estimateFeeRateNanosPerKBGivenTransactio
 		tx, ok := it.Value()
 		if !ok {
 			break
+		}
+		// Skip transactions that aren't validated.
+		if !tx.IsValidated() {
+			continue
 		}
 		totalTxnsSize += tx.TxSizeBytes
 		txns = append(txns, tx)
