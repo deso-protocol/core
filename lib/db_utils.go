@@ -6821,6 +6821,10 @@ type SubmitPostTxindexMetadata struct {
 	ParentPostHashHex string
 	// ParentPosterPublicKeyBase58Check in AffectedPublicKeys
 
+	// We require a related public key for quick feed generation in the case of
+	// a reclout post or a reply post.
+	RelatedPublicKeyBase58Check string
+
 	// The profiles that are mentioned are in the AffectedPublicKeys
 	// MentionedPublicKeyBase58Check in AffectedPublicKeys
 }
@@ -6830,6 +6834,8 @@ func (txnMeta *SubmitPostTxindexMetadata) RawEncodeWithoutMetadata(blockHeight u
 
 	data = append(data, EncodeByteArray([]byte(txnMeta.PostHashBeingModifiedHex))...)
 	data = append(data, EncodeByteArray([]byte(txnMeta.ParentPostHashHex))...)
+	data = append(data, EncodeByteArray([]byte(txnMeta.RelatedPublicKeyBase58Check))...)
+
 	return data
 }
 
@@ -6845,6 +6851,12 @@ func (txnMeta *SubmitPostTxindexMetadata) RawDecodeWithoutMetadata(blockHeight u
 		return errors.Wrapf(err, "SubmitPostTxindexMetadata.Decode: problem reading ParentPostHashHex")
 	}
 	txnMeta.ParentPostHashHex = string(parentPostHashHexBytes)
+
+	relatedPublicKeyBase58CheckBytes, err := DecodeByteArray(rr)
+	if err != nil {
+		return errors.Wrapf(err, "SubmitPostTxindexMetadata.Decode: problem reading RelatedPublicKeyBase58Check")
+	}
+	txnMeta.RelatedPublicKeyBase58Check = string(relatedPublicKeyBase58CheckBytes)
 
 	return nil
 }
