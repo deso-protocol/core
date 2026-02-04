@@ -1307,6 +1307,8 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 	glog.V(2).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: flushing %d mappings", len(bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry))
 
 	// Go through all the entries in the DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map.
+	numDeleted := 0
+	numPut := 0
 	for orderIter, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
 		// Make a copy of the iterator since we take references to it below.
 		orderKey := orderIter
@@ -1314,7 +1316,7 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 		// Validate order map key matches order entry.
 		orderMapKey := orderEntry.ToMapKey()
 
-		if !reflect.DeepEqual(orderKey, orderMapKey) {
+		if !orderKey.Eq(orderMapKey) {
 			return fmt.Errorf("_flushDAOCoinLimitOrderEntriesToDbWithTxn: DAOCoinLimitOrderEntry has "+
 				"map key: %v which does not match match "+
 				"the DAOCoinLimitOrderMapKey map key %v",
@@ -1323,31 +1325,20 @@ func (bav *UtxoView) _flushDAOCoinLimitOrderEntriesToDbWithTxn(txn *badger.Txn, 
 
 		// Delete the existing mappings in the db for this balance key. They will be re-added
 		// if the corresponding entry in memory has isDeleted=false.
-		if err := DBDeleteDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, bav.EventManager, orderEntry.isDeleted); err != nil {
-			return errors.Wrapf(
-				err, "_flushDAOCoinLimitOrderEntriesToDbWithTxn: problem deleting mappings")
-		}
-	}
-
-	// Update logs with number of entries deleted and/ put.
-	numDeleted := 0
-	numPut := 0
-
-	// Go through all the entries in the DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry map.
-	for _, orderEntry := range bav.DAOCoinLimitOrderMapKeyToDAOCoinLimitOrderEntry {
-		// Make a copy of the iterator since we take references to it below.
 		if orderEntry.isDeleted {
 			numDeleted++
-			// If the OrderEntry has isDeleted=true then there's nothing to do because
-			// we already deleted the entry above.
+			if err := DBDeleteDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, bav.EventManager, orderEntry.isDeleted); err != nil {
+				return errors.Wrapf(
+					err, "_flushDAOCoinLimitOrderEntriesToDbWithTxn: problem deleting mappings")
+			}
 		} else {
 			numPut++
-			// If the OrderEntry has (isDeleted = false) then we put the corresponding
-			// mappings for it into the db.
-			if err := DBPutDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, blockHeight, bav.EventManager); err != nil {
-				return err
+			if err := DBUpsertDAOCoinLimitOrderWithTxn(txn, bav.Snapshot, orderEntry, blockHeight, bav.EventManager); err != nil {
+				return errors.Wrapf(
+					err, "_flushDAOCoinLimitOrderEntriesToDbWithTxn: problem putting mappings for order %v", orderEntry)
 			}
 		}
+
 	}
 
 	glog.V(2).Infof("_flushDAOCoinLimitOrderEntriesToDbWithTxn: deleted %d mappings, put %d mappings", numDeleted, numPut)
