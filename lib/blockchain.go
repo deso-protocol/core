@@ -137,6 +137,17 @@ func (nn *BlockNode) ClearCommittedStatus() {
 	nn.Status &= BlockStatus(^uint32(StatusBlockCommitted))
 }
 
+// ClearBlockStatusForRevalidation resets a BlockNode to the state it would have been in if we had
+// only ever seen its header, dropping every block-level status bit and leaving the header bits
+// untouched. This is deliberately not a new state: "we know the header but have never received the
+// block" is already a state the rest of the code understands and knows how to leave. Because the
+// node is no longer Stored, GetBlockNodesToFetch will request the block again, and
+// getStoredLineageFromCommittedTip will report it as a missing ancestor rather than a failed one.
+func (nn *BlockNode) ClearBlockStatusForRevalidation() {
+	nn.Status &= BlockStatus(^uint32(
+		StatusBlockProcessed | StatusBlockStored | StatusBlockValidated | StatusBlockValidateFailed))
+}
+
 // IsFullyProcessed determines if the BlockStatus corresponds to a fully processed and stored block.
 func (blockStatus BlockStatus) IsFullyProcessed() bool {
 	return blockStatus&StatusHeaderValidated != 0 &&
@@ -1116,6 +1127,97 @@ func (bc *Blockchain) _applyUncommittedBlocksToBestChain() error {
 	return nil
 }
 
+// forgetValidateFailedBlocks discards the ValidateFailed verdict on every block at or above the
+// committed tip, so that each of them is fetched and validated again from scratch on this run.
+//
+// A ValidateFailed marker is otherwise permanent: it is persisted in the block index, reloaded on
+// every startup, and getStoredLineageFromCommittedTip refuses to build a lineage through it. That
+// is correct for a block that is genuinely invalid. It is too strong for a block we rejected for a
+// reason that was never purely a function of consensus state. Connecting a block reads state from
+// two places, the UtxoView and the DB, and which of the two holds a given entry depends on how many
+// blocks this node happens to have committed, not on anything the network agrees about. A node can
+// therefore reject a block the rest of the network accepts, and the marker then wedges it off the
+// chain permanently even though a retry would very likely succeed.
+//
+// Startup is a natural place to reconsider, because it is the one point where we are already paying
+// to rebuild in-memory state and no validation is in flight. Blocks at or above the committed tip
+// are by definition not yet part of the committed chain, so abandoning our previous verdict on them
+// costs only a re-download and a re-validation. A block that really is invalid fails again and is
+// re-marked, at worst once per restart; a block we rejected because we lost a race gets a second
+// attempt against a freshly built view.
+//
+// The sweep must reach the whole poisoned run, not just the block that started it. A rejection
+// propagates downward: validateAndIndexBlockPoS marks any block whose parent is ValidateFailed as
+// ValidateFailed too, so one lost race leaves a contiguous chain of rejected blocks, all of which
+// have to be forgotten together. Forgetting only the first one would leave its descendants wedged
+// off the chain and the node no better off.
+//
+// So the walk starts one height above the committed tip and continues for as long as each height
+// holds a block that we either validated or rejected, which is the same shape of self-bounding walk
+// getSafeBlockNodes already performs on every startup. A committed block cannot be ValidateFailed,
+// so there is nothing to forget at or below the committed tip. Above it, every block we have an
+// opinion about was reached by extending the committed tip one height at a time, so the region we
+// care about is contiguous and the first height holding neither a validated nor a rejected block
+// ends it. That bound is what keeps this cheap on a node midway through an initial sync: headers run
+// millions of blocks ahead of blocks there, but a header-only node is neither validated nor
+// rejected, so the walk stops rather than scanning to the header tip.
+//
+// Note that neither tip is usable as the bound here. The header tip runs millions of blocks ahead of
+// the block tip during an initial sync. The block tip is worse than it looks: this runs before
+// _applyUncommittedBlocksToBestChain, so _initChain has set the tip from the best *committed* hash
+// and the block tip is still equal to the committed tip, which would confine the sweep to a single
+// height and miss precisely the multi-block uncommitted backlog this exists to clear.
+func (bc *Blockchain) forgetValidateFailedBlocks() error {
+	committedTip, exists := bc.GetCommittedTip()
+	if !exists || committedTip == nil {
+		// Nothing is committed yet, so there is no uncommitted range to sweep.
+		return nil
+	}
+
+	forgottenBlockNodes := []*BlockNode{}
+	for height := uint64(committedTip.Height) + 1; ; height++ {
+		blockNodes := bc.blockIndex.GetBlockNodesByHeight(height)
+		// No blocks at this height means no blocks at any greater height either.
+		if len(blockNodes) == 0 {
+			break
+		}
+		reachedThisHeight := false
+		for _, blockNode := range blockNodes {
+			if blockNode.IsValidated() {
+				reachedThisHeight = true
+				continue
+			}
+			if !blockNode.IsValidateFailed() {
+				continue
+			}
+			reachedThisHeight = true
+			glog.Infof(CLog(Yellow, fmt.Sprintf("forgetValidateFailedBlocks: Forgetting failed "+
+				"validation of block %v (height %d) so that it is fetched and validated again",
+				blockNode.Hash, blockNode.Height)))
+			blockNode.ClearBlockStatusForRevalidation()
+			forgottenBlockNodes = append(forgottenBlockNodes, blockNode)
+		}
+		// We neither validated nor rejected anything at this height, so we never extended the chain
+		// this far and there is nothing above it that we have an opinion about.
+		if !reachedThisHeight {
+			break
+		}
+	}
+	if len(forgottenBlockNodes) == 0 {
+		return nil
+	}
+
+	// Persist the cleared status. The block index is a read-through cache over badger, so clearing
+	// the status in memory alone would be silently undone as soon as a node is evicted and re-read.
+	if err := PutHeightHashToNodeInfoBatch(
+		bc.db, bc.snapshot, forgottenBlockNodes, false /*bitcoinNodes*/, bc.eventManager); err != nil {
+		return errors.Wrapf(err, "forgetValidateFailedBlocks: Problem persisting cleared block status")
+	}
+	glog.Infof("forgetValidateFailedBlocks: Forgot the failed validation of %d block(s)",
+		len(forgottenBlockNodes))
+	return nil
+}
+
 // NewBlockchain returns a new blockchain object. It initializes some in-memory
 // data structures by reading from the db. It also initializes the db if it hasn't
 // been initialized in the past. This function should only be called once per
@@ -1186,6 +1288,13 @@ func NewBlockchain(
 	// from the db. This function creates an initial database state containing
 	// only the genesis block if we've never initialized the database before.
 	if err := bc._initChain(); err != nil {
+		return nil, errors.Wrapf(err, "NewBlockchain: ")
+	}
+
+	// Give any block we previously rejected another chance. This runs before the best chain is
+	// rebuilt below so that the rebuild observes the corrected block index, rather than being
+	// computed from status bits we are about to change underneath it.
+	if err := bc.forgetValidateFailedBlocks(); err != nil {
 		return nil, errors.Wrapf(err, "NewBlockchain: ")
 	}
 
