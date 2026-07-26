@@ -3571,6 +3571,18 @@ func DbGetForbiddenBlockSignaturePubKey(db *badger.DB, snap *Snapshot, publicKey
 	return ret
 }
 
+// DbGetAllForbiddenBlockSignaturePubKeys returns every public key currently on the forbidden
+// public key list. The list is expected to be tiny, so enumerating it in full is cheap.
+func DbGetAllForbiddenBlockSignaturePubKeys(db *badger.DB) [][]byte {
+	prefix := Prefixes.PrefixForbiddenBlockSignaturePubKeys
+	keysFound, _ := EnumerateKeysForPrefix(db, prefix, true, false)
+	publicKeys := [][]byte{}
+	for _, key := range keysFound {
+		publicKeys = append(publicKeys, key[len(prefix):])
+	}
+	return publicKeys
+}
+
 func DbDeleteForbiddenBlockSignaturePubKeyWithTxn(txn *badger.Txn, snap *Snapshot, publicKey []byte, eventManager *EventManager, entryIsDeleted bool) error {
 
 	existingEntry := DbGetForbiddenBlockSignaturePubKeyWithTxn(txn, snap, publicKey)

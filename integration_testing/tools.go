@@ -82,7 +82,7 @@ func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir stri
 	config.ConnectIPs = []string{}
 	config.PrivateMode = true
 	config.GlogV = 0
-	config.LogToStdErr = true
+	config.NoLogToStdErr = false
 	config.GlogVmodule = "*bitcoin_manager*=0,*balance*=0,*view*=0,*frontend*=0,*peer*=0,*addr*=0,*network*=0,*utils*=0,*connection*=0,*main*=0,*server*=0,*mempool*=0,*miner*=0,*blockchain*=0"
 	config.MaxInboundPeers = maxPeers
 	config.TargetOutboundPeers = maxPeers
@@ -99,6 +99,9 @@ func _generateConfig(t *testing.T, config *cmd.Config, port uint32, dataDir stri
 	config.MempoolBackupIntervalMillis = 30000
 	config.MempoolMaxValidationViewConnects = 10000
 	config.TransactionValidationRefreshIntervalMillis = 10
+	// NewBlockIndex rejects a zero size. Only cmd's flag parsing fills this in, and tests never go
+	// through that, so without this every node in this package fails to start.
+	config.BlockIndexSize = lib.DefaultBlockIndexSize
 
 	//config.ArchivalMode = true
 

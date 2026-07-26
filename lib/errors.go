@@ -225,6 +225,7 @@ const (
 	RuleErrorMaxNonceExpirationBlockHeightOffsetTooLow         RuleError = "RuleErrorMaxNonceExpirationBlockHeightOffsetTooLow"
 	RuleErrorMaxNonceExpirationBlockHeightOffsetTooHigh        RuleError = "RuleErrorMaxNonceExpirationBlockHeightOffsetTooHigh"
 	RuleErrorForbiddenPubKeyLength                             RuleError = "RuleErrorForbiddenPubKeyLength"
+	RuleErrorFrozenPublicKey                                   RuleError = "RuleErrorFrozenPublicKey: This public key has been forbidden by a ParamUpdater and cannot transact"
 	RuleErrorUserNotAuthorizedToUpdateExchangeRate             RuleError = "RuleErrorUserNotAuthorizedToUpdateExchangeRate"
 	RuleErrorUserNotAuthorizedToUpdateGlobalParams             RuleError = "RuleErrorUserNotAuthorizedToUpdateGlobalParams"
 	RuleErrorUserOutputMustBeNonzero                           RuleError = "RuleErrorUserOutputMustBeNonzero"

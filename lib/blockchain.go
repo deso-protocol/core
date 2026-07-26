@@ -1197,6 +1197,17 @@ func NewBlockchain(
 	// always update the checkpoint block info when creating a new blockchain
 	bc.updateCheckpointBlockInfo()
 
+	// Log the forbidden public key list on startup. It is normally empty, and every key on it
+	// is unable to transact at and after FreezeEnforcementBlockHeight, so it is worth surfacing
+	// unconditionally rather than making an operator go digging in badger for it.
+	forbiddenPubKeys := DbGetAllForbiddenBlockSignaturePubKeys(db)
+	glog.Infof("NewBlockchain: Forbidden public key list has %d entrie(s); enforced at block height %d",
+		len(forbiddenPubKeys), params.ForkHeights.FreezeEnforcementBlockHeight)
+	for _, forbiddenPubKey := range forbiddenPubKeys {
+		glog.Infof(CLog(Yellow, fmt.Sprintf("NewBlockchain: Forbidden public key: %s",
+			PkToString(forbiddenPubKey, params))))
+	}
+
 	return bc, nil
 }
 

@@ -1416,10 +1416,18 @@ func (bav *UtxoView) _disconnectUpdateGlobalParams(
 	}
 	bav.GlobalParamsEntry = prevGlobalParamEntry
 
-	// Reset any modified forbidden pub key entries if they exist.
-	if operationData.PrevForbiddenPubKeyEntry != nil {
-		pkMapKey := MakePkMapKey(operationData.PrevForbiddenPubKeyEntry.PubKey)
-		bav.ForbiddenPubKeyToForbiddenPubKeyEntry[pkMapKey] = operationData.PrevForbiddenPubKeyEntry
+	// Reset any modified forbidden pub key entry. We recover which public key this txn touched
+	// from its ExtraData rather than from PrevForbiddenPubKeyEntry, because that operation field
+	// is nil precisely when the key was not previously forbidden -- the case where we have to
+	// write an explicit tombstone, otherwise the entry this txn added would survive the
+	// disconnect.
+	if forbiddenPubKey, _, isSet := bav.forbiddenPubKeyFromExtraData(currentTxn.ExtraData, blockHeight); isSet &&
+		len(forbiddenPubKey) == btcec.PubKeyBytesLenCompressed {
+		prevForbiddenPubKeyEntry := operationData.PrevForbiddenPubKeyEntry
+		if prevForbiddenPubKeyEntry == nil {
+			prevForbiddenPubKeyEntry = &ForbiddenPubKeyEntry{PubKey: forbiddenPubKey, isDeleted: true}
+		}
+		bav.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(forbiddenPubKey)] = prevForbiddenPubKeyEntry
 	}
 
 	// Now revert the basic transfer with the remaining operations. Cut off
@@ -3192,6 +3200,43 @@ func (bav *UtxoView) _checkAccessGroupMembersSpendingLimitAndUpdateDerivedKeyEnt
 	)
 }
 
+// GetForbiddenPubKeyEntry returns the ForbiddenPubKeyEntry for the given public key, or nil if
+// the public key is not currently forbidden.
+//
+// Unlike most view getters, this one deliberately does not cache the entry it reads from the db
+// onto the view. ForbiddenPubKeyToForbiddenPubKeyEntry is treated as a set of pending mutations
+// by _flushForbiddenPubKeyEntriesToDbWithTxn, which deletes and rewrites the db row for every
+// key the map contains. Caching reads would turn every lookup into a db write.
+func (bav *UtxoView) GetForbiddenPubKeyEntry(pubKey []byte) *ForbiddenPubKeyEntry {
+	if entry, exists := bav.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(pubKey)]; exists {
+		if entry.isDeleted {
+			return nil
+		}
+		return entry
+	}
+	if DbGetForbiddenBlockSignaturePubKey(bav.Handle, bav.Snapshot, pubKey) == nil {
+		return nil
+	}
+	return &ForbiddenPubKeyEntry{PubKey: pubKey}
+}
+
+// forbiddenPubKeyFromExtraData returns the public key that an UpdateGlobalParams txn's ExtraData
+// asks us to add to, or remove from, the forbidden public key list. Removal is only possible at
+// and after the freeze enforcement fork height. Addition takes precedence if both keys are set.
+func (bav *UtxoView) forbiddenPubKeyFromExtraData(extraData map[string][]byte, blockHeight uint32) (
+	_pubKey []byte, _unforbid bool, _isSet bool) {
+
+	if pubKey, isSet := extraData[ForbiddenBlockSignaturePubKeyKey]; isSet {
+		return pubKey, false, true
+	}
+	if blockHeight >= bav.Params.ForkHeights.FreezeEnforcementBlockHeight {
+		if pubKey, isSet := extraData[UnforbidBlockSignaturePubKeyKey]; isSet {
+			return pubKey, true, true
+		}
+	}
+	return nil, false, false
+}
+
 func (bav *UtxoView) _connectUpdateGlobalParams(
 	txn *MsgDeSoTxn, txHash *BlockHash, blockHeight uint32, verifySignatures bool) (
 	_totalInput uint64, _totalOutput uint64, _utxoOps []*UtxoOperation, _err error) {
@@ -3629,21 +3674,21 @@ func (bav *UtxoView) _connectUpdateGlobalParams(
 
 	var newForbiddenPubKeyEntry *ForbiddenPubKeyEntry
 	var prevForbiddenPubKeyEntry *ForbiddenPubKeyEntry
-	var forbiddenPubKey []byte
-	if _, exists := extraData[ForbiddenBlockSignaturePubKeyKey]; exists {
-		forbiddenPubKey = extraData[ForbiddenBlockSignaturePubKeyKey]
-
+	forbiddenPubKey, unforbid, forbiddenPubKeyIsSet := bav.forbiddenPubKeyFromExtraData(extraData, blockHeight)
+	if forbiddenPubKeyIsSet {
 		if len(forbiddenPubKey) != btcec.PubKeyBytesLenCompressed {
 			return 0, 0, nil, RuleErrorForbiddenPubKeyLength
 		}
 
-		// If there is already an entry on the view for this pub key, save it.
-		if val, ok := bav.ForbiddenPubKeyToForbiddenPubKeyEntry[MakePkMapKey(forbiddenPubKey)]; ok {
-			prevForbiddenPubKeyEntry = val
-		}
+		// Save the entry as it exists right now, whether it lives on the view or in the db, so
+		// that a disconnect can restore it. Note that GetForbiddenPubKeyEntry returns nil for a
+		// key that isn't currently forbidden, which matters because ForbiddenPubKeyEntry.isDeleted
+		// is not serialized: a non-nil PrevForbiddenPubKeyEntry always means "was forbidden".
+		prevForbiddenPubKeyEntry = bav.GetForbiddenPubKeyEntry(forbiddenPubKey)
 
 		newForbiddenPubKeyEntry = &ForbiddenPubKeyEntry{
-			PubKey: forbiddenPubKey,
+			PubKey:    forbiddenPubKey,
+			isDeleted: unforbid,
 		}
 	}
 
@@ -3837,6 +3882,18 @@ func (bav *UtxoView) _connectSingleTxn(
 	txnSizeBytes := uint64(len(txnBytes))
 	if txnSizeBytes > maxTxnSizeBytes {
 		return nil, 0, 0, 0, RuleErrorTxnTooBig
+	}
+
+	// Don't allow transactions from a public key that a ParamUpdater has forbidden. This is the
+	// only place this check is needed: every transaction, including each inner transaction of an
+	// atomic wrapper, is connected through here, and a txn signed by a derived key still carries
+	// its owner in txn.PublicKey. Block rewards are exempt so that forbidding a validator's public
+	// key can never stall block production.
+	if blockHeight >= bav.Params.ForkHeights.FreezeEnforcementBlockHeight &&
+		txn.TxnMeta.GetTxnType() != TxnTypeBlockReward {
+		if bav.GetForbiddenPubKeyEntry(txn.PublicKey) != nil {
+			return nil, 0, 0, 0, RuleErrorFrozenPublicKey
+		}
 	}
 
 	// Take snapshot of balance

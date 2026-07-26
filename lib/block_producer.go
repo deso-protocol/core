@@ -660,7 +660,13 @@ func (desoBlockProducer *DeSoBlockProducer) Start() {
 		// Stop the block producer if we're past the pos cutover or if the tip block is the last pow block.
 		blockHeight := uint64(desoBlockProducer.chain.blockTip().Height)
 		if blockHeight >= desoBlockProducer.params.GetFinalPoWBlockHeight() {
-			desoBlockProducer.Stop()
+			// Release the wait group before flagging the exit, the same way the exit check at the
+			// top of the loop does. Calling Stop() from here instead deadlocks this goroutine
+			// against itself: Stop waits on the very wait group this goroutine is still holding,
+			// and nothing ever releases it. That in turn wedges Server.Stop forever, so a node that
+			// ran the block producer across the PoS cutover can never shut down.
+			desoBlockProducer.producerWaitGroup.Done()
+			atomic.AddInt32(&desoBlockProducer.exit, 1)
 			glog.V(1).Infof("DeSoBlockProducer.Start() Stopping block producer because we're past the PoS cutover" +
 				" or the last PoW block.")
 			return

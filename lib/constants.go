@@ -360,6 +360,17 @@ type ForkHeights struct {
 	// from PoW consensus to PoS consensus.
 	ProofOfStake2ConsensusCutoverBlockHeight uint32
 
+	// FreezeEnforcementBlockHeight defines the height at which the forbidden public key
+	// list, which is managed by ParamUpdaters via the ForbiddenBlockSignaturePubKeyKey and
+	// UnforbidBlockSignaturePubKeyKey ExtraData keys on UpdateGlobalParams, begins to be
+	// enforced against transactors. At and after this height, any transaction whose
+	// PublicKey is on the list is rejected. Block rewards are exempt so that a frozen key
+	// that is also a validator cannot stall block production.
+	//
+	// This is a soft fork: it only removes validity from transactions that were previously
+	// valid, so un-upgraded nodes still follow the chain that upgraded nodes produce.
+	FreezeEnforcementBlockHeight uint32
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -883,6 +894,8 @@ var RegtestForkHeights = ForkHeights{
 
 	BlockRewardPatchBlockHeight: uint32(0),
 
+	FreezeEnforcementBlockHeight: uint32(0),
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -1093,6 +1106,9 @@ var MainnetForkHeights = ForkHeights{
 
 	// Tues July 2 2024 @ 12pm PST
 	LockupsBlockHeight: uint32(349167),
+
+	// Sat July 25 2026 @ 7:18pm PDT
+	FreezeEnforcementBlockHeight: uint32(36672158),
 
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
@@ -1496,6 +1512,9 @@ var TestnetForkHeights = ForkHeights{
 	// Wed May 1 2024 @ 12pm PT
 	LockupsBlockHeight: uint32(1113866),
 
+	// Set to MaxUint32 until a testnet activation height is chosen.
+	FreezeEnforcementBlockHeight: uint32(4294967295),
+
 	// Be sure to update EncoderMigrationHeights as well via
 	// GetEncoderMigrationHeights if you're modifying schema.
 }
@@ -1764,6 +1783,7 @@ const (
 	MaxCopiesPerNFTKey                                = "MaxCopiesPerNFT"
 	MaxNonceExpirationBlockHeightOffsetKey            = "MaxNonceExpirationBlockHeightOffset"
 	ForbiddenBlockSignaturePubKeyKey                  = "ForbiddenBlockSignaturePubKey"
+	UnforbidBlockSignaturePubKeyKey                   = "UnforbidBlockSignaturePubKey"
 	StakeLockupEpochDurationKey                       = "StakeLockupEpochDuration"
 	ValidatorJailEpochDurationKey                     = "ValidatorJailEpochDuration"
 	LeaderScheduleMaxNumValidatorsKey                 = "LeaderScheduleMaxNumValidators"
