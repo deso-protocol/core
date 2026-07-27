@@ -183,6 +183,17 @@ func TestForgetValidateFailedBlocksAcrossRestart(t *testing.T) {
 	require.True(t, before.IsValidateFailed(), "marker must be persisted before the restart")
 	require.True(t, before.IsStored())
 
+	// A hypothetical child of the failed block, used to probe what the retry machinery would do
+	// with it. Before the restart the failed ancestor poisons the lineage outright.
+	childHeader := &MsgDeSoHeader{
+		Version:       HeaderVersion1,
+		PrevBlockHash: failedNode.Hash,
+		Height:        uint64(failedNode.Height) + 1,
+	}
+	_, _, lineageErr := bc.getStoredLineageFromCommittedTip(childHeader)
+	require.Equal(t, RuleErrorAncestorBlockValidationFailed, lineageErr,
+		"before the restart, a descendant of the failed block must be rejected outright")
+
 	// Restart: a fresh Blockchain over the same DB, exactly as NewTestBlockchain builds one.
 	restarted, err := NewBlockchain([]string{blockSignerPk}, 0, 0, params,
 		chainlib.NewMedianTime(), db, nil, nil, nil, false, nil, MinBlockIndexSize)
@@ -199,4 +210,15 @@ func TestForgetValidateFailedBlocksAcrossRestart(t *testing.T) {
 		failedNode.Hash, uint64(failedNode.Height))
 	require.True(t, indexExists)
 	require.False(t, fromIndex.IsValidateFailed())
+
+	// The behavioral payoff: the same descendant probe now reports the forgotten block as a
+	// missing ancestor to be fetched, rather than a failed one. This is the state transition the
+	// whole change exists to produce — it is what makes the node re-request and re-validate the
+	// block instead of staying wedged.
+	_, missingHashes, lineageErr := restarted.getStoredLineageFromCommittedTip(childHeader)
+	require.Equal(t, RuleErrorMissingAncestorBlock, lineageErr,
+		"after the restart, the forgotten block must read as missing, not failed")
+	require.Len(t, missingHashes, 1)
+	require.True(t, missingHashes[0].IsEqual(failedNode.Hash),
+		"the forgotten block itself must be what gets re-requested")
 }
