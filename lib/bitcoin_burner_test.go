@@ -1,17 +1,20 @@
 package lib
 
 import (
+	"os"
+	"testing"
+
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
-)
-
-var (
-	BlockCypherTestAPIKey = "3aaa4e1c99164e8ba9ade1a605a150c0"
 )
 
 func TestCheckDoubleSpend(t *testing.T) {
+	blockCypherAPIKey := os.Getenv("BLOCKCYPHER_API_KEY")
+	if blockCypherAPIKey == "" {
+		t.Skip("BLOCKCYPHER_API_KEY is not set; skipping the external BlockCypher integration test")
+	}
+
 	// Set up a blockchain
 	assert := assert.New(t)
 	require := require.New(t)
@@ -25,14 +28,14 @@ func TestCheckDoubleSpend(t *testing.T) {
 		{
 			hash, err := chainhash.NewHashFromStr("4d02fa8bed28405dd0f8eabbcd5a1ead6018ee7d260d026bb9ba99eb90f7389b")
 			require.NoError(err)
-			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, BlockCypherTestAPIKey, params)
+			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, blockCypherAPIKey, params)
 			require.NoError(err)
 			require.False(isDoubleSpend)
 		}
 		{
 			hash, err := chainhash.NewHashFromStr("60bbed01b7d6adfe1482161092894943e4ddff9cc9c9ed398df295cfcfde2d9e")
 			require.NoError(err)
-			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, BlockCypherTestAPIKey, params)
+			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, blockCypherAPIKey, params)
 			require.NoError(err)
 			require.True(isDoubleSpend)
 		}
@@ -46,14 +49,14 @@ func TestCheckDoubleSpend(t *testing.T) {
 		{
 			hash, err := chainhash.NewHashFromStr("141efaf43d716166792dec365b5b598a0ad9920baf52446675840c4b3ea2e4e1")
 			require.NoError(err)
-			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, BlockCypherTestAPIKey, params)
+			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, blockCypherAPIKey, params)
 			require.NoError(err)
 			require.False(isDoubleSpend)
 		}
 		{
 			hash, err := chainhash.NewHashFromStr("60bbed01b7d6adfe1482161092894943e4ddff9cc9c9ed398df295cfcfde2d9e")
 			require.NoError(err)
-			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, BlockCypherTestAPIKey, params)
+			isDoubleSpend, err := BlockCypherCheckBitcoinDoubleSpend(hash, blockCypherAPIKey, params)
 			require.NoError(err)
 			require.True(isDoubleSpend)
 		}
