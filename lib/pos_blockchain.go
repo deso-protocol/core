@@ -1001,6 +1001,10 @@ func (bc *Blockchain) isProperlyFormedBlockHeaderPoS(header *MsgDeSoHeader) erro
 		return RuleErrorBothTimeoutAndVoteQC
 	}
 
+	if err := validatePoSQuorumCertificateParentHash(header); err != nil {
+		return err
+	}
+
 	if header.ProposerVotingPublicKey.IsEmpty() {
 		return RuleErrorInvalidProposerVotingPublicKey
 	}
@@ -1257,6 +1261,16 @@ func (bav *UtxoView) hasValidBlockProposerPoS(block *MsgDeSoBlock) (_isValidBloc
 // of the validator set has voted (or timed out). It special cases the first block after the PoS cutover
 // by overriding the validator set used to validate the high QC in the first block after the PoS cutover.
 func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validatorSet []*ValidatorEntry) error {
+	// Verify the structural parent/QC binding independently of signature
+	// verification. The aggregate signature authenticates the hash inside the
+	// QC, but does not establish that the block actually extends that hash.
+	if block == nil {
+		return RuleErrorNilBlock
+	}
+	if err := validatePoSQuorumCertificateParentHash(block.Header); err != nil {
+		return err
+	}
+
 	highQCValidators := toConsensusValidators(validatorSet)
 	aggregateQCValidators := highQCValidators
 
@@ -1295,6 +1309,24 @@ func (bc *Blockchain) isValidPoSQuorumCertificate(block *MsgDeSoBlock, validator
 		return RuleErrorInvalidVoteQC
 	}
 
+	return nil
+}
+
+func validatePoSQuorumCertificateParentHash(header *MsgDeSoHeader) error {
+	if header == nil {
+		return RuleErrorNilBlockHeader
+	}
+	if header.PrevBlockHash == nil {
+		return RuleErrorNilPrevBlockHash
+	}
+	if !header.ValidatorsVoteQC.isEmpty() &&
+		!header.PrevBlockHash.IsEqual(header.ValidatorsVoteQC.BlockHash) {
+		return RuleErrorPoSVoteQCBlockHashDoesNotMatchPrevBlockHash
+	}
+	if !header.ValidatorsTimeoutAggregateQC.isEmpty() &&
+		!header.PrevBlockHash.IsEqual(header.ValidatorsTimeoutAggregateQC.ValidatorsHighQC.BlockHash) {
+		return RuleErrorPoSTimeoutHighQCBlockHashDoesNotMatchPrevBlockHash
+	}
 	return nil
 }
 
@@ -2237,6 +2269,8 @@ const (
 	RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView       RuleError = "RuleErrorPoSVoteBlockViewNotOneGreaterThanValidatorsVoteQCView"
 	RuleErrorPoSTimeoutBlockViewNotGreaterThanParent                     RuleError = "RuleErrorPoSTimeoutBlockViewNotGreaterThanParent"
 	RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView RuleError = "RuleErrorPoSTimeoutBlockViewNotOneGreaterThanValidatorsTimeoutQCView"
+	RuleErrorPoSVoteQCBlockHashDoesNotMatchPrevBlockHash                 RuleError = "RuleErrorPoSVoteQCBlockHashDoesNotMatchPrevBlockHash"
+	RuleErrorPoSTimeoutHighQCBlockHashDoesNotMatchPrevBlockHash          RuleError = "RuleErrorPoSTimeoutHighQCBlockHashDoesNotMatchPrevBlockHash"
 
 	RuleErrorInvalidVoteQC    RuleError = "RuleErrorInvalidVoteQC"
 	RuleErrorInvalidTimeoutQC RuleError = "RuleErrorInvalidTimeoutQC"

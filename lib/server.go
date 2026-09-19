@@ -2057,9 +2057,11 @@ func (srv *Server) _startSync() {
 	// Send a GetHeaders message to the Peer to start the headers sync.
 	// Note that we include an empty BlockHash as the stopHash to indicate we want as
 	// many headers as the Peer can give us.
-	locator, locatorHeights := bestPeer.srv.blockchain.LatestHeaderLocator()
-	headerTip := bestPeer.srv.blockchain.headerTip()
-	currentBlockTip := bestPeer.srv.blockchain.blockTip()
+	// A peer can disconnect and clear its server reference while sync starts.
+	// The receiver owns this blockchain for the duration of the operation.
+	locator, locatorHeights := srv.blockchain.LatestHeaderLocator()
+	headerTip := srv.blockchain.headerTip()
+	currentBlockTip := srv.blockchain.blockTip()
 	glog.V(2).Infof("Server._startSync: Sending GET_HEADERS message to peer %v\n"+
 		"Block Locator Hashes & Heights: (%v, %v)\n"+
 		"Header Tip: (%v, %v)\nBlock Tip: (%v, %v)",

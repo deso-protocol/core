@@ -60,14 +60,30 @@ func NewNode(config *Config) *Node {
 	return &result
 }
 
+func enableGlogStderrOnly() {
+	flag.Set("logtostderr", "true")
+	flag.Set("alsologtostderr", "false")
+}
+
+func configureGlogFlags(config *Config) {
+	flag.Set("log_dir", config.LogDirectory)
+	flag.Set("v", fmt.Sprintf("%d", config.GlogV))
+	flag.Set("vmodule", config.GlogVmodule)
+	if config.LogToStdErrOnly {
+		// Kubernetes already collects stderr into Cloud Logging. Avoid also writing
+		// duplicate, unrotated glog files into the container's writable /tmp volume.
+		enableGlogStderrOnly()
+	} else {
+		flag.Set("logtostderr", "false")
+		flag.Set("alsologtostderr", fmt.Sprintf("%t", !config.NoLogToStdErr))
+	}
+}
+
 // Start is the main function used to kick off the node. The exitChannels are optionally passed by the caller to receive
 // signals from the node. In particular, exitChannels will be closed by the node when the node is shutting down for good.
 func (node *Node) Start(exitChannels ...*chan struct{}) {
 	// TODO: Replace glog with logrus so we can also get rid of flag library
-	flag.Set("log_dir", node.Config.LogDirectory)
-	flag.Set("v", fmt.Sprintf("%d", node.Config.GlogV))
-	flag.Set("vmodule", node.Config.GlogVmodule)
-	flag.Set("alsologtostderr", fmt.Sprintf("%t", !node.Config.NoLogToStdErr))
+	configureGlogFlags(node.Config)
 	flag.Parse()
 	glog.CopyStandardLogTo("INFO")
 	node.runningMutex.Lock()

@@ -927,6 +927,7 @@ func TestIsValidPoSQuorumCertificate(t *testing.T) {
 		Header: &MsgDeSoHeader{
 			Height:         5,
 			ProposedInView: 6,
+			PrevBlockHash:  hash1,
 		},
 	}
 	// Empty QC for both vote and timeout should fail
@@ -1949,6 +1950,8 @@ func testProcessBlockPoS(t *testing.T, testMeta *TestMeta) {
 		var malformedOrphanBlock *MsgDeSoBlock
 		malformedOrphanBlock = _generateRealBlock(testMeta, 18, 18, 9273, testMeta.chain.BlockTip().Hash, false)
 		malformedOrphanBlock.Header.PrevBlockHash = randomHash
+		malformedOrphanBlock.Header.ValidatorsVoteQC = _getVoteQC(
+			testMeta, malformedOrphanBlock.Header.Height, randomHash, malformedOrphanBlock.Header.ProposedInView-1)
 		malformedOrphanBlock.Header.Version = 5
 		// Resign the block.
 		updateProposerVotePartialSignatureForBlock(testMeta, malformedOrphanBlock)
@@ -2078,7 +2081,10 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		var realBlock *MsgDeSoBlock
 		realBlock = _generateRealBlock(testMeta, 12, 12, 889, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
-		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		orphanParentHash := NewBlockHash(RandomBytes(32))
+		realBlock.Header.PrevBlockHash = orphanParentHash
+		realBlock.Header.ValidatorsVoteQC = _getVoteQC(
+			testMeta, realBlock.Header.Height, orphanParentHash, realBlock.Header.ProposedInView-1)
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
 		err := testMeta.chain.processOrphanBlockPoS(realBlock)
 		require.NoError(t, err)
@@ -2096,7 +2102,10 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		var realBlock *MsgDeSoBlock
 		realBlock = _generateRealBlock(testMeta, 12, 12, 8172, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
-		realBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		orphanParentHash := NewBlockHash(RandomBytes(32))
+		realBlock.Header.PrevBlockHash = orphanParentHash
+		realBlock.Header.ValidatorsVoteQC = _getVoteQC(
+			testMeta, realBlock.Header.Height, orphanParentHash, realBlock.Header.ProposedInView-1)
 		// Set the header version to 1
 		realBlock.Header.Version = 1
 		updateProposerVotePartialSignatureForBlock(testMeta, realBlock)
@@ -2196,7 +2205,10 @@ func TestProcessOrphanBlockPoS(t *testing.T) {
 		var nextEpochBlock *MsgDeSoBlock
 		nextEpochBlock = _generateRealBlock(testMeta, currentEpochEntry.FinalBlockHeight+1, currentEpochEntry.FinalBlockHeight+1, 23, testMeta.chain.BlockTip().Hash, false)
 		// Give the block a random parent, so it is truly an orphan.
-		nextEpochBlock.Header.PrevBlockHash = NewBlockHash(RandomBytes(32))
+		orphanParentHash := NewBlockHash(RandomBytes(32))
+		nextEpochBlock.Header.PrevBlockHash = orphanParentHash
+		nextEpochBlock.Header.ValidatorsVoteQC = _getVoteQC(
+			testMeta, nextEpochBlock.Header.Height, orphanParentHash, nextEpochBlock.Header.ProposedInView-1)
 		updateProposerVotePartialSignatureForBlock(testMeta, nextEpochBlock)
 		err = testMeta.chain.processOrphanBlockPoS(nextEpochBlock)
 		require.NoError(t, err)
@@ -2716,9 +2728,9 @@ func _getFullRealBlockTemplate(
 		var validatorsTimeoutHighQCViews []uint64
 		timeoutSignersList := bitset.NewBitset()
 		timeoutSigs := []*bls.Signature{}
-		// TODO: Get the latest vote QC. If the current tip isn't a vote QC, then
-		// we need to go further back.
-		prevQC := testMeta.chain.blockTip().Header.ValidatorsVoteQC
+		// A timeout block extends the high QC's block. The voteQC created above
+		// certifies blockTemplate.Header.PrevBlockHash, so use it as the high QC.
+		prevQC := voteQC
 		ii := 0
 		for _, blsPrivKey := range testMeta.pubKeyToBLSKeyMap {
 			// Add timeout high qc view. Just assume it's the view after the vote QC for simplicity.

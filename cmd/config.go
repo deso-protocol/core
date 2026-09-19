@@ -84,6 +84,7 @@ type Config struct {
 	DatadogProfiler       bool
 	TimeEvents            bool
 	NoLogToStdErr         bool
+	LogToStdErrOnly       bool
 
 	// State Syncer
 	StateChangeDir                 string
@@ -106,6 +107,12 @@ func GetStringSliceWorkaround(flagName string) []string {
 }
 
 func LoadConfig() *Config {
+	// LoadConfig emits log lines while it resolves and validates settings. Enable
+	// stderr-only logging before any of those lines can create glog files.
+	if viper.GetBool("log-to-stderr-only") {
+		enableGlogStderrOnly()
+	}
+
 	config := Config{}
 
 	// Core
@@ -211,6 +218,7 @@ func LoadConfig() *Config {
 	config.DatadogProfiler = viper.GetBool("datadog-profiler")
 	config.TimeEvents = viper.GetBool("time-events")
 	config.NoLogToStdErr = false
+	config.LogToStdErrOnly = viper.GetBool("log-to-stderr-only")
 
 	// State Syncer
 	config.StateChangeDir = viper.GetString("state-change-dir")

@@ -216,6 +216,8 @@ func SetupRunFlags(cmd *cobra.Command) {
 
 	// Logging
 	cmd.PersistentFlags().String("log-dir", "", "The directory for logs")
+	cmd.PersistentFlags().Bool("log-to-stderr-only", false,
+		"Write logs only to stderr instead of also creating glog files. Recommended when stderr is collected by the runtime.")
 	cmd.PersistentFlags().Uint64("glog-v", 0, "The log level. 0 = INFO, 1 = DEBUG, 2 = TRACE. Defaults to zero")
 	cmd.PersistentFlags().String("glog-vmodule", "",
 		"The syntax of the argument is a comma-separated list of pattern=N, "+
