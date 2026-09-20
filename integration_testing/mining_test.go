@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestSimpleBlockSync test if a node can mine blocks on regtest
+// TestRegtestMiner test if a node can mine blocks on regtest
 func TestRegtestMiner(t *testing.T) {
 	node1 := spawnNodeProtocol1(t, 18000, "node1")
 	params := lib.DeSoTestnetParams
