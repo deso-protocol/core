@@ -175,4 +175,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://focus.xyz/",
 		Owner: "focus",
 	},
+	56: {
+		Name:  "VIA",
+		URL:   "https://viadeso.online",
+		Owner: "PJvanGent",
+	},
 }
