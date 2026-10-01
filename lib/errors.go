@@ -567,6 +567,7 @@ const (
 	RuleErrorAtomicTxnsMustStartWithChainLength              RuleError = "RuleErrorAtomicTxnsMustStartWithChainLength"
 	RuleErrorAtomicTxnsHasMoreThanOneStartPoint              RuleError = "RuleErrorAtomicTxnsHasMoreThanOneStartPoint"
 	RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn                 RuleError = "RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn"
+	RuleErrorAtomicTxnsHasBlockRewardInnerTxn                RuleError = "RuleErrorAtomicTxnsHasBlockRewardInnerTxn"
 	RuleErrorAtomicTxnsHasNonAtomicInnerTxn                  RuleError = "RuleErrorAtomicTxnsHasNonAtomicInnerTxn"
 	RuleErrorAtomicTxnsHasBrokenChain                        RuleError = "RuleErrorAtomicTxnsHasBrokenChain"
 

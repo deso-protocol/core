@@ -954,6 +954,11 @@ func (bc *Blockchain) isProperlyFormedBlockPoS(block *MsgDeSoBlock) error {
 	if block.Txns[0].TxnMeta.GetTxnType() != TxnTypeBlockReward {
 		return RuleErrorBlockDoesNotStartWithRewardTxn
 	}
+	for _, txn := range block.Txns[1:] {
+		if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+			return RuleErrorMoreThanOneBlockReward
+		}
+	}
 
 	// We always need to check the merkle root.
 	if block.Header.TransactionMerkleRoot == nil {

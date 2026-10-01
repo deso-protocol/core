@@ -396,6 +396,10 @@ func _verifyAtomicTxnsChain(txnMeta *AtomicTxnsWrapperMetadata) error {
 		if innerTxn.TxnMeta.GetTxnType() == TxnTypeAtomicTxnsWrapper {
 			return RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn
 		}
+		// A block reward may only be the first top-level transaction in a block.
+		if innerTxn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+			return RuleErrorAtomicTxnsHasBlockRewardInnerTxn
+		}
 
 		// Validate the inner transaction as meant to be included in an atomic transaction.
 		if !innerTxn.IsAtomicTxnsInnerTxn() {

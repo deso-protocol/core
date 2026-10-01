@@ -4391,6 +4391,16 @@ func (bav *UtxoView) ConnectBlock(
 		glog.V(1).Infof("ConnectBlock: Parent hash of block being connected does not match tip: %v", errorMsg)
 		return nil, errors.New(errorMsg)
 	}
+	// Reject extra rewards before connecting any transaction or updating PoS state.
+	// PoW block validation already enforces this; ConnectBlock also needs to enforce
+	// it because PoS blocks are connected through this path.
+	if blockHeight >= uint64(bav.Params.ForkHeights.ProofOfStake2ConsensusCutoverBlockHeight) {
+		for _, txn := range desoBlock.Txns[1:] {
+			if txn.TxnMeta.GetTxnType() == TxnTypeBlockReward {
+				return nil, errors.Wrap(RuleErrorMoreThanOneBlockReward, "ConnectBlock: multiple block rewards")
+			}
+		}
+	}
 
 	// If the block height is past the Proof of Stake cutover, then we update the random seed hash.
 	// We do this first before connecting any transactions so that the latest seed hash is used for

@@ -399,6 +399,15 @@ func TestVerifyAtomicTxnsChain(t *testing.T) {
 		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
 	require.Contains(t, err.Error(), RuleErrorAtomicTxnsHasAtomicTxnsInnerTxn)
 
+	// A reward hidden inside an otherwise valid wrapper must be rejected before
+	// any of the inner transactions are connected.
+	atomicTxnsWrapperDuplicate, err = atomicTxnsWrapper.Copy()
+	require.NoError(t, err)
+	atomicTxnsWrapperDuplicate.TxnMeta.(*AtomicTxnsWrapperMetadata).Txns[1].TxnMeta = &BlockRewardMetadataa{}
+	_, err = _atomicTransactionsWrapperWithConnectTimestamp(
+		t, testMeta.chain, testMeta.db, testMeta.params, atomicTxnsWrapperDuplicate, 0)
+	require.ErrorContains(t, err, string(RuleErrorAtomicTxnsHasBlockRewardInnerTxn))
+
 	// Try to have a transaction not meant for inclusion in an atomic transaction wrapper
 	// in the atomic transaction wrapper.
 	// (This should fail -- RuleErrorAtomicTxnsHasNonAtomicInnerTxn)
