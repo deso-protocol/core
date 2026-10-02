@@ -175,4 +175,9 @@ var NODES = map[uint64]DeSoNode{
 		URL:   "https://focus.xyz/",
 		Owner: "focus",
 	},
+	31: {
+                Name: "SafetyNet",
+		URL: "https://safetynet.social",
+		Owner: "SafetyNet",
+        },
 }
