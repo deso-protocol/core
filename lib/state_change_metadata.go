@@ -3,6 +3,7 @@ package lib
 import (
 	"bytes"
 	"github.com/deso-protocol/core/collections"
+	"github.com/deso-protocol/uint256"
 	"github.com/pkg/errors"
 )
 
@@ -25,6 +26,7 @@ const (
 	EncoderTypeStakeRewardStateChangeMetadata           EncoderType = 2000015
 	EncoderTypeUnjailValidatorStateChangeMetadata       EncoderType = 2000016
 	EncoderTypeUnregisterAsValidatorStateChangeMetadata EncoderType = 2000017
+	EncoderTypeCoinLockupStateChangeMetadata            EncoderType = 2000018
 )
 
 func GetStateChangeMetadataFromOpType(opType OperationType) DeSoEncoder {
@@ -691,4 +693,31 @@ func (metadata *UnregisterAsValidatorStateChangeMetadata) GetVersionByte(blockHe
 
 func (metadata *UnregisterAsValidatorStateChangeMetadata) GetEncoderType() EncoderType {
 	return EncoderTypeUnregisterAsValidatorStateChangeMetadata
+}
+
+type CoinLockupStateChangeMetadata struct {
+	YieldAmountBaseUnits *uint256.Int
+}
+
+func (metadata *CoinLockupStateChangeMetadata) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
+	var data []byte
+	data = append(data, VariableEncodeUint256(metadata.YieldAmountBaseUnits)...)
+	return data
+}
+
+func (metadata *CoinLockupStateChangeMetadata) RawDecodeWithoutMetadata(blockHeight uint64, rr *bytes.Reader) error {
+	var err error
+	metadata.YieldAmountBaseUnits, err = VariableDecodeUint256(rr)
+	if err != nil {
+		return errors.Wrapf(err, "CoinLockupStateChangeMetadata.Decode: Problem reading YieldAmountBaseUnits")
+	}
+	return nil
+}
+
+func (metadata *CoinLockupStateChangeMetadata) GetVersionByte(blockHeight uint64) byte {
+	return 0
+}
+
+func (metadata *CoinLockupStateChangeMetadata) GetEncoderType() EncoderType {
+	return EncoderTypeCoinLockupStateChangeMetadata
 }

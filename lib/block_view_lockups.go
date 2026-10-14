@@ -1593,6 +1593,9 @@ func (bav *UtxoView) _connectCoinLockup(
 		PrevLockedBalanceEntries:   previousLockedBalanceEntries,
 		SetLockedBalanceEntries:    setLockedBalanceEntries,
 		PrevCoinEntry:              prevCoinEntry,
+		StateChangeMetadata: &CoinLockupStateChangeMetadata{
+			YieldAmountBaseUnits: yieldFromTxn,
+		},
 	})
 
 	// Construct UtxoOps in the event this transaction is reverted.
