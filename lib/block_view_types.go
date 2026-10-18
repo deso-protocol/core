@@ -6118,6 +6118,10 @@ func (order *DAOCoinLimitOrderEntry) ToMapKey() DAOCoinLimitOrderMapKey {
 	}
 }
 
+func (orderMapKey DAOCoinLimitOrderMapKey) Eq(otherOrderMapKey DAOCoinLimitOrderMapKey) bool {
+	return orderMapKey.OrderID.IsEqual(&otherOrderMapKey.OrderID)
+}
+
 func (order *FilledDAOCoinLimitOrder) RawEncodeWithoutMetadata(blockHeight uint64, skipMetadata ...bool) []byte {
 	var data []byte
 
